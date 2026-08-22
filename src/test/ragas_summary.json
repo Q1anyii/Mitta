@@ -1,0 +1,22 @@
+{
+  "total_questions": 3,
+  "distance_threshold": 0.3,
+  "avg_context_count": 3.33,
+  "avg_latency_sec": 7.97,
+  "overall": {
+    "context_precision": 0.6384,
+    "context_recall": 0.5,
+    "faithfulness": 0.9167,
+    "answer_relevancy": 0.3906,
+    "answer_correctness": 0.6892
+  },
+  "by_category": {
+    "测试 QA - 基础概念题（10条）": {
+      "context_precision": 0.6384,
+      "context_recall": 0.5,
+      "faithfulness": 0.9167,
+      "answer_relevancy": 0.3906,
+      "answer_correctness": 0.6892
+    }
+  }
+}

@@ -189,7 +189,7 @@ def main():
     args = parser.parse_args()
 
     # 1. 加载测试集
-    test_data = load_test_dataset(limit=0, category=args.category)
+    test_data = load_test_dataset(limit=10, category=args.category)
     if not test_data:
         logger.error("测试集为空，退出")
         return
@@ -245,6 +245,8 @@ def main():
         api_key=os.getenv("HUNYUAN_API_KEY"),
         request_timeout=120,
         max_retries=3,
+        # ★ 核心修复：禁用 thinking，避免 n 参数冲突
+        extra_body={"enable_thinking": False},
     )
     ragas_embeddings = OpenAIEmbeddings(
         model="BAAI/bge-m3",

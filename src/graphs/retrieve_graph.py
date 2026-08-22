@@ -124,7 +124,7 @@ def build_retrieve_graph(vector_store: VectorStore):
         # TOP_K 和 DISTANCE_THRESHOLD 已移至 constant/retrieval_constants.py 统一管理
         queries = state["rewritten_queries"]
 
-        filtered_results = vector_store.query(queries, TOP_K)
+        filtered_results = vector_store.query(queries, TOP_K, DISTANCE_THRESHOLD)
         merged_docs = rrf_fusion(filtered_results)
 
         return {"merged_docs": merged_docs}
@@ -137,7 +137,7 @@ def build_retrieve_graph(vector_store: VectorStore):
         # 用改写后的主查询做精排，通常比原始口语问题更稳定
         query = state["rewritten_queries"][0]
 
-        results = online_rerank(query, [doc.text for doc in docs], top_n=10)
+        results = online_rerank(query, [doc.text for doc in docs], top_n=5)
         top_docs = [docs[r["index"]] for r in results]
 
         return {"reranked_docs": top_docs}

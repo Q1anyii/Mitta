@@ -1,0 +1,62 @@
+﻿user_input,retrieved_contexts,response,reference,context_precision,context_recall,faithfulness,answer_relevancy,answer_correctness,category
+TypedDict 和 BaseModel 的区别是什么？各自适用于什么场景？,"['# TypedDict 用于结构化字典\nclass RAGState(TypedDict):\nquestion: str\nhistory: List[Dict[str, str]]\nrewritten_queries: List[str]\n\n# Pydantic BaseModel 用于数据校验\nclass QueryRewriteResult(BaseModel):\nmain_query: str = Field(..., alias=""主查询"")\nsub_queries: List[str] = Field(default_factory=list)\n```', 'A:  \n特性 TypedDict BaseModel (Pydantic) 运行时校验 否（仅类型提示） 是（自动校验类型和必填） 序列化/反序列化 否 是（.dict(), .json(), parse_obj()） 别名支持 否 是（Field(alias=...)） 默认值 支持 支持（Field(default=...)） 性能 高（无运行时开销） 较低（有校验开销）  \n适用场景： - TypedDict：LangGraph 状态定义、内部函数参数、不需要校验的结构化字典 - BaseModel：API 请求/响应模型、外部数据输入、需要校验和序列化的场景', '| 性能 | 高（无运行时开销） | 较低（有校验开销） |  \n**适用场景**：\n- **TypedDict**：LangGraph 状态定义、内部函数参数、不需要校验的结构化字典\n- **BaseModel**：API 请求/响应模型、外部数据输入、需要校验和序列化的场景  \n**本项目示例**：\n- `RAGState` 用 TypedDict（LangGraph 状态，内部传递）\n- `QueryRewriteResult` 用 BaseModel（LLM 输出解析，需要校验和别名）  \n---', '测试 QA - 基础概念题（10条）  \n涵盖 Python、FastAPI、LangGraph、RAG、数据库等领域的基础概念。  \nQ1: TypedDict 和 BaseModel 的区别是什么？各自适用于什么场景？  \nA:', '### 1.2 Pydantic BaseModel 用于数据校验  \n对外接口的请求/响应模型使用 Pydantic `BaseModel`，自动校验类型和必填字段。  \n```python\nfrom pydantic import Field, BaseModel, ConfigDict', '**A:**  \n| 特性 | TypedDict | BaseModel (Pydantic) |\n|------|-----------|----------------------|\n| 运行时校验 | 否（仅类型提示） | 是（自动校验类型和必填） |\n| 序列化/反序列化 | 否 | 是（.dict(), .json(), parse_obj()） |\n| 别名支持 | 否 | 是（Field(alias=...)） |\n| 默认值 | 支持 | 支持（Field(default=...)） |\n| 性能 | 高（无运行时开销） | 较低（有校验开销） |  \n**适用场景**：', '1.2 Pydantic BaseModel 用于数据校验  \n对外接口的请求/响应模型使用 Pydantic BaseModel，自动校验类型和必填字段。  \nfrom pydantic import Field, BaseModel, ConfigDict  \nclass QueryRewriteResult(BaseModel):\nmodel_config = ConfigDict(populate_by_name=True)  # 允许按别名填充\nmain_query: str = Field(..., alias=""主查询"")']","根据知识库内容，TypedDict 和 BaseModel 的主要区别及适用场景如下：
+
+**区别**：
+- **运行时校验**：TypedDict 仅提供类型提示，不进行运行时校验；BaseModel 自动校验类型和必填字段。
+- **序列化/反序列化**：TypedDict 不支持；BaseModel 支持 `.dict()`、`.json()`、`parse_obj()` 等方法。
+- **别名支持**：TypedDict 不支持；BaseModel 支持通过 `Field(alias=...)` 设置别名。
+- **默认值**：两者都支持默认值，但 BaseModel 使用 `Field(default=...)`。
+- **性能**：TypedDict 性能高（无运行时开销）；BaseModel 性能较低（有校验开销）。
+
+**适用场景**：
+- **TypedDict**：适用于 LangGraph 状态定义、内部函数参数、不需要校验的结构化字典。
+- **BaseModel**：适用于 API 请求/响应模型、外部数据输入、需要校验和序列化的场景。
+
+本项目示例中，`RAGState` 使用 TypedDict（作为 LangGraph 状态，内部传递），`QueryRewriteResult` 使用 BaseModel（用于 LLM 输出解析，需要校验和别名）。","| 特性 | TypedDict | BaseModel (Pydantic) |
+|------|-----------|----------------------|
+| 运行时校验 | 否（仅类型提示） | 是（自动校验类型和必填） |
+| 序列化/反序列化 | 否 | 是（.dict(), .json(), parse_obj()） |
+| 别名支持 | 否 | 是（Field(alias=...)） |
+| 默认值 | 支持 | 支持（Field(default=...)） |
+| 性能 | 高（无运行时开销） | 较低（有校验开销） |
+
+**适用场景**：
+- **TypedDict**：LangGraph 状态定义、内部函数参数、不需要校验的结构化字典
+- **BaseModel**：API 请求/响应模型、外部数据输入、需要校验和序列化的场景
+
+**本项目示例**：
+- `RAGState` 用 TypedDict（LangGraph 状态，内部传递）
+- `QueryRewriteResult` 用 BaseModel（LLM 输出解析，需要校验和别名）",0.9150793650641138,1.0,1.0,0.33285217288004404,0.933874744572047,测试 QA - 基础概念题（10条）
+FastAPI 的 Depends 依赖注入有什么优势？,['本项目示例： - RAGState 用 TypedDict（LangGraph 状态，内部传递） - QueryRewriteResult 用 BaseModel（LLM 输出解析，需要校验和别名）  \nQ2: FastAPI 的 Depends 依赖注入有什么优势？  \nA:  \n代码复用：认证、校验、分页等逻辑封装为依赖，多个路由复用  \n自动参数解析：FastAPI 自动解析路径参数、查询参数、请求体注入依赖  \n依赖嵌套：依赖可以依赖其他依赖（如 require_self_or_admin 依赖 get_current_user）'],"根据知识库内容，FastAPI 的 Depends 依赖注入具有以下优势：
+
+1. **代码复用**：认证、校验、分页等逻辑可封装为依赖，多个路由复用。
+2. **自动参数解析**：FastAPI 自动解析路径参数、查询参数、请求体并注入到依赖中。
+3. **依赖嵌套**：依赖可以依赖其他依赖（例如 `require_self_or_admin` 依赖 `get_current_user`）。","1. **代码复用**：认证、校验、分页等逻辑封装为依赖，多个路由复用
+2. **自动参数解析**：FastAPI 自动解析路径参数、查询参数、请求体注入依赖
+3. **依赖嵌套**：依赖可以依赖其他依赖（如 `require_self_or_admin` 依赖 `get_current_user`）
+4. **生命周期管理**：支持 `yield` 依赖，在请求结束后自动清理资源
+5. **可测试性**：测试时可以用 `app.dependency_overrides` 替换依赖
+
+**本项目示例**：
+```python
+def require_self_or_admin(user_id: str, current_user: TokenData = Depends(get_current_user)):
+    if str(current_user.user_id) != user_id and current_user.role != ""admin"":
+        raise HTTPException(status_code=403, detail=""无权访问该用户资源"")
+    return current_user
+```",0.0,0.5,1.0,0.5498002298117707,0.5693618508222468,测试 QA - 基础概念题（10条）
+LangGraph 的 Checkpointer 和 Store 有什么区别？,"['Checkpointer 和 Store 的边界要清晰：Checkpointer 管""这次对话""，Store 管""这个用户""。不要把用户偏好存在 Checkpointer 里，也不要把对话历史存在 Store 里。  \nLangGraph 不适合简单的顺序流程：如果你的流程就是 A→B→C 没有分支和状态，用普通函数链更简单。LangGraph 的价值在于状态管理、中断恢复、人机交互和复杂分支。', 'raise HTTPException(status_code=403, detail=""无权访问该用户资源"")\nreturn current_user  \nQ3: LangGraph 的 Checkpointer 和 Store 有什么区别？  \nA:']","根据知识库内容，Checkpointer 和 Store 的区别在于：
+
+- **Checkpointer** 负责管理“这次对话”的相关状态，例如对话历史、当前会话的上下文等。
+- **Store** 负责管理“这个用户”的持久化数据，例如用户偏好、用户配置等。
+
+两者边界清晰，不应混淆使用：不要把用户偏好存储在 Checkpointer 中，也不要把对话历史存储在 Store 中。","| 特性 | Checkpointer | Store |
+|------|-------------|-------|
+| 用途 | 会话执行状态、对话历史 | 跨会话长期记忆、用户配置 |
+| 粒度 | thread_id（会话级） | namespace + key（任意层级） |
+| 自动管理 | LangGraph 自动写入 | 手动 put/get |
+| 数据结构 | 图状态快照 | 任意 key-value |
+| 典型场景 | 多轮对话、中断恢复、人机交互 | 用户偏好、知识库、长期记忆 |
+
+**本项目示例**：
+- Checkpointer（PostgresSaver）：存储对话历史和图执行状态
+- Store（PostgresStore）：存储用户全局自定义 prompt（`(""user_global"", user_id), ""custom_prompt""`）",0.9999999999,0.0,0.75,0.2890645282314797,0.5642770101438483,测试 QA - 基础概念题（10条）
