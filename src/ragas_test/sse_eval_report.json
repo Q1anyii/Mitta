@@ -1,0 +1,101 @@
+{
+  "summary": {
+    "total_requests": 5,
+    "successful": 5,
+    "failed": 0,
+    "first_token": {
+      "avg_ms": 3843.5098399997514,
+      "min_ms": 2901.4295999986643,
+      "max_ms": 6073.237100001279,
+      "p50_ms": 3326.8575000001874,
+      "p95_ms": 3594.6112999990874
+    },
+    "total_time": {
+      "avg_ms": 8908.524799999941,
+      "min_ms": 8177.866899999572,
+      "max_ms": 9853.950599999735
+    },
+    "stream_purity": {
+      "pure_count": 5,
+      "pure_rate": 1.0,
+      "contaminated": []
+    }
+  },
+  "details": [
+    {
+      "query": "介绍一下 LangGraph 的核心概念",
+      "first_token_latency_ms": 2901.4295999986643,
+      "total_time_ms": 8177.866899999572,
+      "content_length": 251,
+      "chunk_count": 78,
+      "tool_calls": [
+        "search_nodes",
+        ""
+      ],
+      "errors": [],
+      "other_events": [],
+      "contamination": [],
+      "is_pure": true
+    },
+    {
+      "query": "介绍一下 LangGraph 的核心概念",
+      "first_token_latency_ms": 3594.6112999990874,
+      "total_time_ms": 9853.950599999735,
+      "content_length": 289,
+      "chunk_count": 83,
+      "tool_calls": [
+        "search_nodes",
+        ""
+      ],
+      "errors": [],
+      "other_events": [],
+      "contamination": [],
+      "is_pure": true
+    },
+    {
+      "query": "介绍一下 LangGraph 的核心概念",
+      "first_token_latency_ms": 3326.8575000001874,
+      "total_time_ms": 9175.855400000728,
+      "content_length": 267,
+      "chunk_count": 79,
+      "tool_calls": [
+        "search_nodes",
+        ""
+      ],
+      "errors": [],
+      "other_events": [],
+      "contamination": [],
+      "is_pure": true
+    },
+    {
+      "query": "介绍一下 LangGraph 的核心概念",
+      "first_token_latency_ms": 3321.413699999539,
+      "total_time_ms": 8440.728199999285,
+      "content_length": 231,
+      "chunk_count": 64,
+      "tool_calls": [
+        "search_nodes",
+        ""
+      ],
+      "errors": [],
+      "other_events": [],
+      "contamination": [],
+      "is_pure": true
+    },
+    {
+      "query": "介绍一下 LangGraph 的核心概念",
+      "first_token_latency_ms": 6073.237100001279,
+      "total_time_ms": 8894.222900000386,
+      "content_length": 229,
+      "chunk_count": 68,
+      "tool_calls": [
+        "search_nodes",
+        ""
+      ],
+      "errors": [],
+      "other_events": [],
+      "contamination": [],
+      "is_pure": true
+    }
+  ]
+}

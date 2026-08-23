@@ -1,0 +1,489 @@
+{
+  "config": {
+    "top_k": 12,
+    "total_tools": 40,
+    "test_cases": 22
+  },
+  "avg_recall": 0.7196969696969696,
+  "avg_precision": 0.09848484848484848,
+  "zero_hit_count": 4,
+  "details": [
+    {
+      "query": "读取 E:\\工作文件\\AgentProject\\README.md 的内容",
+      "expected": [
+        "read_file",
+        "read_text_file"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "git_add"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "在 docs 目录下创建一个新文件 architecture.md",
+      "expected": [
+        "write_file",
+        "create_directory"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "git_add"
+      ],
+      "recall": 0.5
+    },
+    {
+      "query": "列出当前目录下的所有文件",
+      "expected": [
+        "list_directory",
+        "directory_tree"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "git_status"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "搜索项目中包含 TODO 的文件",
+      "expected": [
+        "search_files"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "search_nodes"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "把 temp.py 移动到 utils 目录",
+      "expected": [
+        "move_file"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "git_add"
+      ],
+      "recall": 0.0
+    },
+    {
+      "query": "查看当前 git 仓库的提交历史",
+      "expected": [
+        "git_log"
+      ],
+      "selected": [
+        "git_status",
+        "git_diff_unstaged",
+        "git_diff_staged",
+        "git_diff",
+        "git_commit",
+        "git_add",
+        "git_log",
+        "git_create_branch",
+        "git_checkout",
+        "git_show",
+        "git_branch",
+        "update-record"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "看看有哪些文件被修改了",
+      "expected": [
+        "git_status",
+        "git_diff",
+        "git_diff_unstaged"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "git_commit"
+      ],
+      "recall": 0.0
+    },
+    {
+      "query": "把 main.py 的改动提交到仓库",
+      "expected": [
+        "git_add",
+        "git_commit"
+      ],
+      "selected": [
+        "git_status",
+        "git_diff_unstaged",
+        "git_diff_staged",
+        "git_diff",
+        "git_commit",
+        "git_add",
+        "git_log",
+        "git_create_branch",
+        "git_checkout",
+        "git_show",
+        "git_branch",
+        "insert-record"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "创建一个新分支 feature/cache",
+      "expected": [
+        "git_create_branch"
+      ],
+      "selected": [
+        "git_status",
+        "git_diff_unstaged",
+        "git_diff_staged",
+        "git_diff",
+        "git_commit",
+        "git_add",
+        "git_log",
+        "git_create_branch",
+        "git_checkout",
+        "git_show",
+        "git_branch",
+        "create_entities"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "切换到 dev 分支",
+      "expected": [
+        "git_checkout"
+      ],
+      "selected": [
+        "git_status",
+        "git_diff_unstaged",
+        "git_diff_staged",
+        "git_diff",
+        "git_commit",
+        "git_add",
+        "git_log",
+        "git_create_branch",
+        "git_checkout",
+        "git_show",
+        "git_branch",
+        "create_directory"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "查看当前分支列表",
+      "expected": [
+        "git_branch"
+      ],
+      "selected": [
+        "git_status",
+        "git_diff_unstaged",
+        "git_diff_staged",
+        "git_diff",
+        "git_commit",
+        "git_add",
+        "git_log",
+        "git_create_branch",
+        "git_checkout",
+        "git_show",
+        "git_branch",
+        "list_allowed_directories"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "帮我抓取 https://example.com 的内容",
+      "expected": [
+        "fetch"
+      ],
+      "selected": [
+        "fetch",
+        "query",
+        "search_files",
+        "describe-table",
+        "drop-table",
+        "transaction",
+        "directory_tree",
+        "read_media_file",
+        "read_file",
+        "execute",
+        "get_file_info",
+        "git_checkout"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "爬取这个文档网站的所有页面",
+      "expected": [
+        "crawl4ai",
+        "fetch"
+      ],
+      "selected": [
+        "fetch",
+        "search_files",
+        "read_graph",
+        "read_text_file",
+        "list_directory_with_sizes",
+        "get_file_info",
+        "read_file",
+        "list_directory",
+        "describe-table",
+        "list-tables",
+        "directory_tree",
+        "list_allowed_directories"
+      ],
+      "recall": 0.5
+    },
+    {
+      "query": "解析这个 PDF 文件的内容",
+      "expected": [
+        "crawl4ai"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "describe-table"
+      ],
+      "recall": 0.0
+    },
+    {
+      "query": "查询用户表中所有用户",
+      "expected": [
+        "query",
+        "describe-table"
+      ],
+      "selected": [
+        "query",
+        "execute",
+        "describe-table",
+        "list-tables",
+        "create-table",
+        "drop-table",
+        "insert-record",
+        "update-record",
+        "delete-record",
+        "transaction",
+        "read_graph",
+        "search_nodes"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "查看数据库中有哪些表",
+      "expected": [
+        "describe-table",
+        "query"
+      ],
+      "selected": [
+        "query",
+        "execute",
+        "describe-table",
+        "list-tables",
+        "create-table",
+        "drop-table",
+        "insert-record",
+        "update-record",
+        "delete-record",
+        "transaction",
+        "search_nodes",
+        "git_status"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "这个问题很复杂，帮我分步思考",
+      "expected": [
+        "sequential-thinking"
+      ],
+      "selected": [
+        "sequentialthinking",
+        "create_relations",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "transaction",
+        "search_files",
+        "read_graph",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "create_entities",
+        "open_nodes"
+      ],
+      "recall": 0.0
+    },
+    {
+      "query": "记住我喜欢用 Python 编程",
+      "expected": [
+        "add_observations",
+        "create_relations"
+      ],
+      "selected": [
+        "search_files",
+        "create_directory",
+        "open_nodes",
+        "create_relations",
+        "insert-record",
+        "create_entities",
+        "add_observations",
+        "sequentialthinking",
+        "execute",
+        "directory_tree",
+        "transaction",
+        "query"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "更新我的个人信息",
+      "expected": [
+        "update-record"
+      ],
+      "selected": [
+        "update-record",
+        "add_observations",
+        "execute",
+        "insert-record",
+        "get_file_info",
+        "git_commit",
+        "open_nodes",
+        "sequentialthinking",
+        "create_relations",
+        "git_checkout",
+        "fetch",
+        "create_entities"
+      ],
+      "recall": 1.0
+    },
+    {
+      "query": "帮我分析这个项目的代码结构",
+      "expected": [
+        "directory_tree",
+        "list_directory",
+        "git_log"
+      ],
+      "selected": [
+        "sequentialthinking",
+        "git_status",
+        "git_log",
+        "directory_tree",
+        "git_show",
+        "describe-table",
+        "git_diff",
+        "git_checkout",
+        "transaction",
+        "git_diff_staged",
+        "git_commit",
+        "git_add"
+      ],
+      "recall": 0.6666666666666666
+    },
+    {
+      "query": "读取配置文件并修改数据库连接",
+      "expected": [
+        "read_file",
+        "write_file"
+      ],
+      "selected": [
+        "read_file",
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "query"
+      ],
+      "recall": 0.5
+    },
+    {
+      "query": "看看最近的代码改动并生成总结",
+      "expected": [
+        "git_log",
+        "git_diff",
+        "read_file"
+      ],
+      "selected": [
+        "git_commit",
+        "git_diff_staged",
+        "git_log",
+        "git_diff_unstaged",
+        "git_checkout",
+        "git_diff",
+        "git_status",
+        "git_add",
+        "execute",
+        "update-record",
+        "git_show",
+        "sequentialthinking"
+      ],
+      "recall": 0.6666666666666666
+    }
+  ]
+}

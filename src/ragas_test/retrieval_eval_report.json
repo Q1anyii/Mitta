@@ -1,0 +1,21 @@
+{
+  "config": {
+    "limit": 50,
+    "threshold": 0.5,
+    "top_k": 5
+  },
+  "single_path": {
+    "avg_recall": 0.7016666666666667,
+    "median_recall": 0.7083333333333333,
+    "avg_latency_ms": 139.7106199998234,
+    "p95_latency_ms": 231.89580499947635,
+    "zero_result_ratio": 0.0
+  },
+  "pipeline": {
+    "avg_recall": 0.7016666666666667,
+    "median_recall": 0.7083333333333333,
+    "avg_latency_ms": 4913.877289999618,
+    "p95_latency_ms": 9010.852470000562,
+    "zero_result_ratio": 0.0
+  }
+}

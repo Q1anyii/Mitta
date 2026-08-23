@@ -1,0 +1,51 @@
+{
+  "config": {
+    "rounds": 3,
+    "queries": 20,
+    "thread_id": "cache_eval_test",
+    "clear_first": false
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "total_queries": 20,
+      "cache_hits": 0,
+      "valid_hits": 0,
+      "polluted_hits": 0,
+      "hit_rate": 0.0,
+      "pollution_rate": 0,
+      "embedding_calls": 120,
+      "avg_latency_ms": 573.1106100000488,
+      "p95_latency_ms": 623.6328000004505
+    },
+    {
+      "round": 2,
+      "total_queries": 20,
+      "cache_hits": 20,
+      "valid_hits": 20,
+      "polluted_hits": 0,
+      "hit_rate": 1.0,
+      "pollution_rate": 0,
+      "embedding_calls": 40,
+      "avg_latency_ms": 350.72524000001977,
+      "p95_latency_ms": 412.60869999950955
+    },
+    {
+      "round": 3,
+      "total_queries": 20,
+      "cache_hits": 20,
+      "valid_hits": 20,
+      "polluted_hits": 0,
+      "hit_rate": 1.0,
+      "pollution_rate": 0,
+      "embedding_calls": 40,
+      "avg_latency_ms": 348.1423000000177,
+      "p95_latency_ms": 374.2349000003742
+    }
+  ],
+  "summary": {
+    "baseline_embedding_calls": 120,
+    "final_hit_rate": 1.0,
+    "embedding_reduction_pct": 66.66666666666667
+  }
+}

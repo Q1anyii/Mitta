@@ -188,4 +188,4 @@ class TestConfigError:
     def test_can_raise_and_catch(self):
         """应能正常抛出和捕获。"""
         with pytest.raises(ConfigError):
-            raise ConfigError("test error")
+            raise ConfigError("ragas_test error")

@@ -1,0 +1,55 @@
+[
+  {
+    "test": "write_latency",
+    "count": 5,
+    "avg_ms": 46.202679999987595,
+    "p95_ms": 46.40490000019781,
+    "max_ms": 48.40509999939968,
+    "min_ms": 45.16030000013416,
+    "avg_size_bytes": 85.8
+  },
+  {
+    "test": "read_latency",
+    "count": 20,
+    "avg_ms": 25.125339999931384,
+    "p95_ms": 45.49049999968702
+  },
+  {
+    "test": "duplicate_write_reduction",
+    "first_round": {
+      "writes": 3,
+      "skips": 0
+    },
+    "second_round": {
+      "writes": 0,
+      "skips": 3
+    },
+    "third_round": {
+      "writes": 2,
+      "skips": 2
+    },
+    "total_writes": 5,
+    "total_skips": 5,
+    "reduction_rate": 0.5
+  },
+  {
+    "test": "conversation_profile",
+    "rounds": 10,
+    "final_entry_count": 10,
+    "entry_growth": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "avg_write_ms": 45.746259999941685,
+    "avg_read_ms": 27.109109999946668,
+    "total_write_time_ms": 457.46259999941685
+  }
+]

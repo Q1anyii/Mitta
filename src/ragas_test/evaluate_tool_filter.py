@@ -2,7 +2,7 @@
 
 用法：
     conda activate langchain1.2
-    cd src && python -m test.evaluate_tool_filter
+    cd src && python -m ragas_test.evaluate_tool_filter
 
 先按实际 MCP 工具名调整 TEST_CASES 的期望命中工具，运行后输出各 query 的
 命中情况与汇总指标，据此调整 TOP_FILTER_TOOLS / TOOL_DISTANCE_THRESHOLD。

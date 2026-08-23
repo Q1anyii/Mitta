@@ -1,0 +1,64 @@
+[
+  {
+    "test": "normal_traffic",
+    "total": 30,
+    "passed": 30,
+    "blocked": 0,
+    "pass_rate": 1.0,
+    "avg_latency_ms": 0.4135199993470451,
+    "p95_latency_ms": 0.36669999826699495
+  },
+  {
+    "test": "over_limit",
+    "total": 40,
+    "threshold": 30,
+    "passed": 30,
+    "blocked": 10,
+    "expected_blocked": 10,
+    "intercept_accuracy": 1.0
+  },
+  {
+    "test": "path_filtering",
+    "accuracy": 1.0,
+    "details": [
+      {
+        "path": "/api/chat/",
+        "should_limit": true,
+        "is_limited": true,
+        "match": true
+      },
+      {
+        "path": "/health",
+        "should_limit": false,
+        "is_limited": false,
+        "match": true
+      },
+      {
+        "path": "/api/users/profile",
+        "should_limit": false,
+        "is_limited": false,
+        "match": true
+      },
+      {
+        "path": "/api/chat/history",
+        "should_limit": true,
+        "is_limited": true,
+        "match": true
+      }
+    ]
+  },
+  {
+    "test": "window_reset",
+    "window_seconds": 60,
+    "current_ttl": 60,
+    "blocked_after_threshold": true,
+    "note": "完整窗口重置需等待 window 秒，本测试只验证 TTL 设置正确"
+  },
+  {
+    "test": "concurrent_stress",
+    "concurrent": 1000,
+    "passed": 30,
+    "blocked": 970,
+    "block_rate": 0.97
+  }
+]

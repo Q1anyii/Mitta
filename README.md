@@ -62,12 +62,9 @@ flowchart TD
     ROUTE_LLM -->|No| MEMORY[memory_node]
 
     TOOL -->|工具执行结果 ToolMessage| LLM
-    TOOL -.->|CachePolicy TTL=10s<br/>同工具同参数复用结果| TOOL
+ 
 
     MEMORY -->|idle 闲聊轮快速跳过executed/unavailable 轮LLM 提取记忆写入 Store| END_NODE([END])
-
-    RETRIEVE -.->|CachePolicy TTL=10s
-    key=input_str| RETRIEVE
 
     classDef llmNode fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b
     classDef toolNode fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
@@ -533,8 +530,6 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 1. 在 `src/routers/` 下新建或编辑路由文件
 2. 在 `src/main.py` 中 `app.include_router()` 注册
 3. 注意 `system_router` 必须最后注册（SPA 兜底路由）
-
-
 
 ***<u>后续可持续性内容优化</u>*：**
 

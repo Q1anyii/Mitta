@@ -1,5 +1,4 @@
 from typing import Annotated, Optional, Any
-import json
 import uuid
 
 from langchain_core.tools import BaseTool
@@ -17,11 +16,7 @@ from graphs.tool_filter import ToolFilter
 from init import model, system_prompt
 from utils.doc_util import documents_to_dicts
 from constant.prompt_constants import MEMORY_EXTRACT_PROMPT, CLASSIFIER_PROMPT, NO_INFO_MARKS
-from constant.cache_constant import (
-    CACHE_RETRIEVE_NODE_TTL,
-    CACHE_TOOL_NODE_TTL,
-    CACHE_MEMORY_NODE_TTL,
-)
+from constant.cache_constant import CACHE_MEMORY_NODE_TTL
 
 
 def build_main_graph(retrieve_graph,
@@ -43,38 +38,6 @@ def build_main_graph(retrieve_graph,
         tool_status: Annotated[str, Field(
             description="本轮工具状态：executed=工具被执行；unavailable=无工具可用；idle=筛选出工具但模型未调用"
         )] = "idle"
-
-    def _retrieve_cache_key(state: dict) -> str:
-        """retrieve_node 缓存键只取用户输入，不取整个 Send payload。
-
-        默认 key_func 会对节点输入整体 pickle 哈希，而 route() 的 Send payload
-        含每轮累积变化的 messages，会导致缓存键每轮都变、缓存永不命中；
-        检索结果本身只取决于问题（知识库全局共享），历史仅用于指代改写，
-        同一问题短窗口内直接复用即可（Redis 键见 cache.redis.RedisCache 的 prefix）。
-        """
-        if not isinstance(state, dict):
-            return str(state)
-        return state.get("input_str", "")
-
-    def _tool_cache_key(state: dict) -> str:
-        """tool_node 缓存键：取本轮 AI 消息的 tool_calls（工具名+参数，排除每次变化的调用 id）。
-
-        只有 route_after_llm 在 tool_calls 非空时才路由到 tool_node，因此缓存条目
-        必然产生于工具真实执行之后（含执行失败返回的错误 ToolMessage），满足
-        "工具被执行才存入缓存"；TTL 窗口内同工具同参数调用直接复用结果、跳过真实执行。
-        防御分支（理论不可达）返回随机键，避免无工具调用时互相误命中。
-        """
-        if not isinstance(state, dict):
-            return f"nocache-{uuid.uuid4().hex}"
-        msgs = state.get("messages", []) if isinstance(state.get("messages", []), list) else []
-        for m in reversed(msgs):
-            if isinstance(m, AIMessage) and m.tool_calls:
-                calls = sorted(
-                    (tc.get("name", ""), json.dumps(tc.get("args", {}), ensure_ascii=False, sort_keys=True))
-                    for tc in m.tool_calls
-                )
-                return f"{len(msgs)}|{json.dumps(calls, ensure_ascii=False)}"
-        return f"nocache-{uuid.uuid4().hex}"
 
     def _memory_cache_key(state: dict) -> str:
         """memory_node 缓存键：仅当本轮工具被执行（executed）或执行失败/无工具可用（unavailable）
@@ -155,6 +118,41 @@ def build_main_graph(retrieve_graph,
             logger.info(f"用户名基础档案已落库（user_id={user_id}）")
         return profile
 
+    def _repair_history(history: list) -> list:
+        """双向清洗历史，保证 tool_calls / ToolMessage 配对完整。
+
+        OpenAI 兼容 API 同时校验两个方向：
+        1. 带 tool_calls 的 assistant 消息必须被 ToolMessage 响应（悬空调用 400）；
+        2. tool 消息必须是对前置 tool_calls 的响应（孤儿 ToolMessage 同样 400）。
+        中断残留（AIMessage 已落 checkpoint、工具未执行）与 tool_node 缓存复用旧调用 id
+        都会破坏配对，透传前必须双向清洗。
+        """
+        declared_ids = {
+            tc.get("id")
+            for m in history
+            if isinstance(m, AIMessage) and m.tool_calls
+            for tc in m.tool_calls
+        }
+        responded_ids = {
+            m.tool_call_id
+            for m in history
+            if isinstance(m, ToolMessage) and m.tool_call_id
+        }
+        repaired = []
+        for m in history:
+            if isinstance(m, AIMessage) and m.tool_calls:
+                missing = [tc for tc in m.tool_calls if tc.get("id") not in responded_ids]
+                if missing:
+                    logger.warning(f"清洗悬空 tool_calls：{missing} 无对应 ToolMessage，已剥离")
+                    m = m.model_copy(update={
+                        "tool_calls": [tc for tc in m.tool_calls if tc.get("id") in responded_ids]
+                    })
+            elif isinstance(m, ToolMessage) and m.tool_call_id not in declared_ids:
+                logger.warning(f"清洗孤儿 ToolMessage（tool_call_id={m.tool_call_id} 无前置声明），已剥离")
+                continue
+            repaired.append(m)
+        return repaired
+
     def llm_node(state: OverAllState, config: RunnableConfig, store: BaseStore) -> OverAllState:
         logger.success("llm_node is runed")
         input_str = state["input_str"]
@@ -199,7 +197,7 @@ def build_main_graph(retrieve_graph,
         if long_term and long_term != "（暂无档案）":
             system_content += f"\n\n【用户长期记忆】\n{long_term}"
 
-        messages = [SystemMessage(content=system_content)] + list(history)
+        messages = [SystemMessage(content=system_content)] + _repair_history(list(history))
         messages.append(HumanMessage(content=user_content))
 
         # 运行时工具筛选：规则命中 + 语义检索并集，只把候选工具暴露给 LLM 自主决策。
@@ -349,21 +347,20 @@ def build_main_graph(retrieve_graph,
 
     builder = StateGraph(state_schema=OverAllState)
     builder.add_node("classify_node", classify_node)
-    # 节点级缓存：compile(cache=RedisCache) 已把缓存后端落到 Redis（见 chat_service.open），
-    # CachePolicy 只声明策略：TTL 常量化 + 自定义 key（仅 input_str，见 _retrieve_cache_key），
-    # 命中时直接复用检索结果，跳过向量检索与重排，降低 API/算力消耗。
+    # retrieve_node：CachePolicy 已停用，检索结果缓存由 retrieve_graph 内部
+    # CacheService（Redis + RediSearch）按 thread_id + 问题语义管理（见 check_cache/store_cache）
     builder.add_node(
         "retrieve_node",
         retrieve_node,
-        cache_policy=CachePolicy(ttl=CACHE_RETRIEVE_NODE_TTL, key_func=_retrieve_cache_key),
     )
     builder.add_node("llm_node", llm_node)
-    # tool_node：仅工具真实执行后才有缓存条目（路由保证 tool_calls 非空才到达）；
-    # key 取工具名+参数（排除每次变化的调用 id），TTL 窗口内同调用复用结果
+    # tool_node：不启用节点级缓存——CachePolicy 命中时不执行节点，直接复用上次返回的
+    # ToolMessage（携带旧 tool_call_id），与当前轮 AI 消息的新 tool_calls id 不匹配，
+    # 透传给 API 会双向 400（悬空调用 / 孤儿 ToolMessage）。如需工具结果缓存，
+    # 应在工具执行层按 name+args 缓存原始结果，命中时用当前轮 tool_call_id 构造 ToolMessage。
     builder.add_node(
         "tool_node",
         tool_node,
-        cache_policy=CachePolicy(ttl=CACHE_TOOL_NODE_TTL, key_func=_tool_cache_key),
     )
     # memory_node：仅 executed/unavailable 轮写入缓存（见 _memory_cache_key），
     # 命中时跳过 LLM 记忆提取与 store 写入，省一次模型调用

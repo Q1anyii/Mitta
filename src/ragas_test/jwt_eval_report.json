@@ -1,0 +1,26 @@
+[
+  {
+    "test": "verify_performance",
+    "iterations": 100,
+    "avg_ms": 0.5607940000300005,
+    "p50_ms": 0.4482000003918074,
+    "p95_ms": 1.385100000334205,
+    "p99_ms": 1.743999999234802,
+    "min_ms": 0.3250999998272164,
+    "max_ms": 3.0499000004056143
+  },
+  {
+    "test": "token_renewal",
+    "total": 20,
+    "success": 20,
+    "success_rate": 1.0,
+    "unique_new_tokens": 1
+  },
+  {
+    "test": "concurrent_verify",
+    "concurrent": 20,
+    "total_requests": 100,
+    "avg_ms": 0.4938939999556169,
+    "p95_ms": 1.1278000001766486
+  }
+]

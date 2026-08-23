@@ -1,0 +1,25 @@
+{
+  "config": {
+    "queries": 10,
+    "ttl": 5,
+    "thread_id": "ttl_eval_test"
+  },
+  "results": [
+    {
+      "strategy": "fixed_ttl",
+      "ttl_seconds": 5,
+      "hit_rate": 0.0,
+      "hits": 0,
+      "total": 10
+    },
+    {
+      "strategy": "dynamic_ttl",
+      "ttl_seconds": 5,
+      "rounds": 3,
+      "hit_rate": 0.3333333333333333,
+      "hits": 10,
+      "total": 30
+    }
+  ],
+  "improvement_percentage_points": 33.33333333333333
+}

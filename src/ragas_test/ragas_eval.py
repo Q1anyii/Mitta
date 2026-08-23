@@ -3,14 +3,14 @@ RAGAS 评估脚本：对 RAG 检索+生成链路进行自动化质量评估。
 
 用法：
     cd src
-    python -m test.ragas_eval                    # 评估全部 45 条
-    python -m test.ragas_eval --limit 10         # 只评估前 10 条
-    python -m test.ragas_eval --category basic   # 只评估基础概念类
-    python -m test.ragas_eval --threshold 0.5    # 自定义距离阈值（默认0.5）
+    python -m ragas_test.ragas_eval                    # 评估全部 45 条
+    python -m ragas_test.ragas_eval --limit 10         # 只评估前 10 条
+    python -m ragas_test.ragas_eval --category basic   # 只评估基础概念类
+    python -m ragas_test.ragas_eval --threshold 0.5    # 自定义距离阈值（默认0.5）
 
 输出：
-    - test/ragas_report.csv          逐条评分明细
-    - test/ragas_summary.json        汇总统计（含按分类分组）
+    - ragas_test/ragas_report.csv          逐条评分明细
+    - ragas_test/ragas_summary.json        汇总统计（含按分类分组）
 
 评估指标：
     - context_precision : 检索结果中相关片段的排名精度
@@ -57,9 +57,9 @@ from init import model, online_rerank
 # 配置
 # ============================================================
 PROJECT_ROOT = SRC_DIR.parent
-DATASET_PATH = PROJECT_ROOT / "resources" / "knowledge-base" / "test-qa" / "eval_dataset.json"
-REPORT_CSV = SRC_DIR / "test" / "ragas_report.csv"
-SUMMARY_JSON = SRC_DIR / "test" / "ragas_summary.json"
+DATASET_PATH = PROJECT_ROOT / "resources" / "knowledge-base" / "ragas_test-qa" / "eval_dataset.json"
+REPORT_CSV = SRC_DIR / "ragas_test" / "ragas_report.csv"
+SUMMARY_JSON = SRC_DIR / "ragas_test" / "ragas_summary.json"
 
 # 分类关键词映射（用于 --category 过滤）
 CATEGORY_MAP = {

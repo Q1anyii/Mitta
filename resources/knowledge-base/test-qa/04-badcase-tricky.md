@@ -710,7 +710,7 @@ collection.delete(where={"source": "old_faq_v1"})
 
 ### 场景 2: 删除某个类别的文档
 ```python
-collection.delete(where={"category": "test"})
+collection.delete(where={"category": "ragas_test"})
 ```
 
 ### 场景 3: 删除单个文档
