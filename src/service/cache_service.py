@@ -16,7 +16,7 @@ from loguru import logger
 from constant.cache_constant import REDIS_INIT_SUCCESS, REDIS_CONNECT_FAILED, REDIS_CONNECT_CLOSED, \
     HEALTH_CHECK_INTERVAL, \
     TAG_FIELD, VECTOR_FIELD_NAME, VECTOR_FIELD_ALGORITHM, VECTOR_ATTRIBUTE, INDEX_NAME, KEY_PREFIX, CACHE_DEFAULT_TTL, \
-    CACHE_RERANK_HIT_SCORE
+    CACHE_RERANK_HIT_SCORE, SPARSE_INDEX_NAME, DOC_PREFIX
 from redis.commands.search.query import Query
 
 from utils.doc_util import documents_to_dicts, dict_to_documents
@@ -58,6 +58,7 @@ class CacheService:
 
     def open(self):
         self.create_index()
+        self.create_sparse_index()
         try:
             if self.redis.ping():
                 logger.success(REDIS_INIT_SUCCESS)
@@ -77,6 +78,38 @@ class CacheService:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
         return False         # 不抑制异常，异常会继续抛出
+
+    def create_sparse_index(self, sparse_index_name=SPARSE_INDEX_NAME, doc_prefix=DOC_PREFIX):
+        """创建 BM25 全文索引（RedisSearch）。失败不阻塞主链路，BM25 是优化而非硬依赖。"""
+        index_name = sparse_index_name
+
+        # 检查索引是否存在，不存在则创建
+        try:
+            self.redis.execute_command("FT.INFO", index_name)
+            logger.info(f"BM25 索引已存在: {index_name}")
+            return
+        except redis.exceptions.ResponseError:
+            # 索引不存在，正常创建
+            pass
+        except Exception as e:
+            # Redis 未加载 RediSearch 模块 / 连接异常等，降级跳过 BM25
+            logger.warning(f"BM25 索引检查失败，跳过（不影响主链路）: {e}")
+            return
+
+        try:
+            self.redis.execute_command(
+                "FT.CREATE", index_name,   # ★ 用 index_name，不是全局 INDEX_NAME
+                "ON", "HASH",
+                "PREFIX", "1", doc_prefix,
+                "SCHEMA",
+                "content", "TEXT", "WEIGHT", "1.0",
+                "source", "TAG",
+                "category", "TAG",
+            )
+            logger.success(f"BM25 索引创建成功: {index_name}")
+        except Exception as e:
+            # 索引已被其他进程创建 / 模块异常，降级跳过
+            logger.warning(f"BM25 索引创建失败，跳过（不影响主链路）: {e}")
 
     def create_index(self, tag_field=TAG_FIELD,vector_field_name=VECTOR_FIELD_NAME,
         vector_field_algorithm = VECTOR_FIELD_ALGORITHM,

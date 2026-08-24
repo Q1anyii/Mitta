@@ -1,5 +1,7 @@
 import json
 from typing import TYPE_CHECKING, TypedDict, List, Dict, Any, Optional
+
+import redis
 from langchain_core.documents import Document
 from langchain_core.runnables.config import RunnableConfig
 from langgraph.constants import START, END
@@ -7,6 +9,8 @@ from langgraph.graph.state import StateGraph
 from langgraph.types import Send
 from loguru import logger
 from pydantic import Field, BaseModel, ConfigDict
+
+from constant.cache_constant import INDEX_NAME, DOC_PREFIX, SPARSE_INDEX_NAME
 from service.cache_service import cache_service as _cache_service
 from constant.retrieval_constants import TOP_K, DISTANCE_THRESHOLD, REWRITE_PROMPT, RRF_K
 from vector.vector_store import VectorStore
@@ -30,6 +34,7 @@ def build_retrieve_graph(vector_store: VectorStore):
         merged_docs: List[RetrievedDoc]  # 多查询召回 + RRF 融合后的候选
         reranked_docs: List[RetrievedDoc]  # 重排后的最终文档（缓存命中时为 dict 恢复的 Document）
         cache_hit: Optional[bool]
+        rank_list:  list[list[RetrievedDoc]] # 稠密向量检索结果
 
     class QueryRewriteResult(BaseModel):
         model_config = ConfigDict(populate_by_name=True)  # 关键配置
@@ -72,6 +77,54 @@ def build_retrieve_graph(vector_store: VectorStore):
             # TTL 只能查已存在 key 的剩余时间，user_id 不是 key，返回 -2 会导致 expire 异常
             cache_service.store_cache(thread_id, state["question"], state["reranked_docs"])
         return {}
+
+    def dense_query(state: RAGState) -> dict:
+        origin_query = state["question"]
+        rewritten_queries = state["rewritten_queries"]
+        all_queries = [origin_query] + list(rewritten_queries)
+        rank_list = vector_store.query(all_queries, n_results=20)
+        return {
+            "rank_list": rank_list
+        }
+
+    def bm25_search(state: RAGState, top_k: int = 20) -> dict:
+        """
+        BM25 稀疏检索，返回 [(doc_id, bm25_score), ...] 按分数降序
+        """
+
+        query = state["question"]
+        rank_list = state["rank_list"]
+
+        try:
+            # FT.SEARCH 返回格式：[总数, doc_id1, 字段dict, doc_id2, 字段dict, ...]
+            result = cache_service.redis.execute_command(
+                "FT.SEARCH", SPARSE_INDEX_NAME,
+                query,  # 查询文本，RedisSearch 自动分词
+                "NOCONTENT",  # 不返回文档内容，只返回 doc_id 和分数
+                "WITHSCORES",  # 返回 BM25 分数
+                "LIMIT", "0", str(top_k),
+            )
+        except redis.exceptions.ResponseError:
+            return []  # 索引不存在或查询异常，降级返回空
+
+
+        # 解析结果：result[0]=总数，之后每 3 个一组 [doc_id, score, ...]
+        # NOCONTENT + WITHSCORES 时每组是 [doc_id, score]
+        docs = []
+        for i in range(1, len(result), 2):
+            raw_id = result[i]  # 如 "kb:doc:01_000_a1b2c3d4"
+            doc_id = raw_id.replace(DOC_PREFIX, "")  # 去掉前缀 → "01_000_a1b2c3d4"
+            score = float(result[i + 1])
+            content = cache_service.redis.hget(raw_id, "content")
+            docs.append(RetrievedDoc(
+                id=doc_id,
+                text= content.decode("utf-8") if isinstance(content, bytes) else content,
+                distance=0.0,  # RRF 只看排名，distance 无意义，设 0
+                metadata={"source": "bm25", "bm25_score": score},
+            ))
+        return {
+            "rank_list": [rank_list, docs]
+        }
 
     def rewrite_query(state: RAGState) -> dict:
         history_text = "\n".join(
@@ -120,38 +173,70 @@ def build_retrieve_graph(vector_store: VectorStore):
             )
         ]
 
+    def dedup_by_text(docs: list[RetrievedDoc]) -> list[RetrievedDoc]:
+        """按文档正文去重，保留排名靠前的那条。"""
+        seen = set()
+        result = []
+        for d in docs:
+            # BM25 结果 text 为空，用 id 去重；向量结果用 text 去重
+            key = d.text if d.text else d.id
+            if key and key not in seen:
+                seen.add(key)
+                result.append(d)
+        return result
+
     def retrieve(state: RAGState) -> dict:
         # TOP_K 和 DISTANCE_THRESHOLD 已移至 constant/retrieval_constants.py 统一管理
-        queries = state["rewritten_queries"]
 
-        filtered_results = vector_store.query(queries, TOP_K, DISTANCE_THRESHOLD)
-        merged_docs = rrf_fusion(filtered_results)
-
+        rank_list = state["rank_list"]
+        merged_docs = rrf_fusion(rank_list)
+        merged_docs = dedup_by_text(merged_docs)
         return {"merged_docs": merged_docs}
 
+       # rerank 中把分数写回 doc（filter 的前提）
     def rerank(state: RAGState) -> dict:
         docs = state["merged_docs"]
         if not docs:
             return {"reranked_docs": []}
-
-        # 用改写后的主查询做精排，通常比原始口语问题更稳定
         query = state["rewritten_queries"][0]
-
         results = online_rerank(query, [doc.text for doc in docs], top_n=5)
-        top_docs = [docs[r["index"]] for r in results]
-
+        top_docs = []
+        for r in results:
+            doc = docs[r["index"]]
+            doc.metadata["relevance_score"] = r["relevance_score"]  # 分数落 metadata
+            top_docs.append(doc)
         return {"reranked_docs": top_docs}
+
+    def filter_node(state: RAGState) -> dict:
+        """按重排分数过滤低相关文档（relevance_score 越高越相关）。"""
+        reranked_docs = state["reranked_docs"]
+
+        # 阈值 0.15：过滤噪声，保留弱相关以上文档
+        finally_docs = [
+            doc for doc in reranked_docs
+            if doc.metadata.get("relevance_score", 0.0) >= 0.15
+        ]
+
+        if finally_docs:
+            # ✅ 返回过滤后的结果（最多 5 条）
+            return {"reranked_docs": finally_docs[:5]}
+
+        # 兜底：过滤后为空时，返回原始 top 3（宁可不准确也不返回空）
+        return {"reranked_docs": reranked_docs[:3]}                 # 空则空，不再回退
 
     def output_node(state: RAGState) -> dict:
         return {"output": state["reranked_docs"]}
 
     builder = StateGraph(state_schema=RAGState, output_schema=OutputState)
 
+    builder.add_node("dense_query", dense_query)
+    builder.add_node("bm25_search", bm25_search)
     builder.add_node("check_cache", check_cache)
     builder.add_node("store_cache", store_cache)
     builder.add_node("rewrite", rewrite_query)
     builder.add_node("retrieve", retrieve)
     builder.add_node("rerank", rerank)
+    builder.add_node("filter", filter_node)
     builder.add_node("output_node", output_node)
 
     builder.add_edge(START, "check_cache")
@@ -163,10 +248,13 @@ def build_retrieve_graph(vector_store: VectorStore):
             "miss": "rewrite",
         },
     )
-    builder.add_edge("rewrite", "retrieve")
+    builder.add_edge("rewrite", "dense_query")
+    builder.add_edge("dense_query", "bm25_search")
+    builder.add_edge("bm25_search", "retrieve")
     builder.add_edge("retrieve", "rerank")
     builder.add_edge("rerank", "store_cache")
-    builder.add_edge("rerank", "output_node")
+    builder.add_edge("rerank", "filter")
+    builder.add_edge("filter", "output_node")
     builder.add_edge("output_node", END)
 
     rerank_graph = builder.compile()

@@ -28,7 +28,7 @@ class VectorStore(Protocol):
 
     def upsert(self, ids: list[str], documents: list[str], metadatas: list[dict]) -> None: ...
 
-    def query(self, query_texts: list[str], n_results: int, distance_threshold: float) -> list[list[RetrievedDoc]]: ...
+    def query(self, query_texts: list[str], n_results: int, distance_threshold: float = None) -> list[list[RetrievedDoc]]: ...
 
     def count(self) -> int: ...
 
@@ -46,7 +46,7 @@ class ChromaVectorStore:
     def upsert(self, ids: list[str], documents: list[str], metadatas: list[dict]) -> None:
         self.collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
 
-    def query(self, query_texts: list[str], n_results: int, distance_threshold: float = DISTANCE_THRESHOLD) -> list[list[RetrievedDoc]]:
+    def query(self, query_texts: list[str], n_results: int, distance_threshold: float = None) -> list[list[RetrievedDoc]]:
         # chroma 同步阻塞调用丢线程池并发执行，避免多 query 串行拖慢检索
         with ThreadPoolExecutor(max_workers=min(max(len(query_texts), 1), 4)) as ex:
             raw_results = list(
@@ -64,8 +64,9 @@ class ChromaVectorStore:
                 res["documents"][0], res["distances"][0],
                 res["metadatas"][0], res["ids"][0],
             ):
-                if dist >= distance_threshold:
-                    continue
+                if distance_threshold:
+                    if dist > distance_threshold:
+                        continue
                 meta = dict(meta or {})  # 无元数据文档返回 None，兜底为空 dict（并拷贝避免污染原对象）
                 meta["_distance"] = dist  # 埋入元数据，用于 langsmith 调试看距离
                 retrieved.append(RetrievedDoc(text=doc_text, distance=dist, metadata=meta, id=doc_id))
@@ -161,7 +162,7 @@ class MilvusVectorStore:
         ]
         self.client.upsert(collection_name=self.collection_name, data=data)
 
-    def query(self, query_texts: list[str], n_results: int, distance_threshold: float = DISTANCE_THRESHOLD) -> list[list[RetrievedDoc]]:
+    def query(self, query_texts: list[str], n_results: int, distance_threshold: float = None) -> list[list[RetrievedDoc]]:
         # 同步实现：与 ChromaVectorStore / VectorStore 协议契约一致，
         # 调用链（retrieve_graph / tool_filter / embedding）均为同步；
         # 如需异步检索需全链路改造（AsyncMilvusClient + async 节点），见 toolsTODO 7.1
@@ -182,9 +183,10 @@ class MilvusVectorStore:
             retrieved: list[RetrievedDoc] = []
             for hit in hits_per_query:
                 distance = 1 - hit["distance"]  # ② COSINE similarity → 统一距离语义
-                if distance >= distance_threshold:
-                    continue
                 meta = hit["entity"].get("metadata")
+                if distance_threshold:
+                    if distance > distance_threshold:
+                        continue
                 if isinstance(meta, str):
                     meta = json.loads(meta or "{}")  # ③ JSON 字符串归一为 dict
                 meta = dict(meta or {})

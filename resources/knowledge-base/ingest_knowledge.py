@@ -10,9 +10,15 @@
 - 入库会调用 embedding API，产生一定费用
 - 重复入库会更新已有文档（基于内容哈希去重）
 """
-
+import hashlib
 import sys
 from pathlib import Path
+
+from config import load_vector_db_config
+from service.cache_service import cache_service
+from constant.cache_constant import DOC_PREFIX
+from vector.embedding import meta_to_dict
+from vector.vector_store import create_vector_store
 
 # 确保 src 目录在 Python 路径中
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -49,33 +55,85 @@ QA_CATEGORY_MAP = {
 }
 
 
-def get_category(file_path: Path) -> str:
-    """根据文件路径确定 category。"""
+def get_category(file_path: Path) -> tuple[str, str]:
+    """根据文件路径确定 (category, base_id)。"""
     # ragas_test-qa 子目录
     if "ragas_test-qa" in file_path.parts:
         prefix = file_path.stem.split("-")[0]
-        return QA_CATEGORY_MAP.get(prefix, "test_qa")
+        return QA_CATEGORY_MAP.get(prefix, "test_qa"), prefix
 
     # 根目录文件
     prefix = file_path.stem.split("-")[0]
-    return CATEGORY_MAP.get(prefix, "knowledge_base")
+    return CATEGORY_MAP.get(prefix, "knowledge_base"), prefix
+
+def _make_doc_id(base_id: str, chunk_index: int, text: str) -> str:
+    """生成 chunk 级唯一 doc_id，与 Milvus 主键一致。"""
+    text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
+    return f"{base_id}_{chunk_index:03d}_{text_hash}"
+
+def index_document(doc_id: str, content: str, source: str = ""):
+
+    """写入一条文档到 RedisSearch，doc_id 与 Milvus 中的主键一致"""
+    key = f"{DOC_PREFIX}{doc_id}"
+    cache_service.redis.hset(key, mapping={
+        "content": content,   # 文档正文（BM25 索引字段）
+        "source": source,     # 来源文件名（TAG 过滤字段）
+    })
 
 
-def ingest_file(processor, file_path: Path) -> int:
-    """入库单个文件，返回写入的文档条数。"""
+def ingest_file(processor, file_path: Path, vector_store) -> int:
+    """
+    入库单个文件，返回写入的文档条数。
+
+    同时写入：
+    - Milvus：向量检索（稠密）
+    - RedisSearch：BM25 全文检索（稀疏）
+    两者用相同的 doc_id 对齐，RRF 融合时靠 id 匹配。
+    """
     from vector.embedding import Meta
 
-    category = get_category(file_path)
+    category, base_id = get_category(file_path)
     source = "knowledge_base"
     meta = Meta(source=source, category=category)
 
-    try:
-        count = processor.embed(file_path, meta)
-        logger.success(f"[OK] {file_path.name} -> category={category}, 共 {count} 条")
-        return count
-    except Exception as e:
-        logger.error(f"[FAIL] {file_path.name} 入库失败: {e}")
+    # ---- Step 1：切分文件 ----
+    chunks = processor.split_docs(str(file_path))  # 返回 List[Document]，每个有 .page_content
+
+    if not chunks:
         return 0
+
+    # ---- Step 2：遍历 chunks，构建三个列表（与 Milvus upsert 接口对齐）----
+    ids: list[str] = []
+    documents: list[str] = []   # ★ 这就是 content
+    metadatas: list[dict] = []
+
+    for idx, chunk in enumerate(chunks):
+        # ★ content = chunk.page_content
+        content = chunk.page_content.strip()
+        if not content:
+            continue
+
+        # 生成与 Milvus 一致的 doc_id
+        doc_id = _make_doc_id(base_id, idx, content)
+
+        ids.append(doc_id)
+        documents.append(content)
+        metadatas.append(meta_to_dict(meta))
+
+    if not ids:
+        return 0
+
+    # ---- Step 3：批量写入 Milvus（向量检索）----
+    vector_store.upsert(ids, documents, metadatas)
+
+    # ---- Step 4：批量写入 RedisSearch（BM25 全文索引）----
+    # cache_service 本身没有 pipeline，底层 redis 客户端才有
+    pipe = cache_service.redis.pipeline()
+    for doc_id, content in zip(ids, documents):
+        pipe.hset(f"{DOC_PREFIX}{doc_id}", mapping={"content": content, "source": source})
+    pipe.execute()
+
+    return len(ids)
 
 
 def main():
@@ -108,9 +166,13 @@ def main():
     success_count = 0
     fail_count = 0
 
+    from vector import vector_store
+    vector_store = create_vector_store(load_vector_db_config())
+
     for i, file_path in enumerate(md_files, 1):
         logger.info(f"[{i}/{len(md_files)}] 处理: {file_path.name}")
-        count = ingest_file(processor, file_path)
+
+        count = ingest_file(processor, file_path , vector_store=vector_store)
         if count > 0:
             total_docs += count
             success_count += 1

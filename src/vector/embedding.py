@@ -37,6 +37,12 @@ def compute_doc_hash_with_meta(docs: list[Document]) -> list[str]:
         ids.append(hashlib.sha256(raw.encode("utf‑8")).hexdigest())
     return ids
 
+def meta_to_dict(meta : Meta):
+    return {
+        "source": meta.source,
+        "category": meta.category
+    }
+
 
 """
 EmbeddingProcessor（类）

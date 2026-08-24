@@ -12,6 +12,9 @@ VECTOR_ATTRIBUTE = {
     "DISTANCE_METRIC": "COSINE"   # 距离度量：COSINE / L2 / IP
 }
 
+SPARSE_INDEX_NAME = "kb_bm25"
+DOC_PREFIX = "kb:doc:"  # 文档 key 前缀
+
 INDEX_NAME = "idx:retrieve_cache"
 KEY_PREFIX = "retrieve_cache:"
 

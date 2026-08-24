@@ -57,7 +57,7 @@ from init import model, online_rerank
 # 配置
 # ============================================================
 PROJECT_ROOT = SRC_DIR.parent
-DATASET_PATH = PROJECT_ROOT / "resources" / "knowledge-base" / "ragas_test-qa" / "eval_dataset.json"
+DATASET_PATH = PROJECT_ROOT / "resources" / "knowledge-base" / "test-qa" / "eval_dataset.json"
 REPORT_CSV = SRC_DIR / "ragas_test" / "ragas_report.csv"
 SUMMARY_JSON = SRC_DIR / "ragas_test" / "ragas_summary.json"
 
@@ -189,7 +189,7 @@ def main():
     args = parser.parse_args()
 
     # 1. 加载测试集
-    test_data = load_test_dataset(limit=10, category=args.category)
+    test_data = load_test_dataset(limit=3, category=args.category)
     if not test_data:
         logger.error("测试集为空，退出")
         return
@@ -241,8 +241,8 @@ def main():
     # 评判用 flash 模型：评分任务不需要 pro 级别推理，flash 快 3-5 倍
     ragas_llm = ChatOpenAI(
         model="deepseek-v4-flash",
-        base_url="https://tokenhub.tencentmaas.com/v1",
-        api_key=os.getenv("HUNYUAN_API_KEY"),
+        base_url="https://api.deepseek.com",
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
         request_timeout=120,
         max_retries=3,
         # ★ 核心修复：禁用 thinking，避免 n 参数冲突
