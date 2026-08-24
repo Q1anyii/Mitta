@@ -95,33 +95,44 @@ def build_retrieve_graph(vector_store: VectorStore):
         query = state["question"]
         rank_list = state["rank_list"]
 
+        # RedisSearch 查询语法中 : ( ) - @ 等是特殊字符，中文问句直接传会 Syntax error。
+        # 用 jieba 分词后空格拼接，去除标点和特殊字符。
+        import jieba
+        tokens = [t.strip() for t in jieba.lcut(query) if t.strip() and len(t.strip()) > 1]
+        safe_query = " ".join(tokens) if tokens else query
+
         try:
-            # FT.SEARCH 返回格式：[总数, doc_id1, 字段dict, doc_id2, 字段dict, ...]
             result = cache_service.redis.execute_command(
                 "FT.SEARCH", SPARSE_INDEX_NAME,
-                query,  # 查询文本，RedisSearch 自动分词
-                "NOCONTENT",  # 不返回文档内容，只返回 doc_id 和分数
-                "WITHSCORES",  # 返回 BM25 分数
+                safe_query,
+                "NOCONTENT",
+                "WITHSCORES",
                 "LIMIT", "0", str(top_k),
             )
-        except redis.exceptions.ResponseError:
+        except Exception:
             return []  # 索引不存在或查询异常，降级返回空
 
+        if not isinstance(result, (list, tuple)) or len(result) < 2:
+            return {"rank_list": [rank_list, []]}
 
-        # 解析结果：result[0]=总数，之后每 3 个一组 [doc_id, score, ...]
-        # NOCONTENT + WITHSCORES 时每组是 [doc_id, score]
         docs = []
-        for i in range(1, len(result), 2):
-            raw_id = result[i]  # 如 "kb:doc:01_000_a1b2c3d4"
-            doc_id = raw_id.replace(DOC_PREFIX, "")  # 去掉前缀 → "01_000_a1b2c3d4"
-            score = float(result[i + 1])
-            content = cache_service.redis.hget(raw_id, "content")
-            docs.append(RetrievedDoc(
-                id=doc_id,
-                text= content.decode("utf-8") if isinstance(content, bytes) else content,
-                distance=0.0,  # RRF 只看排名，distance 无意义，设 0
-                metadata={"source": "bm25", "bm25_score": score},
-            ))
+        for i in range(1, len(result) - 1, 2):
+            try:
+                raw_id = result[i]
+                if isinstance(raw_id, bytes):
+                    raw_id = raw_id.decode("utf-8")
+                doc_id = raw_id.replace(DOC_PREFIX, "")
+                score = float(result[i + 1])
+                content = cache_service.redis.hget(raw_id, "content")
+                text = content.decode("utf-8") if isinstance(content, bytes) else (content or "")
+                docs.append(RetrievedDoc(
+                    id=doc_id,
+                    text=text,
+                    distance=0.0,
+                    metadata={"source": "bm25", "bm25_score": score},
+                ))
+            except Exception:
+                continue
         return {
             "rank_list": [rank_list, docs]
         }
@@ -211,10 +222,10 @@ def build_retrieve_graph(vector_store: VectorStore):
         """按重排分数过滤低相关文档（relevance_score 越高越相关）。"""
         reranked_docs = state["reranked_docs"]
 
-        # 阈值 0.15：过滤噪声，保留弱相关以上文档
+        # 阈值 0.3：过滤噪声，保留中等相关以上文档
         finally_docs = [
             doc for doc in reranked_docs
-            if doc.metadata.get("relevance_score", 0.0) >= 0.15
+            if doc.metadata.get("relevance_score", 0.0) >= 0.3
         ]
 
         if finally_docs:

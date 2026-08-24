@@ -1,21 +1,30 @@
 {
   "config": {
     "limit": 50,
-    "threshold": 0.5,
-    "top_k": 5
+    "n_results": 20,
+    "filter_threshold": 0.15,
+    "category": null
   },
   "single_path": {
-    "avg_recall": 0.7016666666666667,
-    "median_recall": 0.7083333333333333,
-    "avg_latency_ms": 139.7106199998234,
-    "p95_latency_ms": 231.89580499947635,
+    "avg_recall": 0.6837,
+    "median_recall": 0.7113,
+    "avg_latency_ms": 163.1,
+    "p95_latency_ms": 216.9,
+    "p99_latency_ms": 1109.1,
     "zero_result_ratio": 0.0
   },
-  "pipeline": {
-    "avg_recall": 0.7016666666666667,
-    "median_recall": 0.7083333333333333,
-    "avg_latency_ms": 4913.877289999618,
-    "p95_latency_ms": 9010.852470000562,
-    "zero_result_ratio": 0.0
+  "hybrid_pipeline": {
+    "avg_recall": 0.6553,
+    "median_recall": 0.7732,
+    "avg_latency_ms": 4651.7,
+    "p95_latency_ms": 10754.8,
+    "p99_latency_ms": 13804.8,
+    "zero_result_ratio": 0.0,
+    "stage_breakdown_ms": {
+      "rewrite": 4004.7,
+      "dense_retrieve": 153.4,
+      "bm25": 19.3,
+      "rerank": 474.2
+    }
   }
 }

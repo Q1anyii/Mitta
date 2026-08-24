@@ -25,7 +25,7 @@
 | 语言/环境     | Python 3.13                                                                                      |
 | Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）                       |
 | LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                                        |
-| 大模型       | deepseek-v4-flash 主模型 + hy-mt2-plus 工具筛选，OpenAI 兼容协议                                             |
+| 大模型       | DeepSeek V3（deepseek-chat），OpenAI 兼容协议                                             |
 | Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                                |
 | 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                                       |
 | 向量库       | Milvus（默认）/ ChromaDB（可插拔，Protocol 抽象，零业务改动切换）                                                    |
@@ -320,7 +320,7 @@ cp .env.example .env
 
 | 变量                    | 说明                                 |
 | --------------------- | ---------------------------------- |
-| `HUNYUAN_API_KEY`     | 腾讯混元 API 密钥（主模型 + 工具筛选模型）          |
+| `DEEPSEEK_API_KEY`    | DeepSeek API 密钥（主模型 + RAGAS 评判）              |
 | `SILICONFLOW_API_KEY` | 硅基流动 API 密钥（Embedding + 重排）        |
 | `POSTGRESQL_DB_URL`   | PostgreSQL 连接串（Checkpointer/Store） |
 | `MYSQL_DB_URL`        | MySQL 连接串（用户表）                     |

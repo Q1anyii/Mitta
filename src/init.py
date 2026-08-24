@@ -16,17 +16,17 @@ from constant.embedding_constants import COLLECTION_NAME
 load_dotenv(override=True)
 
 model = init_chat_model(
-    model="deepseek-v4-flash",  # 指定混元模型，如 hunyuan-turbos-latest[reference:4]
-    model_provider="openai",  # 关键：使用 OpenAI 兼容模式
-    api_key=os.getenv("DEEPSEEK_API_KEY"),  # 你的混元 API Key
-    base_url="https://api.deepseek.com",  # 混元的 Base URL[reference:5]
+    model="deepseek-v4-flash",
+    model_provider="openai",
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com",
 )
 
 selector_llm = init_chat_model(
-    model="deepseek-v4-flash",  # 指定混元模型，如 hunyuan-turbos-latest[reference:4]
-    model_provider="openai",  # 关键：使用 OpenAI 兼容模式
-    api_key=os.getenv("DEEPSEEK_API_KEY"),  # 你的混元 API Key
-    base_url="https://api.deepseek.com",  # 混元的 Base URL[reference:5]
+    model="deepseek-v4-flash",
+    model_provider="openai",
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com",
 )
 
 embed_model = OpenAIEmbeddings(

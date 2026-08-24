@@ -33,7 +33,7 @@ REQUIRED_ENV_VARS = [
 
 # 可选环境变量及默认值：(变量名, 默认值, 说明)
 OPTIONAL_ENV_VARS = [
-    ("MODEL_NAME", "deepseek:deepseek-v4-flash", "模型名称"),
+    ("MODEL_NAME", "deepseek:deepseek-chat", "模型名称"),
     ("BASE_URL", "https://api.deepseek.com", "DeepSeek 接口地址"),
     ("JWT_ALGORITHM", "HS256", "JWT 签名算法"),
     ("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15", "access token 有效期（分钟）"),

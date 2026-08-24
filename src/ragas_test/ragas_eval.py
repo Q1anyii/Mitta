@@ -40,17 +40,19 @@ from loguru import logger
 from ragas import evaluate
 from ragas.metrics import (
     answer_correctness,
-    answer_relevancy,
-    context_precision,
+    ContextPrecision,
     context_recall,
     faithfulness,
+    AnswerRelevancy,
 )
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from config import load_vector_db_config
 from constant.retrieval_constants import TOP_K, RRF_K, REWRITE_PROMPT
+from constant.cache_constant import SPARSE_INDEX_NAME, DOC_PREFIX
 from vector.vector_store import create_vector_store, RetrievedDoc
 from init import model, online_rerank
+from service.cache_service import cache_service
 
 
 # ============================================================
@@ -141,37 +143,94 @@ def rrf_fusion(results: list[list[RetrievedDoc]], k: int = RRF_K) -> list[Retrie
     return [item["doc"] for item in sorted(scores.values(), key=lambda x: x["score"], reverse=True)]
 
 
+def bm25_search(query: str, top_k: int = 20) -> list[RetrievedDoc]:
+    """BM25 稀疏检索（RedisSearch），jieba 分词避免特殊字符语法错误。"""
+    import jieba
+    tokens = [t.strip() for t in jieba.lcut(query) if t.strip() and len(t.strip()) > 1]
+    safe_query = " ".join(tokens) if tokens else query
+    try:
+        result = cache_service.redis.execute_command(
+            "FT.SEARCH", SPARSE_INDEX_NAME,
+            safe_query, "NOCONTENT", "WITHSCORES",
+            "LIMIT", "0", str(top_k),
+        )
+    except Exception as e:
+        logger.warning(f"  BM25 检索失败，降级为空: {e}")
+        return []
+    if not isinstance(result, (list, tuple)) or len(result) < 2:
+        return []
+    docs = []
+    for i in range(1, len(result) - 1, 2):
+        try:
+            raw_id = result[i]
+            if isinstance(raw_id, bytes):
+                raw_id = raw_id.decode("utf-8")
+            doc_id = raw_id.replace(DOC_PREFIX, "")
+            score = float(result[i + 1])
+            content = cache_service.redis.hget(raw_id, "content")
+            text = content.decode("utf-8") if isinstance(content, bytes) else (content or "")
+            docs.append(RetrievedDoc(id=doc_id, text=text, distance=0.0,
+                                     metadata={"source": "bm25", "bm25_score": score}))
+        except Exception:
+            continue
+    return docs
+
+
+def dedup_by_text(docs: list[RetrievedDoc]) -> list[RetrievedDoc]:
+    """按文档正文去重，保留排名靠前的。"""
+    seen = set()
+    result = []
+    for d in docs:
+        key = d.text if d.text else d.id
+        if key and key not in seen:
+            seen.add(key)
+            result.append(d)
+    return result
+
+
 def run_rag(vector_store, question: str, threshold: float) -> tuple[str, list[str]]:
-    """对单个问题执行 改写→检索→RRF→重排→生成，返回 (answer, contexts)。"""
+    """对单个问题执行 改写→稠密多路+BM25→RRF→重排→过滤→生成，返回 (answer, contexts)。"""
     # 1. Query 改写
     queries = rewrite_queries(question)
 
-    # 2. 多查询向量检索（评估时用更宽松的阈值）
-    filtered_results = vector_store.query(queries, TOP_K, distance_threshold=threshold)
-    total_raw = sum(len(r) for r in filtered_results)
-    logger.info(f"  检索: {len(queries)} 查询, 原始命中 {total_raw} 段 (threshold={threshold})")
+    # 2. 稠密向量多路检索（不过滤距离，bge-m3 相关文档距离偏高）
+    dense_results = vector_store.query(queries, n_results=20)
+    total_dense = sum(len(r) for r in dense_results)
 
-    # 3. RRF 融合
-    merged_docs = rrf_fusion(filtered_results)
+    # 3. BM25 稀疏检索
+    bm25_docs = bm25_search(question, top_k=20)
+    logger.info(f"  检索: {len(queries)} 路稠密={total_dense}段, BM25={len(bm25_docs)}段")
+
+    # 4. RRF 融合 + 去重
+    rank_lists = dense_results + [bm25_docs]
+    merged_docs = dedup_by_text(rrf_fusion(rank_lists))
     logger.info(f"  RRF 融合后: {len(merged_docs)} 段")
 
-    # 4. 在线重排
+    # 5. 在线重排 + 分数过滤
     contexts = []
     if merged_docs:
         try:
-            rerank_results = online_rerank(queries[0], [doc.text for doc in merged_docs], top_n=10)
-            top_docs = [merged_docs[r["index"]] for r in rerank_results]
-            contexts = [doc.text for doc in top_docs]
-            logger.info(f"  重排后: {len(contexts)} 段")
+            rerank_results = online_rerank(queries[0], [doc.text for doc in merged_docs], top_n=5)
+            top_docs = []
+            for r in rerank_results:
+                doc = merged_docs[r["index"]]
+                doc.metadata["relevance_score"] = r["relevance_score"]
+                top_docs.append(doc)
+            # 过滤低分噪声（≥0.15），空则兜底 top3
+            filtered = [d for d in top_docs if d.metadata.get("relevance_score", 0) >= 0.15]
+            final_docs = filtered if filtered else top_docs[:3]
+            contexts = [doc.text for doc in final_docs]
+            scores = [f"{d.metadata.get('relevance_score', 0):.3f}" for d in final_docs]
+            logger.info(f"  重排后: {len(contexts)} 段, scores={scores}")
         except Exception as e:
             logger.warning(f"  重排失败，用融合结果: {e}")
-            contexts = [doc.text for doc in merged_docs[:10]]
+            contexts = [doc.text for doc in merged_docs[:5]]
 
-    # 5. 生成答案
+    # 6. 生成答案
     context_text = "\n\n".join(contexts) if contexts else "（未检索到相关内容）"
     prompt = (
         "你是 Mitta，一位智能 AI 助理。请严格基于以下检索到的知识库内容回答问题，"
-        "不要编造知识库中没有的信息。如果知识库内容不足以回答问题，请明确告知。\n\n"
+        "直接给出答案，不要说'知识库中未说明'之类的话。\n\n"
         f"【知识库内容】\n{context_text}\n\n"
         f"【问题】\n{question}"
     )
@@ -194,10 +253,15 @@ def main():
         logger.error("测试集为空，退出")
         return
 
-    # 2. 构建向量库连接
+    # 2. 构建向量库连接 + RedisSearch（BM25）
     cfg = load_vector_db_config()
     vector_store = create_vector_store(cfg)
-    logger.info(f"向量库: {cfg.get('type')}, 集合: {cfg.get('collection')}, 阈值: {args.threshold}")
+    try:
+        cache_service.open()
+        logger.info(f"向量库: {cfg.get('type')}, 集合: {cfg.get('collection')}, BM25 索引就绪")
+    except Exception as e:
+        logger.warning(f"cache_service 初始化失败，BM25 路将降级: {e}")
+        logger.info(f"向量库: {cfg.get('type')}, 集合: {cfg.get('collection')}")
 
     # 3. 逐条执行 RAG，收集结果
     results = []
@@ -236,17 +300,14 @@ def main():
             })
 
     # 4. 配置 RAGAS 评判 LLM 和 Embedding
-    # 注意：必须与 init.py 中的模型配置一致（腾讯混元代理），
-    # 不能用 .env 的 BASE_URL（DeepSeek 官方地址）+ HUNYUAN_API_KEY，会 401
-    # 评判用 flash 模型：评分任务不需要 pro 级别推理，flash 快 3-5 倍
+    # RAGAS 评判 LLM：DeepSeek 官方地址
     ragas_llm = ChatOpenAI(
         model="deepseek-v4-flash",
         base_url="https://api.deepseek.com",
         api_key=os.getenv("DEEPSEEK_API_KEY"),
         request_timeout=120,
         max_retries=3,
-        # ★ 核心修复：禁用 thinking，避免 n 参数冲突
-        extra_body={"enable_thinking": False},
+        temperature=0.1,
     )
     ragas_embeddings = OpenAIEmbeddings(
         model="BAAI/bge-m3",
@@ -254,7 +315,7 @@ def main():
         api_key=os.getenv("SILICONFLOW_API_KEY"),
     )
 
-    # 降低 RAGAS 并发数，避免腾讯混元 API 限流/超时
+    # 降低 RAGAS 并发数，避免 API 限流/超时
     os.environ["RAGAS_MAX_CONCURRENCY"] = "2"
 
     # 5. 运行 RAGAS 评估（timeout=120 秒/指标，max_workers=2 降低并发）
@@ -262,13 +323,18 @@ def main():
     dataset = Dataset.from_list(results)
     logger.info("开始 RAGAS 评分（可能需要几分钟）...")
 
+    # strictness=1 强制 n=1（AnswerRelevancy 默认 strictness=3 会传 n=3，API 不支持）
+    # ContextPrecision 不接受 strictness 参数（其内部 generate_multiple 默认 n=1）
+    cp = ContextPrecision()
+    ar = AnswerRelevancy(strictness=1)
+
     score = evaluate(
         dataset,
         metrics=[
-            context_precision,
+            cp,
             context_recall,
             faithfulness,
-            answer_relevancy,
+            ar,
             answer_correctness,
         ],
         llm=ragas_llm,
