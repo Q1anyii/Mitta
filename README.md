@@ -440,6 +440,10 @@ MCP 工具通过 `langchain_mcp_adapters` 加载为 async 工具，闭包捕获�
 
 ### 节点级缓存（LangGraph CachePolicy + Redis）
 
+注：retrieve_noe和tool_node缓存已删除，原因：
+  1.子图retrieve_graph内置缓存机制，外层设置缓存目的减少一次子图创建，但后续可把子图缓存机制抽出
+  2.tool_node的缓存key不带tool_call_id，若缓存复用影响ToolMessage导致工具调用失败
+
 LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结果按 TTL 缓存到 Redis：
 
 | 节点            | 缓存键                                    | TTL | 策略                |
