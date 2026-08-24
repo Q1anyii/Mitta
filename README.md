@@ -5,7 +5,7 @@
 ## 功能特性
 
 - **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
-- **RAG 增强检索**：查询改写（主查询 + 子查询 + 关键词）→ 多路向量召回 → RRF 融合 → SiliconFlow 在线重排
+- **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回（Milvus）+ BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
 - **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、git、fetch、sqlite、sequential-thinking、memory 等外部工具；工具常驻事件循环，支持故障降级
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
 - **双通道记忆**：
@@ -25,12 +25,12 @@
 | 语言/环境     | Python 3.13                                                                                      |
 | Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）                       |
 | LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                                        |
-| 大模型       | 腾讯混元（deepseek-v4-flash 主模型 + hy-mt2-plus 工具筛选），OpenAI 兼容协议                                       |
+| 大模型       | deepseek-v4-flash 主模型 + hy-mt2-plus 工具筛选，OpenAI 兼容协议                                             |
 | Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                                |
 | 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                                       |
 | 向量库       | Milvus（默认）/ ChromaDB（可插拔，Protocol 抽象，零业务改动切换）                                                    |
 | 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store）+ MySQL 8.0（用户表 userInfo / user_profile / user_files） |
-| 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数）                                                       |
+| 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                               |
 | MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                   |
 | Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                                      |
 | 前端        | Vue 3（CDN 单文件 SPA）+ 原生 CSS 多主题                                                                   |
@@ -62,7 +62,7 @@ flowchart TD
     ROUTE_LLM -->|No| MEMORY[memory_node]
 
     TOOL -->|工具执行结果 ToolMessage| LLM
- 
+
 
     MEMORY -->|idle 闲聊轮快速跳过executed/unavailable 轮LLM 提取记忆写入 Store| END_NODE([END])
 
@@ -101,59 +101,79 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    START([START]) --> CHECK_CACHE[check_cacheRedis 缓存检查]
+    START([START]) --> CHECK_CACHE[check_cache<br/>Redis 检索缓存检查]
 
     CHECK_CACHE --> CACHE_HIT{缓存命中?}
 
-    CACHE_HIT -->|命中| RETURN_CACHE[直接返回缓存文档reranked_docs]
-    CACHE_HIT -->|未命中| REWRITE[rewrite_nodeLLM 查询改写]
+    CACHE_HIT -->|命中| OUTPUT[output_node<br/>返回缓存文档]
+    CACHE_HIT -->|未命中| REWRITE[rewrite<br/>LLM 查询改写]
 
-    REWRITE -->|主查询 + 子查询 +关键词| RETRIEVE[retrieve_node多路向量召回]
+    REWRITE -->|主查询 + 子查询| DENSE[dense_query<br/>稠密向量多路召回<br/>Milvus n_results=20]
 
-    RETRIEVE -->|每个查询独立向量检索Top-K=5 / 距离阈值=0.3| RRF[RRF 融合Reciprocal Rank Fusion]
+    DENSE --> BM25[bm25_search<br/>BM25 稀疏检索<br/>RedisSearch top_k=20]
 
-    RRF -->|多查询结果去重融合k=60 排名权重衰减| RERANK[rerank_node在线重排]
+    BM25 --> RETRIEVE[retrieve<br/>RRF 融合 + 文本去重]
 
-    RERANK -->|SiliconFlow bge-reranker-v2-m3按相关性降序| CACHE_WRITE[写入 Redis 缓存]
+    RETRIEVE --> RERANK[rerank<br/>在线重排 top_n=5<br/>relevance_score 落 metadata]
 
-    CACHE_WRITE --> RETURN[返回 Top-K 文档output: List Document]
-    RETURN_CACHE --> RETURN
-    RETURN --> END_NODE([END])
+    RERANK --> STORE_CACHE[store_cache<br/>写入 Redis 缓存]
+    RERANK --> FILTER[filter<br/>相关性阈值过滤 ≥0.15]
+
+    FILTER --> OUTPUT
+    OUTPUT --> END_NODE([END])
 
     classDef llmNode fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b
     classDef vectorNode fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20
+    classDef sparseNode fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
     classDef cacheNode fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
     classDef decision fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#f57f17
     classDef terminal fill:#fce4ec,stroke:#c62828,stroke-width:2px,color:#b71c1c
 
     class REWRITE,RERANK llmNode
-    class RETRIEVE,RRF vectorNode
-    class CHECK_CACHE,CACHE_WRITE,RETURN_CACHE cacheNode
+    class DENSE,RETRIEVE vectorNode
+    class BM25 sparseNode
+    class CHECK_CACHE,STORE_CACHE cacheNode
+    class FILTER decision
     class CACHE_HIT decision
-    class START,END_NODE,RETURN terminal
+    class START,END_NODE,OUTPUT terminal
 ```
 
 ### 节点说明
 
-| 节点                | 职责           | 关键实现                                                               |
-| ----------------- | ------------ | ------------------------------------------------------------------ |
-| **check_cache**   | Redis 检索缓存检查 | `cache_service.query_cache(thread_id, question)`，LSH 快速过滤 + 向量重排验证 |
-| **rewrite_node**  | LLM 查询改写     | 输出 JSON：`{主查询, 子查询[], 关键词[]}`，解决多轮指代问题                             |
-| **retrieve_node** | 多路向量召回       | 每个改写查询独立检索 Milvus/ChromaDB，Top-K=5，cosine distance < 0.3           |
-| **RRF 融合**        | 多查询结果融合      | Reciprocal Rank Fusion（k=60），按排名融合去重，避免单查询偏差                       |
-| **rerank_node**   | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 Top-N  |
-| **cache_write**   | 写入 Redis     | 缓存键 `retrieve_cache:{thread_id}:{bucket_id}`，TTL=900 秒             |
+| 节点              | 职责           | 关键实现                                                                                                       |
+| --------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| **check_cache** | Redis 检索缓存检查 | `cache_service.query_cache(thread_id, question)`，LSH 快速过滤 + 向量重排验证                                         |
+| **rewrite**     | LLM 查询改写     | 输出 JSON：`{主查询, 子查询[], 关键词[]}`，解决多轮指代问题                                                                     |
+| **dense_query** | 稠密向量多路召回     | 原始 query + 改写 query 独立检索 Milvus，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                               |
+| **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
+| **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
+| **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=5，分数写入 `doc.metadata["relevance_score"]` |
+| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.15` 的噪声文档；过滤后为空时兜底返回 top 3                                                         |
+| **store_cache** | 写入 Redis     | 缓存键 `retrieve_cache:{thread_id}:{bucket_id}`，动态 TTL，命中自动续期                                                 |
 
 ### 关键参数
 
-| 参数                 | 值                       | 位置                                |
-| ------------------ | ----------------------- | --------------------------------- |
-| TOP_K              | 5                       | `constant/retrieval_constants.py` |
-| DISTANCE_THRESHOLD | 0.3（cosine distance）    | `constant/retrieval_constants.py` |
-| RRF_K              | 60                      | `constant/retrieval_constants.py` |
-| 缓存 TTL             | 900 秒                   | `constant/cache_constant.py`      |
-| Embedding 模型       | BAAI/bge-m3（1024 维）     | `constant/embedding_constants.py` |
-| 重排模型               | BAAI/bge-reranker-v2-m3 | `init.py`                         |
+| 参数             | 值                       | 位置                                     |
+| -------------- | ----------------------- | -------------------------------------- |
+| 稠密召回 n_results | 20                      | `graphs/retrieve_graph.py` dense_query |
+| BM25 召回 top_k  | 20                      | `graphs/retrieve_graph.py` bm25_search |
+| RRF_K          | 60                      | `constant/retrieval_constants.py`      |
+| 重排 top_n       | 5                       | `graphs/retrieve_graph.py` rerank      |
+| 过滤阈值           | 0.15（relevance_score）   | `graphs/retrieve_graph.py` filter_node |
+| 缓存 TTL         | 动态（默认 900s，命中续期）        | `constant/cache_constant.py`           |
+| Embedding 模型   | BAAI/bge-m3（1024 维）     | `constant/embedding_constants.py`      |
+| 重排模型           | BAAI/bge-reranker-v2-m3 | `init.py`                              |
+| BM25 索引名       | kb_bm25                 | `constant/cache_constant.py`           |
+
+### 混合检索设计思路
+
+bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似度仅 0.4-0.6，排名 100+），而 BM25 对精确术语命中极高。两路互补：
+
+- **稠密向量**：擅长语义相似（"如何避免默认参数陷阱" ≈ "可变默认参数的危害"）
+- **BM25**：擅长精确关键词匹配（"可变默认参数""bcrypt""WebSocket" 直接命中）
+- **RRF 融合**：只看排名不看绝对分数，统一两路量纲差异
+- **rerank 精排**：交叉编码器对 query-doc 对做注意力计算，最终排序依据
+- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.15 以下视为噪声丢弃
 
 ### 工具筛选机制
 
@@ -165,13 +185,14 @@ flowchart TD
 
 ### 记忆体系
 
-| 类型   | 存储                      | 隔离维度              | 生命周期                        |
-| ---- | ----------------------- | ----------------- | --------------------------- |
-| 短期记忆 | PostgreSQL Checkpointer | thread_id         | 会话级，可恢复                     |
-| 长期记忆 | PostgreSQL Store        | user_id           | 跨会话持久                       |
-| 节点缓存 | Redis                   | 输入哈希              | TTL 10~900 秒                |
-| 检索缓存 | Redis + LSH             | thread_id + query | TTL 900 秒                   |
-| 登录态  | Redis                   | user_id           | access 15 分钟 / refresh 30 天 |
+| 类型      | 存储                      | 隔离维度              | 生命周期                        |
+| ------- | ----------------------- | ----------------- | --------------------------- |
+| 短期记忆    | PostgreSQL Checkpointer | thread_id         | 会话级，可恢复                     |
+| 长期记忆    | PostgreSQL Store        | user_id           | 跨会话持久                       |
+| 节点缓存    | Redis                   | 输入哈希              | TTL 10~900 秒                |
+| 检索缓存    | Redis + LSH             | thread_id + query | TTL 900 秒                   |
+| BM25 索引 | RedisSearch HASH        | doc_id            | 持久化，知识库重建时重建                |
+| 登录态     | Redis                   | user_id           | access 15 分钟 / refresh 30 天 |
 
 ## 目录结构
 
@@ -201,6 +222,17 @@ AgentProject/
 │   │       └── agent_server.py           # 内置 FastMCP 服务器（chat/get_user/summarize）
 │   ├── middleware/
 │   │   └── rate_limit_middleware.py      # 基于 Redis 的请求限流中间件
+│   ├── ragas_test/                       # RAGAS 评估与性能测试脚本
+│   │   ├── ragas_eval.py                 # RAGAS 五项指标评估（context_precision/recall/faithfulness/answer_relevancy/correctness）
+│   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（单路 vs 三级流水线对比）
+│   │   ├── eval_cache.py                 # 缓存命中率/Embedding 调用降低/污染率评估
+│   │   ├── eval_cache_ttl.py             # 固定 TTL vs 动态 TTL 命中率对比
+│   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估
+│   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测
+│   │   ├── eval_jwt.py                   # JWT 登录态校验耗时/token 自动续签成功率
+│   │   ├── eval_sse.py                   # SSE 首 token 延迟/流纯净度评估
+│   │   ├── evaluate_tool_filter.py       # 工具筛选规则层+语义层准确率评估
+│   │   └── *_report.json/csv             # 各评估脚本输出的报告
 │   ├── routers/                          # FastAPI 路由（按模块拆分）
 │   │   ├── deps.py                       # 公共依赖（require_self_or_admin）
 │   │   ├── auth_router.py                # 登录/注册/密码找回
@@ -245,9 +277,9 @@ AgentProject/
 │   ├── system_prompt/
 │   │   └── default_system_prompt.txt     # 默认 System Prompt（Mitta 角色设定）
 │   ├── knowledge-base/                   # 编程知识库（Markdown）
-│   │   ├── ingest_knowledge.py           # 知识库入库脚本
+│   │   ├── ingest_knowledge.py           # 知识库入库脚本（Milvus 向量 + RedisSearch BM25 双写）
 │   │   ├── 01~10-*.md                    # 分类知识文档
-│   │   └── test-qa/                      # 测试 QA 集
+│   │   └── test-qa/                      # 测试 QA 集（eval_dataset.json）
 │   ├── FAQ/                              # 在线学习平台 FAQ 知识库
 │   └── chroma_db/                        # ChromaDB 持久化目录（Milvus 模式下不用）
 ├── tests/                                # 单元测试
@@ -355,6 +387,8 @@ docker-compose up -d postgres mysql redis etcd minio milvus
 cd src
 python ../resources/knowledge-base/ingest_knowledge.py
 ```
+
+入库脚本同时写入 Milvus（向量索引）和 RedisSearch（BM25 全文索引），两者用相同 doc_id 对齐，RRF 融合时靠 id 匹配。
 
 ### 7. 启动后端
 
@@ -488,6 +522,35 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 - 会话归属校验：非本人 thread_id 返回 403，防止会话劫持
 - 全局异常处理器：记录完整堆栈到日志，返回给客户端的信息不含堆栈细节
 - MCP 文件系统工具通过 allowed directories 限制访问范围
+
+### RAGAS 质量评估
+
+项目内置完整的 RAGAS 评估体系（`src/ragas_test/`），覆盖检索质量、生成质量、系统性能三大维度：
+
+**检索质量（ragas_eval.py）**：五项 RAGAS 指标自动化评估
+
+- `context_precision`：检索上下文的精确率（相关文档占比）
+- `context_recall`：检索上下文的召回率（ground_truth 被覆盖比例）
+- `faithfulness`：回答与上下文的一致性（幻觉率反向指标）
+- `answer_relevancy`：回答与问题的相关性
+- `answer_correctness`：回答与 ground_truth 的正确率
+
+测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 50 条刁钻 QA，覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
+
+**性能基准（eval_*.py）**：
+
+| 脚本                        | 评估指标                              |
+| ------------------------- | --------------------------------- |
+| `eval_retrieval.py`       | Top5 召回率、检索 P95 延迟、单路 vs 混合检索对比   |
+| `eval_cache.py`           | 缓存命中率、Embedding 调用降低比例、污染率        |
+| `eval_cache_ttl.py`       | 固定 TTL vs 动态 TTL 命中率提升百分点         |
+| `eval_memory.py`          | PostgresStore 读写延迟、重复写入减少率、对话画像生成 |
+| `eval_rate_limit.py`      | 限流拦截准确率、Redis 断连降级切换耗时、并发压测       |
+| `eval_jwt.py`             | 登录态校验平均耗时、token 过期自动续签成功率         |
+| `eval_sse.py`             | 首 token 延迟、流纯净度（无分类器/记忆提取混入）      |
+| `evaluate_tool_filter.py` | 工具筛选规则层+语义层准确率                    |
+
+所有评估脚本输出 JSON 报告到 `src/ragas_test/`，可用于 CI 回归或性能对比。
 
 ## Docker 部署
 
