@@ -4,7 +4,7 @@ from mcp import ClientSession, StdioServerParameters, stdio_client
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 async def connect_mcp(server_params: StdioServerParameters):
-    # 初始化stack,
+    # 初始化stack,防止变量被GC回收，因此必须交给 stack.enter_async_context 登记：stdio_client 是async generator
     stack = AsyncExitStack()
     # stdio_client 打开传输，拿到 read、write 流
     read, write = await stack.enter_async_context(stdio_client(server_params))

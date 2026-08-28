@@ -2,6 +2,7 @@ from typing import Annotated, Optional, Any
 import uuid
 
 from langchain_core.tools import BaseTool
+from langchain_core.tools.base import ToolException
 from langgraph.types import CachePolicy, Send
 from langgraph.store.base import BaseStore
 from langchain_core.runnables import RunnableConfig
@@ -19,6 +20,25 @@ from constant.prompt_constants import MEMORY_EXTRACT_PROMPT, CLASSIFIER_PROMPT, 
 from constant.cache_constant import CACHE_MEMORY_NODE_TTL
 
 
+def _tool_error_message(e: Exception) -> str:
+    """工具异常 → 对 LLM 可操作的错误提示（ToolNode handle_tool_errors 回调）。
+
+    langgraph 1.1.x 默认的 handle_tool_errors 只兜底参数校验错误
+    （ToolInvocationError），MCP 工具执行异常（如 search_files 的 path 误传文件
+    触发 ENOTDIR）会原样抛出让整图中断；此处统一转成 status="error" 的
+    ToolMessage 回传模型，由模型自行纠正参数（改目录路径 / 换 read_file 等）。
+    """
+    if isinstance(e, ToolException):
+        if "ENOTDIR" in str(e):
+            return (
+                "工具参数错误：path 必须是目录，不能是文件。"
+                "请改为目录路径，或改用 read_file 工具读取该文件。"
+                f"原始错误：{e}"
+            )
+        return f"工具执行失败：{e}"
+    return f"工具执行失败：{repr(e)}"
+
+
 def build_main_graph(retrieve_graph,
     pool,
     checkpointer,
@@ -29,7 +49,10 @@ def build_main_graph(retrieve_graph,
     # LLM 侧在 llm_node 里按本轮 query 运行时筛选后 bind_tools（见 llm_node）
     tool_filter = ToolFilter()
     tools = list(mcp_tools or [])  # build 期无用户 query，不做筛选，直接全量绑定路由
-    tool_node = ToolNode(tools)
+    # handle_tool_errors 必须显式配置：langgraph 1.1.x 默认只兜底参数校验错误，
+    # MCP 工具执行异常（如 search_files 的 ENOTDIR）会原样抛出让整图中断（SSE 断流）；
+    # 自定义回调把错误转成 status="error" 的 ToolMessage 回传 LLM 自纠（见 _tool_error_message）
+    tool_node = ToolNode(tools, handle_tool_errors=_tool_error_message)
 
     class OverAllState(MessagesState):
         input_str: Annotated[str, Field(description="用户输入")]

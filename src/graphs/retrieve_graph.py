@@ -110,10 +110,11 @@ def build_retrieve_graph(vector_store: VectorStore):
                 "LIMIT", "0", str(top_k),
             )
         except Exception:
-            return []  # 索引不存在或查询异常，降级返回空
+            # 索引不存在或查询异常，降级：仅保留稠密检索结果（保持二维结构）
+            return {"rank_list": rank_list + [[]]}
 
         if not isinstance(result, (list, tuple)) or len(result) < 2:
-            return {"rank_list": [rank_list, []]}
+            return {"rank_list": rank_list + [[]]}
 
         docs = []
         for i in range(1, len(result) - 1, 2):
@@ -133,8 +134,10 @@ def build_retrieve_graph(vector_store: VectorStore):
                 ))
             except Exception:
                 continue
+        # 注意：必须用 append/拼接保持二维（list[list[RetrievedDoc]]），
+        # 若写成 [rank_list, docs] 会把稠密结果整体包一层成三维，rrf_fusion 遍历时 doc 变成 list 直接 AttributeError
         return {
-            "rank_list": [rank_list, docs]
+            "rank_list": rank_list + [docs]
         }
 
     def rewrite_query(state: RAGState) -> dict:
