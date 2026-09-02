@@ -37,10 +37,14 @@ RUN pip install uv -i ${PIP_INDEX}
 COPY requirements.txt .
 
 # uv安装依赖：主源+PyTorch额外源，动态适配构建环境
+# 替换原有的 uv pip install 命令
 RUN uv pip install --no-cache-dir -r requirements.txt \
     --index-url ${PIP_INDEX} \
     --extra-index-url ${PIP_EXTRA_INDEX} \
+    --index-strategy unsafe-best-match \
+    --verbose \
     --system
+
 
 COPY . .
 
