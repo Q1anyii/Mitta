@@ -11,17 +11,18 @@ jobs:
   build_deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1、CI云端拉取main代码
-      - name: Checkout code
+      - name: Checkout full source code
         uses: actions/checkout@v4
 
-      # 2、单元测试（你的Agent项目pytest，没有可以注释）
-      # - name: Unit Test
-      #  run: |
-      #    python3 -m pip install -r requirements.txt
-      #    python3 -m pytest tests/
+      # =========暂时注释单元测试，跑通构建部署链路=========
+      # - name: Run pytest
+      #   run: |
+      #     python3 -m pip install -r requirements.txt
+      #     python3 -m pytest tests/
 
-      # 3、登录阿里云ACR镜像仓库
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Login ACR
         uses: docker/login-action@v3
         with:
@@ -29,35 +30,35 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      # 获取git短commit hash做镜像版本tag
-      - name: Get commit short hash
+      - name: Get git commit short hash
         id: meta
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
 
-      # 4、构建镜像并且推送到阿里云ACR国内仓库
-      - name: Build & Push Image
+      - name: Build & push api image to ACR
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # 5、SSH远程登录你的ECS服务器执行部署
-      - name: Deploy to ECS
+      - name: Deploy to Aliyun ECS
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           script: |
-            cd /opt/myagent
-            # ECS登录ACR，拉取新镜像
-            docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
+            cd /opt/mitta
+            export ACR_REGISTRY=${{ env.ACR_REGISTRY }}
+            export ACR_NAMESPACE=${{ env.ACR_NAMESPACE }}
+            export IMAGE_REPO=${{ env.IMAGE_REPO }}
             export IMG_TAG=${{ env.SHORT_SHA }}
-            docker compose pull
+            docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
+            docker compose pull api
             docker compose up -d
-            # 清理服务器旧镜像释放磁盘
             docker system prune -af
