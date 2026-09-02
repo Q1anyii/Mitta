@@ -38,10 +38,14 @@ jobs:
         with:
           context: .
           push: true
+          # 关键两行：输出Docker V2格式，关闭OCI空manifest，适配阿里云个人ACR
+          format: docker
+          build-args: |
+            DOCKER_BUILDKIT_OCI_EMPTY_MANIFEST=false
           tags: |
             ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Deploy to Aliyun ECS
         uses: appleboy/ssh-action@master
