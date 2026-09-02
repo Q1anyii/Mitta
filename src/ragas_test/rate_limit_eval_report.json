@@ -1,24 +1,24 @@
 [
   {
-    "test": "normal_traffic",
+    "ragas_test": "normal_traffic",
     "total": 30,
     "passed": 30,
     "blocked": 0,
     "pass_rate": 1.0,
-    "avg_latency_ms": 0.4135199993470451,
-    "p95_latency_ms": 0.36669999826699495
+    "avg_latency_ms": 0.3783499999068833,
+    "p95_latency_ms": 0.575300000491552
   },
   {
-    "test": "over_limit",
+    "ragas_test": "over_limit",
     "total": 40,
     "threshold": 30,
-    "passed": 30,
-    "blocked": 10,
+    "passed": 40,
+    "blocked": 0,
     "expected_blocked": 10,
-    "intercept_accuracy": 1.0
+    "intercept_accuracy": 0.75
   },
   {
-    "test": "path_filtering",
+    "ragas_test": "path_filtering",
     "accuracy": 1.0,
     "details": [
       {
@@ -48,17 +48,17 @@
     ]
   },
   {
-    "test": "window_reset",
+    "ragas_test": "window_reset",
     "window_seconds": 60,
-    "current_ttl": 60,
-    "blocked_after_threshold": true,
+    "current_ttl": 120,
+    "blocked_after_threshold": false,
     "note": "完整窗口重置需等待 window 秒，本测试只验证 TTL 设置正确"
   },
   {
-    "test": "concurrent_stress",
-    "concurrent": 1000,
-    "passed": 30,
-    "blocked": 970,
-    "block_rate": 0.97
+    "ragas_test": "concurrent_stress",
+    "concurrent": 100000,
+    "passed": 69,
+    "blocked": 99931,
+    "block_rate": 0.99931
   }
 ]

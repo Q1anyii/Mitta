@@ -78,7 +78,7 @@ def test_normal_traffic(max_requests: int, window: int) -> Dict:
 
     for i in range(max_requests):
         t0 = time.perf_counter()
-        allowed = middleware._check_redis(key)
+        allowed = middleware.sliding_window_limit(key)
         elapsed = (time.perf_counter() - t0) * 1000
         latencies.append(elapsed)
         if allowed:
@@ -125,7 +125,7 @@ def test_over_limit(max_requests: int, window: int) -> Dict:
     blocked = 0
 
     for i in range(total):
-        allowed = middleware._check_redis(key)
+        allowed = middleware.sliding_window_limit(key)
         if allowed:
             passed += 1
         else:
@@ -187,14 +187,14 @@ def test_memory_fallback() -> Dict:
     middleware = RateLimitMiddleware(app=MagicMock())
     key = "rate_limit:192.168.1.300"
 
-    # 模拟 Redis 不可用：patch _check_redis 内部的 cache_service.redis
+    # 模拟 Redis 不可用：patch sliding_window_limit 内部的 cache_service.redis
     original_redis = cache_service.redis
 
     # 先测 Redis 可用时的延迟
     redis_latencies = []
     for _ in range(10):
         t0 = time.perf_counter()
-        middleware._check_redis(key)
+        middleware.sliding_window_limit(key)
         redis_latencies.append((time.perf_counter() - t0) * 1000)
 
     # 模拟 Redis 不可用
@@ -205,7 +205,7 @@ def test_memory_fallback() -> Dict:
     blocked = 0
     for i in range(RATE_LIMIT_MAX_REQUESTS + 5):
         t0 = time.perf_counter()
-        allowed = middleware._check_redis(key)  # 会降级到 _check_memory
+        allowed = middleware.sliding_window_limit(key)  # 会降级到 _check_memory
         elapsed = (time.perf_counter() - t0) * 1000
         memory_latencies.append(elapsed)
         if allowed:
@@ -257,7 +257,7 @@ def test_degrade_switch_time() -> Dict:
 
     # 先在 Redis 正常时写入一些计数
     for _ in range(5):
-        middleware._check_redis(key)
+        middleware.sliding_window_limit(key)
 
     # 模拟 Redis 突然断开：将 redis 设为一个会抛异常的 mock
     original_redis = cache_service.redis
@@ -274,7 +274,7 @@ def test_degrade_switch_time() -> Dict:
     for i in range(10):
         t0 = time.perf_counter()
         try:
-            allowed = middleware._check_redis(key)
+            allowed = middleware.sliding_window_limit(key)
         except Exception:
             allowed = middleware._check_memory(key)
         elapsed = (time.perf_counter() - t0) * 1000
@@ -321,7 +321,7 @@ def test_window_reset(max_requests: int, window: int) -> Dict:
 
     # 第一轮：打满阈值
     for _ in range(max_requests):
-        middleware._check_redis(key)
+        middleware.sliding_window_limit(key)
 
     # 检查 TTL
     try:
@@ -330,7 +330,7 @@ def test_window_reset(max_requests: int, window: int) -> Dict:
         ttl = -1
 
     # 验证超限被拦截
-    blocked_after = not middleware._check_redis(key)
+    blocked_after = not middleware.sliding_window_limit(key)
 
     result = {
         "ragas_test": "window_reset",
@@ -372,9 +372,9 @@ async def run_dispatch_test(concurrent: int, max_requests: int) -> Dict:
 
     async def one_request():
         async with semaphore:
-            # 模拟异步调用（_check_redis 是同步的，用线程池）
+            # 模拟异步调用（sliding_window_limit 是同步的，用线程池）
             loop = asyncio.get_event_loop()
-            allowed = await loop.run_in_executor(None, middleware._check_redis, key)
+            allowed = await loop.run_in_executor(None, middleware.sliding_window_limit, key)
             async with lock:
                 if allowed:
                     results["passed"] += 1
@@ -401,11 +401,12 @@ async def run_dispatch_test(concurrent: int, max_requests: int) -> Dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Mitta 限流中间件评估")
-    parser.add_argument("--concurrent", type=int, default=1000, help="并发压测请求数（默认 50）")
+    parser.add_argument("--concurrent", type=int, default=100000, help="并发压测请求数（默认 50）")
     parser.add_argument("--max-req", type=int, default=RATE_LIMIT_MAX_REQUESTS, help=f"限流阈值（默认 {RATE_LIMIT_MAX_REQUESTS}）")
     parser.add_argument("--window", type=int, default=RATE_LIMIT_WINDOW_SECONDS, help=f"时间窗口秒数（默认 {RATE_LIMIT_WINDOW_SECONDS}）")
     parser.add_argument("--ragas_test-degrade", action="store_true", help="包含 Redis 降级测试")
     parser.add_argument("--skip-concurrent", action="store_true", help="跳过高并发压测")
+    parser.add_argument("--test-degrade", action="store_true", help="是否开启降级测试")
     args = parser.parse_args()
 
     logger.info("=" * 60)

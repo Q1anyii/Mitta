@@ -38,29 +38,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         return f"rate_limit:{client_ip}"
 
-    def _check_redis(self, key: str) -> bool:
-        """使用 Redis 进行限流检查。
-
-        Returns:
-            True 表示允许通过，False 表示被限流
-        """
-        try:
-            from service.cache_service import cache_service
-            r = cache_service.redis
-            if not r:
-                return self._check_memory(key)
-
-            # 固定窗口：INCR + EXPIRE
-            count = r.incr(key)
-            if count == 1:
-                r.expire(key, RATE_LIMIT_WINDOW_SECONDS)
-
-            if count > RATE_LIMIT_MAX_REQUESTS:
-                return False
-            return True
-        except Exception as e:
-            logger.warning(f"Redis 限流失败，降级为内存限流：{e}")
-            return self._check_memory(key)
+    # def fixed_window_limit(self, key: str) -> bool:
+    #     """使用 Redis 进行限流检查。
+    #
+    #     Returns:
+    #         True 表示允许通过，False 表示被限流
+    #     """
+    #     try:
+    #         from service.cache_service import cache_service
+    #         r = cache_service.redis
+    #         res = r.execute_command("CL.THROTTLE", key, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS, 1)
+    #         # res [total, remain, wait_sec, reset_sec]
+    #         is_ok = res[1] >= 0
+    #         return is_ok
+    #     except Exception as e:
+    #         logger.warning(f"Redis 限流失败，降级为内存限流：{e}")
+    #         return self._check_memory(key)
 
     def _check_memory(self, key: str) -> bool:
         """内存限流（降级方案，单进程有效）。
@@ -81,6 +74,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         timestamps.append(now)
         return True
 
+    def sliding_window_limit(self, key: str) -> bool:
+        """
+        :param key: 限流key，例如按ip:limit:127.0.0.1
+        :return: True允许通过；False触发限流
+        """
+        now_ts = int(time.time() * 1000)  # 使用毫秒时间戳，精度更高
+        window_start_ts = now_ts - RATE_LIMIT_WINDOW_SECONDS * 1000
+        try:
+            from service.cache_service import cache_service
+            r = cache_service.redis
+            pipe = r.pipeline()
+            # 1. 删除窗口之外的旧记录
+            pipe.zremrangebyscore(key, 0, window_start_ts)
+            # 2. 获取当前窗口内请求数量
+            pipe.zcard(key)
+            # 3. 添加本次请求时间戳 score=value，保证唯一
+            pipe.zadd(key, {str(now_ts): now_ts})
+            # 4. 设置key过期，防止永久占内存，设置窗口的2倍时间
+            pipe.expire(key, RATE_LIMIT_WINDOW_SECONDS * 2)
+
+            _, current_count, _, _ = pipe.execute()
+
+            if current_count >= RATE_LIMIT_MAX_REQUESTS:
+                return False
+            return True
+        except Exception as e:
+            logger.warning(f"Redis 限流失败，降级为内存限流：{e}")
+            return self._check_memory(key)
+
+
     async def dispatch(self, request: Request, call_next):
         """中间件主逻辑。"""
         path = request.url.path
@@ -90,7 +113,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         key = self._get_limit_key(request)
-        allowed = self._check_redis(key)
+        allowed = self.sliding_window_limit(key)
 
         if not allowed:
             logger.warning(f"请求被限流 | path={path} | key={key}")
