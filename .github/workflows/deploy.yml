@@ -1,13 +1,10 @@
 name: ACR‑CI‑CD
-
 on:
   push:
     branches: [ main ]
-
 env:
   ACR_NAMESPACE: qianyiaaa
   IMAGE_REPO: mitta
-
 jobs:
   build_deploy:
     runs-on: ubuntu-latest
@@ -31,7 +28,6 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
 
-      # 调试：打印最终完整镜像标签，方便排错
       - name: Debug show final image tag
         run: |
           echo "IMAGE_TAG=${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}"
@@ -41,10 +37,9 @@ jobs:
         with:
           context: .
           push: true
-          # 适配阿里云 ACR：禁用 OCI 媒体类型，生成 Docker V2 格式 manifest
-          oci-mediatypes: false
-          build-args: |
-            DOCKER_BUILDKIT_OCI_EMPTY_MANIFEST=false
+          # 适配阿里云ACR：关闭provenance和sbom，生成Docker V2格式
+          provenance: false
+          sbom: false
           tags: |
             ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}
             ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:latest
@@ -59,16 +54,8 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           script: |
             cd /opt/mitta
-            
-            # 登录 ACR
             docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
-            
-            # 拉取对应版本镜像
             export IMG_TAG=${{ env.SHORT_SHA }}
             docker compose pull api
-            
-            # 重启服务，强制使用拉取的镜像，不本地构建
-            docker compose up -d --no-build
-            
-            # 仅清理悬空镜像，避免误删运行中资源
+            docker compose up -d --no-build api
             docker image prune -f
