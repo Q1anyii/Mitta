@@ -1,3 +1,10 @@
+# 强制CPU版pytorch，禁止拉取CUDA相关nvidia包
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu
+torchvision==0.18.0+cpu
+torchaudio==2.13.0+cpu
+
+
 # =========================================================
 # AgentProject 完整依赖清单
 # 安装命令：pip install -r requirements.txt
@@ -106,7 +113,7 @@ pytest==9.0.3
 # 注意：vector_store.py 通过 Protocol 抽象，Milvus/Chroma 可通过 vector_db.json 切换
 # =========================================================
 pymilvus==2.6.12
-chromadb==1.5.9
+# chromadb==1.5.9
 psycopg[binary]==3.3.3
 psycopg-pool==3.3.0
 SQLAlchemy==2.0.48
@@ -191,8 +198,8 @@ python-oxmsg==0.0.2
 olefile==0.47
 pypandoc-binary==1.17
 addict==2.4.0
-ragas==0.4.3
-datasets>=4.0.0
+# ragas==0.4.3
+# datasets>=4.0.0
 
 
 # =========================================================
