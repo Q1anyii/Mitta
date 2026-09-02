@@ -1,0 +1,66 @@
+name: ACR-CI-CD
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  ACR_NAMESPACE: qianyiaaa
+  IMAGE_REPO: mitta
+
+jobs:
+  build_deploy:
+    runs-on: ubuntu-latest
+    # GHA 缓存需要 actions:write 权限
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout full source code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Get git commit short hash
+        id: sha
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Build & push api image to ACR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 适配阿里云 ACR：关闭 provenance 和 sbom，生成 Docker V2 格式
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}
+            ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+          build-args: |
+            APT_MIRROR=deb.debian.org
+            PIP_INDEX=https://pypi.org/simple
+
+      - name: Deploy to Aliyun ECS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            cd /opt/mitta
+            docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
+            # compose 中 api 服务需同时配置 image: 字段（指向 ACR 地址），pull 才能生效
+            docker compose pull api
+            docker compose up -d --no-build api
+            # 清理悬空镜像（保留最近 2 个版本用于回滚）
+            docker image prune -f --filter "until=24h"
