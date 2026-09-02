@@ -1,19 +1,22 @@
 name: ACR‑CI‑CD
+
 on:
   push:
     branches: [ main ]
+
 env:
   ACR_NAMESPACE: qianyiaaa
   IMAGE_REPO: mitta
+
 jobs:
   build_deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login ACR
         uses: docker/login-action@v3
@@ -34,16 +37,17 @@ jobs:
           echo "IMAGE_TAG=${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}"
 
       - name: Build & push api image to ACR
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          # 关键两行：输出Docker V2格式，关闭OCI空manifest，适配阿里云个人ACR
-          format: docker
+          # 适配阿里云 ACR：禁用 OCI 媒体类型，生成 Docker V2 格式 manifest
+          oci-mediatypes: false
           build-args: |
             DOCKER_BUILDKIT_OCI_EMPTY_MANIFEST=false
           tags: |
             ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}
+            ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=min
 
@@ -55,11 +59,16 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           script: |
             cd /opt/mitta
-            export ACR_REGISTRY=${{ secrets.ACR_REGISTRY }}
-            export ACR_NAMESPACE=${{ env.ACR_NAMESPACE }}
-            export IMAGE_REPO=${{ env.IMAGE_REPO }}
-            export IMG_TAG=${{ env.SHORT_SHA }}
+            
+            # 登录 ACR
             docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
+            
+            # 拉取对应版本镜像
+            export IMG_TAG=${{ env.SHORT_SHA }}
             docker compose pull api
-            docker compose up -d
-            docker system prune -af
+            
+            # 重启服务，强制使用拉取的镜像，不本地构建
+            docker compose up -d --no-build
+            
+            # 仅清理悬空镜像，避免误删运行中资源
+            docker image prune -f
