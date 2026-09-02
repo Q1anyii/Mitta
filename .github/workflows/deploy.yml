@@ -5,7 +5,7 @@ on:
 
 env:
   ACR_NAMESPACE: qianyiaaa
-  IMAGE_REPO: agent-rag
+  IMAGE_REPO: mitta
 
 jobs:
   build_deploy:
