@@ -59,6 +59,8 @@ jobs:
           command_timeout: 30m
           script: |
             cd /opt/mitta
+            # 同步最新代码（前端、配置、compose 文件）
+            git pull origin main
             docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
             # compose 中 api 服务需同时配置 image: 字段（指向 ACR 地址），pull 才能生效
             docker compose pull api
