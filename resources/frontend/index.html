@@ -1386,6 +1386,24 @@
                 -webkit-overflow-scrolling: touch;
                 touch-action: pan-y;
             }
+            /* 登录/注册页：body fixed 后需要自身容器可滚动 */
+            .auth-layout {
+                min-height: 100dvh;
+                min-height: 100vh;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-y;
+            }
+            .auth-form-wrapper {
+                align-items: flex-start;
+                padding: 24px 16px;
+                min-height: 100dvh;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            .auth-card {
+                margin: auto 0;
+            }
             .sidebar-header {
                 padding: 16px;
             }
