@@ -160,7 +160,7 @@ class LoginService:
             return flag, success
         except pymysql.MySQLError as e:
             logger.error(f"数据库执行异常 {e}")
-            return flag, f"数据库执行异常 {e}"
+            return flag, f"账号注册失败,请联系管理员"
         finally:
             conn.close()
 
@@ -184,7 +184,7 @@ class LoginService:
             success = cur.execute(sql, (new_password, update_time, user_id))
             return success
         except pymysql.MySQLError as e:
-            logger.error(f"数据库执行异常 {e}, 联系管理员")
+            logger.error(f"数据库执行异常, 联系管理员")
             raise
         finally:
             conn.close()
