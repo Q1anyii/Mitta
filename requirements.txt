@@ -85,7 +85,7 @@ langgraph-checkpoint-postgres==3.0.5
 #   fastmcp(agent_server.py) — MCP Server 快速构建
 #   langchain-mcp-adapters(2文件) — MCP 工具转 LangChain Tool
 # =========================================================
-mcp>=1.27.0
+mcp<2
 fastmcp>=3.2.4
 langchain-mcp-adapters>=0.2
 
@@ -95,8 +95,9 @@ langchain-mcp-adapters>=0.2
 #   numpy(3文件) — cache_service.py 相似度计算、lsh_util.py
 #   jieba(3文件) — BM25 中文分词（retrieve_graph.py, eval_retrieval.py）
 # =========================================================
-numpy==2.4.4
-jieba==3.9.4
+numpy>=2.2,<2.5
+jieba==0.42.1
+
 
 # =========================================================
 # 重排序（init.py 顶层导入，实际重排走 SiliconFlow 在线 API）
