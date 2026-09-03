@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
         tools_embedding(filtered_tools)
         logger.success(f"已加载{len(filtered_tools)}个MCP 工具，共{len(mcp_holders)}类")
     logger.info("正在初始化 LangGraph 资源...")
-    chat_service.open(filtered_tools)
+    chat_service.open(filtered_tools, tool_loop=tool_loop)
     login_service.open()
     cache_service.open()
     user_profile_service.open()

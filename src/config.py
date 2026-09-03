@@ -135,43 +135,59 @@ def print_config_summary() -> None:
 
 _mcp_config_cache: list[dict] | None = None
 
-def load_mcp_server_configs() -> list[dict]:
-    """加载 MCP 服务器配置列表（供 mcp_client.init_mcp_holders 连接外部 MCP 服务器）。
+def load_mcp_server_configs(user_id: str = None) -> list[dict]:
+    """加载 MCP 服务器配置列表。
 
-    【架构变更】MCP 配置改为本地 JSON 文件存储，用户可在前端指定文件路径。
-    路径记录在 resources/config/.mcp_config_path 中，默认路径为 resources/config/mcp_servers.json。
-    启动时从该路径读取配置；文件不存在或解析失败时返回空列表（不阻塞启动）。
+    【架构变更】优先从 PostgreSQL 数据库按用户加载（mcp_config_service）；
+    数据库未初始化或无用户配置时，降级从本地 JSON 文件加载全局默认配置。
+
+    Args:
+        user_id: 用户 ID（按用户隔离加载）。None 时加载全局默认配置。
 
     Returns:
-        校验通过的配置列表；文件不存在 / JSON 解析失败 / 无有效条目时返回空列表。
+        校验通过的配置列表；无配置时返回空列表。
     """
+    # 优先从数据库按用户加载
+    if user_id:
+        try:
+            from service.mcp_config_service import mcp_config_service
+            if mcp_config_service is not None:
+                servers = mcp_config_service.get_user_servers(user_id)
+                if servers:
+                    logger.info(f"从数据库加载用户 [{user_id}] 的 MCP 配置：{len(servers)} 个")
+                    return servers
+        except Exception as e:
+            logger.warning(f"从数据库加载用户 [{user_id}] MCP 配置失败，降级到文件: {e}")
+
+    # 降级：本地文件全局配置（启动时默认服务器）
     global _mcp_config_cache
     if _mcp_config_cache is not None:
         return _mcp_config_cache
     config_path = get_mcp_config_path()
     if not config_path or not Path(config_path).is_file():
-        logger.info(f"MCP 配置文件不存在（路径: {config_path}），跳过 MCP 工具加载")
+        logger.info(f"MCP 全局配置文件不存在（路径: {config_path}），使用空配置")
+        _mcp_config_cache = []
         return []
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             servers = json.load(f)
     except (json.JSONDecodeError, TypeError, OSError) as e:
-        logger.warning(f"MCP 配置文件读取失败（路径: {config_path}）：{e}，跳过 MCP 工具加载")
+        logger.warning(f"MCP 全局配置文件读取失败（路径: {config_path}）：{e}，使用空配置")
+        _mcp_config_cache = []
         return []
     if not isinstance(servers, list):
-        logger.warning(f"MCP 配置文件内容不是 JSON 数组（路径: {config_path}），跳过 MCP 工具加载")
+        logger.warning(f"MCP 全局配置文件内容不是 JSON 数组（路径: {config_path}），使用空配置")
+        _mcp_config_cache = []
         return []
 
     project_root = Path(__file__).resolve().parent.parent
     validated = []
     for cfg in servers:
         if not isinstance(cfg, dict):
-            logger.warning(f"忽略无效的 MCP 服务器配置项（非对象）：{cfg}")
             continue
         server_type = cfg.get("type", "stdio")
         if server_type == "stdio":
             if not cfg.get("command"):
-                logger.warning(f"忽略 MCP 服务器配置项（stdio 缺少 command）：{cfg}")
                 continue
             cwd = cfg.get("cwd")
             if cwd and not Path(cwd).is_absolute():
@@ -179,16 +195,11 @@ def load_mcp_server_configs() -> list[dict]:
             item = {**cfg, "type": "stdio", "cwd": cwd}
         elif server_type == "sse":
             if not cfg.get("url"):
-                logger.warning(f"忽略 MCP 服务器配置项（sse 缺少 url）：{cfg}")
                 continue
             item = {**cfg, "type": "sse"}
         else:
-            logger.warning(f"忽略 MCP 服务器配置项（不支持的 type={server_type}）：{cfg}")
             continue
         validated.append(item)
-        # （路径: {config_path}）
-    # logger.info(f"MCP 服务器配置加载完成，共 {len(validated)} 个："
-    #             f"{[c.get('name', c.get('type')) for c in validated]}")
     _mcp_config_cache = validated
     return validated
 

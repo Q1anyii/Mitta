@@ -38,8 +38,17 @@ class ChatService:
         # 上传文件解析内容缓存：key="{user_id}:{file_id}"，value={"name":..., "content":...}
         # 上传后立即解析并存入，发送消息时从缓存读取拼接到 input_str，避免重复解析
         self._file_content_cache: dict[str, dict] = {}
+        # 按用户隔离的 MCP 图缓存：key=user_id，value=(config_hash, graph, mcp_connections)
+        # 用户更新 MCP 配置后，下次对话自动重建图（检测 hash 变化）
+        self._user_graph_cache: dict[str, tuple[str, object, list]] = {}
+        # 全局 MCP 工具（启动时加载的默认服务器），与用户工具合并
+        self._global_mcp_tools: list = []
+        # 工具常驻事件循环（MCP session 创建与调用必须同循环）
+        self._tool_loop = None
 
-    def open(self, mcp_tools: list | None = None):
+    def open(self, mcp_tools: list | None = None, tool_loop=None):
+        self._global_mcp_tools = mcp_tools or []
+        self._tool_loop = tool_loop
         self.vector_store = create_vector_store(load_vector_db_config())
         self.pool = ConnectionPool(
             conninfo=self.db_url,
@@ -72,6 +81,13 @@ class ChatService:
             cache=self.cache,
             mcp_tools=mcp_tools,
         )
+        # 初始化 MCP 配置数据库服务（PostgreSQL 存储，按用户隔离）
+        try:
+            from service.mcp_config_service import init_mcp_config_service
+            init_mcp_config_service(self.pool)
+            logger.success("MCP 配置数据库服务已初始化（PostgreSQL）")
+        except Exception as e:
+            logger.warning(f"MCP 配置数据库服务初始化失败（不影响核心功能）: {e}")
 
 
     def close(self, timeout:int =10):
@@ -80,12 +96,89 @@ class ChatService:
             logger.info("PostgreSQL连接池已关闭")
 
 
+    def _get_user_graph(self, user_id: str):
+        """获取用户专属的对话图（含用户自定义 MCP 工具），带缓存。
+
+        用户无自定义 MCP 配置时返回全局图；有配置时构建独立图实例并缓存。
+        配置变更（hash 变化）时自动重建。
+        """
+        from config import load_mcp_server_configs
+        from mcp_client.client import init_mcp_holders
+        from utils.tools_util import safety_filter, tools_embedding
+        import asyncio
+        import hashlib
+        import json
+
+        # 加载用户 MCP 配置
+        user_servers = load_mcp_server_configs(user_id=user_id)
+        if not user_servers:
+            return self.main_graph  # 无用户配置，用全局图
+
+        # 计算配置 hash，检测变更
+        config_hash = hashlib.md5(json.dumps(user_servers, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+        # 命中缓存且配置未变
+        cached = self._user_graph_cache.get(user_id)
+        if cached and cached[0] == config_hash:
+            return cached[1]
+
+        # 缓存失效：关闭旧连接
+        if cached:
+            try:
+                if self._tool_loop:
+                    asyncio.run_coroutine_threadsafe(
+                        self._close_connections(cached[2]), self._tool_loop
+                    ).result(timeout=5)
+            except Exception:
+                pass
+
+        # 连接用户 MCP 服务器，加载工具
+        user_tools = []
+        connections = []
+        if self._tool_loop:
+            try:
+                connections = asyncio.run_coroutine_threadsafe(
+                    init_mcp_holders(user_servers), self._tool_loop
+                ).result(timeout=30)
+                user_tools = [t for conn in connections for t in conn.tools]
+                if user_tools:
+                    user_tools = safety_filter(user_tools)
+                    tools_embedding(user_tools)
+                    logger.info(f"用户 [{user_id}] 加载了 {len(user_tools)} 个自定义 MCP 工具")
+            except Exception as e:
+                logger.warning(f"用户 [{user_id}] MCP 工具加载失败，使用全局工具: {e}")
+                connections = []
+                user_tools = []
+
+        # 合并全局工具 + 用户工具，构建用户专属图
+        all_tools = self._global_mcp_tools + user_tools
+        user_graph = build_main_graph(
+            retrieve_graph=self.retrieve_graph,
+            pool=self.pool,
+            checkpointer=self.checkpointer,
+            store=self.store,
+            cache=self.cache,
+            mcp_tools=all_tools,
+        )
+        self._user_graph_cache[user_id] = (config_hash, user_graph, connections)
+        return user_graph
+
+    @staticmethod
+    async def _close_connections(connections):
+        for conn in connections:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+
     def invoke(self, user_id, thread_id, query) -> str:
         config = {
             "configurable": {"thread_id": thread_id, "user_id": user_id},
             "metadata": {"user_id": user_id},  # 随 checkpoint 写入 metadata
         }
-        result = self.main_graph.invoke({"input_str": query}, config=config)
+        # 使用用户专属图（含自定义 MCP 工具），无配置时自动降级为全局图
+        graph = self._get_user_graph(user_id)
+        result = graph.invoke({"input_str": query}, config=config)
         ai_msg = result["messages"][-1]
         return ai_msg.content
 
