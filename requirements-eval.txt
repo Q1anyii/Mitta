@@ -1,0 +1,14 @@
+# =========================================================
+# requirements-eval.txt — RAGAS 评估专用依赖
+# 仅在运行 ragas_test/ 评估脚本时需要，核心 API 运行时不需要
+# 安装：pip install -r requirements-eval.txt
+# =========================================================
+
+-r requirements.txt
+
+# RAGAS 评估框架
+ragas==0.4.3
+datasets>=4.0.0
+
+# 评估脚本额外依赖
+httpx==0.28.1
