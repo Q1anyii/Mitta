@@ -1388,21 +1388,29 @@
             }
             /* 登录/注册页：body fixed 后需要自身容器可滚动 */
             .auth-layout {
-                min-height: 100dvh;
-                min-height: 100vh;
+                height: 100dvh;  /* 固定高度，overflow-y:auto 才生效 */
+                height: 100vh;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
                 touch-action: pan-y;
+                flex-direction: column;
+            }
+            /* 手机端隐藏左侧品牌区，只保留表单，避免内容过高无法操作 */
+            .auth-brand {
+                display: none;
             }
             .auth-form-wrapper {
-                align-items: flex-start;
+                flex: 1;
+                min-height: 100%;
+                align-items: center;
+                justify-content: center;
                 padding: 24px 16px;
-                min-height: 100dvh;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
             }
             .auth-card {
-                margin: auto 0;
+                margin: auto;
+                width: 100%;
             }
             .sidebar-header {
                 padding: 16px;
