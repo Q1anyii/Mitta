@@ -139,7 +139,7 @@ services:
   api:
     # image 字段指向 ACR 仓库，CI/CD 部署时 docker compose pull 拉取此镜像
     # 本地开发时 docker compose up --build 会本地构建并打上此标签
-    image: ${ACR_REGISTRY:-registry.cn-shenzhen.aliyuncs.com}/${ACR_NAMESPACE:-qianyiaaa}/${IMAGE_REPO:-mitta}:latest
+    image: ${ACR_REGISTRY:-crpi-rjfdxfxwof9l3xex.cn-hangzhou.personal.cr.aliyuncs.com}/${ACR_NAMESPACE:-qianyiaaa}/${IMAGE_REPO:-mitta}:latest
     build:
       context: .
       dockerfile: Dockerfile
