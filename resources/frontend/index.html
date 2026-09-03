@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
     <title>Mitta AI — 智能助理</title>
     <link rel="icon" href="favicon.png">
     <!-- 字体：移除 Google Fonts 外链（fonts.googleapis.com 在国内网络下经常挂起，
@@ -1020,6 +1020,27 @@
             box-shadow: var(--shadow-sm);
         }
 
+        .refresh-questions-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 16px;
+            padding: 8px 16px;
+            border-radius: var(--radius-full);
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.8125rem;
+            cursor: pointer;
+            transition: all 200ms ease;
+        }
+
+        .refresh-questions-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background-color: var(--accent-light);
+        }
+
         /* ============================================================
            消息气泡
            ============================================================ */
@@ -1323,6 +1344,142 @@
                 font-family: var(--font-body);
                 font-weight: 500;
             }
+        }
+
+        /* ============================================================
+           手机端小屏适配（≤480px）
+           ============================================================ */
+        @media (max-width: 480px) {
+            .sidebar {
+                width: 82vw;
+                max-width: 320px;
+            }
+            .sidebar-header {
+                padding: 16px;
+            }
+            .sidebar-brand {
+                font-size: 1.1rem;
+            }
+            .messages-container {
+                padding: 12px;
+            }
+            .messages-wrapper {
+                gap: 16px;
+            }
+            .message {
+                gap: 10px;
+            }
+            .message-avatar {
+                width: 32px;
+                height: 32px;
+                font-size: 0.75rem;
+            }
+            .message-content {
+                font-size: 0.9rem;
+                line-height: 1.6;
+                padding: 10px 14px;
+            }
+            .welcome-state {
+                padding: 40px 0;
+            }
+            .welcome-state h1 {
+                font-size: 1.4rem;
+            }
+            .welcome-state p {
+                font-size: 0.9rem;
+                padding: 0 16px;
+            }
+            .quick-actions {
+                gap: 8px;
+                padding: 0 12px;
+            }
+            .quick-action {
+                padding: 10px 14px;
+                font-size: 0.8rem;
+                width: 100%;
+                text-align: left;
+            }
+            .input-area {
+                padding: 8px 12px 16px;
+            }
+            .input-card {
+                border-radius: var(--radius-lg);
+            }
+            .chat-input {
+                font-size: 0.95rem;
+                padding: 10px 12px;
+            }
+            .send-btn, .stop-btn {
+                width: 36px;
+                height: 36px;
+            }
+            .input-hint {
+                font-size: 0.7rem;
+            }
+            .main-header {
+                padding: 0 12px;
+                height: 52px;
+            }
+            .menu-toggle {
+                width: 36px;
+                height: 36px;
+            }
+            .toast {
+                bottom: 80px;
+                left: 16px;
+                right: 16px;
+                transform: translateY(120px);
+                max-width: none;
+                text-align: center;
+            }
+            .toast.show {
+                transform: translateY(0);
+            }
+            .modal {
+                margin: 16px;
+                max-height: calc(100vh - 32px);
+                overflow-y: auto;
+            }
+            .modal-header {
+                padding: 16px;
+            }
+            .modal-body {
+                padding: 16px;
+            }
+            .uploaded-file-card {
+                padding: 8px 10px;
+            }
+            .file-name {
+                font-size: 0.8rem;
+                max-width: 120px;
+            }
+        }
+
+        /* ============================================================
+           触摸滑动优化（移动端）
+           ============================================================ */
+        .messages-container {
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+            touch-action: pan-y;
+        }
+
+        .sidebar {
+            touch-action: pan-x;
+        }
+
+        /* 防止移动端双击缩放输入框 */
+        .chat-input, .form-input {
+            font-size: 16px;
+        }
+
+        /* 安全区域适配（刘海屏底部） */
+        .input-area {
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+
+        .main-header {
+            padding-top: env(safe-area-inset-top);
         }
 
         /* ============================================================
@@ -2214,16 +2371,18 @@
                                 role: u.role || '学员',
                                 token: data.token
                             };
+                            // 先存 token 到 localStorage，否则 apiGetProfile 里的 authHeaders() 读不到 token 会 401
+                            cache.set(STORAGE_KEY.USER, userData);
                             // 登录后获取用户 profile（含 avatar），避免重新登录后头像失效
                             try {
                                 const profile = await apiGetProfile(userData.userId);
                                 if (profile && profile.avatar) {
                                     userData.avatar = profile.avatar;
+                                    cache.set(STORAGE_KEY.USER, userData);  // 拿到 avatar 后更新缓存
                                 }
                             } catch (e) {
                                 // profile 获取失败不影响登录，头像使用默认
                             }
-                            cache.set(STORAGE_KEY.USER, userData);
                             updateLastActive();
                             this.$router.push('/chat');
                         } else {
@@ -2548,8 +2707,12 @@
                                     <h1>您好，{{ greetingName }}！有什么可以帮您的？</h1>
                                     <p>开始一段新的对话，或从左侧选择一个历史会话继续交流。</p>
                                     <div class="quick-actions">
-                                        <button v-for="q in quickQuestions" :key="q" class="quick-action" @click="sendQuick(q)">{{ q }}</button>
+                                        <button v-for="q in randomQuestions" :key="q" class="quick-action" @click="sendQuick(q)">{{ q }}</button>
                                     </div>
+                                    <button class="refresh-questions-btn" @click="refreshQuestions()" title="换一批提示词">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                        换一批
+                                    </button>
                                 </div>
 
                                 <div
@@ -2847,12 +3010,48 @@
                     { value: 'lavender', name: '薰衣草', preview: 'linear-gradient(135deg, #7B4FA8, #F5F0F8)' },
                 ];
 
-                const quickQuestions = [
+                // 知识库主题提示词池：基于 FAQ 知识库内容整理，每次随机选取 4 个展示
+                const QUESTION_POOL = [
                     '如何重置密码？',
                     '课程购买后如何退款？',
                     '作业提交截止时间可以延长吗？',
-                    '如何查看学习记录？'
+                    '如何查看学习记录？',
+                    '如何修改个人资料和头像？',
+                    '支持哪些支付方式？',
+                    '课程视频可以下载离线观看吗？',
+                    '如何联系客服或技术支持？',
+                    '忘记用户名怎么办？',
+                    '如何注销账号？',
+                    '课程有效期是多久？',
+                    '如何申请发票？',
+                    '作业评分标准是什么？',
+                    '可以同时学习多门课程吗？',
+                    '如何导出学习证书？',
+                    '系统支持哪些浏览器？',
+                    '如何开启消息通知？',
+                    '收藏的课程在哪里查看？',
+                    '如何反馈课程内容问题？',
+                    '学习进度不同步怎么办？',
+                    '如何加入课程讨论区？',
+                    '移动端和电脑端数据互通吗？',
+                    '如何设置每日学习提醒？',
+                    '课程资料可以打印吗？',
                 ];
+
+                // 当前展示的随机提示词（ref，触发响应式更新）
+                const randomQuestions = ref([]);
+
+                // 从池中随机选取 n 个不重复的提示词
+                const refreshQuestions = (n = 4) => {
+                    const pool = [...QUESTION_POOL];
+                    const result = [];
+                    const count = Math.min(n, pool.length);
+                    for (let i = 0; i < count; i++) {
+                        const idx = Math.floor(Math.random() * pool.length);
+                        result.push(pool.splice(idx, 1)[0]);
+                    }
+                    randomQuestions.value = result;
+                };
 
                 const currentSessionTitle = computed(() => {
                     const session = sessions.value.find(s => s.id === currentThreadId.value);
@@ -2960,6 +3159,7 @@
                     saveSessions();
                     saveCurrentThread();
                     cache.setMessages(id, []);
+                    refreshQuestions();  // 新建会话时刷新随机提示词
                     closeSidebar();
                     focusInput();
                 };
@@ -3189,6 +3389,7 @@
 
                 onMounted(async () => {
                     updateLastActive();
+                    refreshQuestions();
                     if (!currentThreadId.value || !sessions.value.find(s => s.id === currentThreadId.value)) {
                         if (sessions.value.length > 0) {
                             currentThreadId.value = sessions.value[0].id;
@@ -3542,7 +3743,7 @@
                 return {
                     user, sessions, currentThreadId, messages, inputText,
                     isLoading, streaming, currentToolCall, sidebarOpen, healthStatus, healthText,
-                    messagesContainer, textarea, fileInput, quickQuestions,
+                    messagesContainer, textarea, fileInput, randomQuestions, refreshQuestions,
                     currentSessionTitle, userAvatar, greetingName, canSend,
                     createNewSession, switchSession, deleteSession,
                     clearCurrentChat, sendMessage, sendQuick,
