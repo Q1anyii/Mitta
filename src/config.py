@@ -150,9 +150,9 @@ def load_mcp_server_configs(user_id: str = None) -> list[dict]:
     # 优先从数据库按用户加载
     if user_id:
         try:
-            from service.mcp_config_service import mcp_config_service
-            if mcp_config_service is not None:
-                servers = mcp_config_service.get_user_servers(user_id)
+            import service.mcp_config_service as _mcp_mod
+            if _mcp_mod.mcp_config_service is not None:
+                servers = _mcp_mod.mcp_config_service.get_user_servers(user_id)
                 if servers:
                     logger.info(f"从数据库加载用户 [{user_id}] 的 MCP 配置：{len(servers)} 个")
                     return servers
