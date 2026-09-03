@@ -63,6 +63,35 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"type": "refresh", "exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
+def _try_renew_by_refresh(r, user_id: str, username: str, role: str, token_key: str):
+    """access token 的 Redis key 过期时，用 refresh token 隐式续签。
+
+    成功返回新的 access_token，失败返回 None（调用方据此决定 401）。
+    refresh token 仅存 Redis（30天），前端全程无感知。
+    """
+    from constant.cache_constant import USER_REFRESH_TOKEN_KEY
+    refresh_token = r.get(USER_REFRESH_TOKEN_KEY.format(user_id=user_id))
+    if isinstance(refresh_token, bytes):
+        refresh_token = refresh_token.decode("utf-8")
+    if not refresh_token:
+        return None
+    try:
+        jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.PyJWTError:
+        return None
+    new_access = create_access_token({"sub": f"{user_id}:{username}", "role": role})
+    new_refresh = create_refresh_token({"sub": f"{user_id}:{username}"})
+    try:
+        r.setex(token_key, ACCESS_TOKEN_EXPIRE_MINUTES * 60, new_access)
+        r.setex(USER_REFRESH_TOKEN_KEY.format(user_id=user_id), REFRESH_TOKEN_EXPIRE_DAYS * 86400, new_refresh)
+    except Exception as e:
+        logger.warning(f"续签写 Redis 失败，鉴权拒绝：{e}")
+        return None
+    logger.info(f"用户 [{user_id}] access token Redis key 已过期，通过 refresh token 自动续签")
+    return new_access
+
+
 # ---------------------- 依赖：解析token，获取当前登录用户 ----------------------
 def get_current_user(token: str = Depends(oauth2_scheme), response: Response = None):
     """路由层鉴权：JWT 验签 + Redis 登录态校验，access 过期时用隐式 refresh 自动续签。
@@ -105,7 +134,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), response: Response = N
         logger.warning(f"Redis 不可用，鉴权拒绝：{e}")
         raise credentials_exception
     if not stored:
-        # 登录态不存在：未登录或已登出（登出即删除该 key，实现主动失效）
+        # access token 的 Redis key 不存在：可能是已登出，也可能是 15 分钟无活动导致 key 过期
+        # 先尝试用 refresh token（30天）隐式续签，续签成功则放行，失败才 401
+        renewed = _try_renew_by_refresh(r, user_id, username, role, token_key)
+        if renewed:
+            if response is not None:
+                response.headers["X-New-Access-Token"] = renewed
+            return TokenData(user_id=user_id, username=username, role=role)
+        # 续签失败：确实未登录或 refresh 也过期了
         raise credentials_exception
 
     effective_token = token
@@ -127,26 +163,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), response: Response = N
             # 严格验签+过期校验：token 仍有效则直接放行
             jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         except jwt.ExpiredSignatureError:
-            # 隐式续签：refresh token 只在 Redis 里，前端全程无感知
-            refresh_token = r.get(USER_REFRESH_TOKEN_KEY.format(user_id=user_id))
-            if isinstance(refresh_token, bytes):
-                refresh_token = refresh_token.decode('utf-8')
-            if not refresh_token:
-                raise credentials_exception
-            try:
-                jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-            except jwt.PyJWTError:
-                raise credentials_exception
-            effective_token = create_access_token({"sub": f"{user_id}:{username}", "role": role})
-            # refresh 轮换：续签时生成新 refresh 覆盖旧值，防重放
-            new_refresh = create_refresh_token({"sub": f"{user_id}:{username}"})
-            try:
-                # setex 第二参数单位是「秒」：access 配置为分钟需 ×60
-                r.setex(token_key, ACCESS_TOKEN_EXPIRE_MINUTES * 60, effective_token)
-                r.setex(USER_REFRESH_TOKEN_KEY.format(user_id=user_id), REFRESH_TOKEN_EXPIRE_DAYS * 86400, new_refresh)
-            except Exception as e:
-                # 续签写 Redis 失败：无法落定新登录态，保守拒绝
-                logger.warning(f"续签写 Redis 失败，鉴权拒绝：{e}")
+            # access token 已过期但 Redis key 还在：用 refresh token 隐式续签
+            effective_token = _try_renew_by_refresh(r, user_id, username, role, token_key)
+            if not effective_token:
                 raise credentials_exception
         except jwt.PyJWTError:
             raise credentials_exception
