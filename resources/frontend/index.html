@@ -1350,9 +1350,41 @@
            手机端小屏适配（≤480px）
            ============================================================ */
         @media (max-width: 480px) {
+            /* 修复手机端无法滑动：100dvh 适配 iOS Safari 动态地址栏，body fixed 防止整页滚动 */
+            html, body {
+                height: 100%;
+                overflow: hidden;
+                position: fixed;
+                width: 100%;
+                touch-action: manipulation;
+            }
+            .chat-layout {
+                height: 100dvh;  /* 动态视口高度，包含/排除地址栏时自动调整 */
+                height: 100vh;   /* 降级：不支持 dvh 的浏览器 */
+                width: 100%;
+                overflow: hidden;
+            }
+            .main-area {
+                min-height: 0;  /* flex column 子元素 overflow-y:auto 生效的关键 */
+                overflow: hidden;
+            }
+            .messages-container {
+                min-height: 0;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior-y: contain;
+                touch-action: pan-y;
+            }
+            .input-area {
+                flex-shrink: 0;
+                padding-bottom: calc(8px + env(safe-area-inset-bottom));
+            }
             .sidebar {
                 width: 82vw;
                 max-width: 320px;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-y;
             }
             .sidebar-header {
                 padding: 16px;
