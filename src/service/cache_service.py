@@ -30,11 +30,19 @@ class CacheService:
     db_url: str
 
     @staticmethod
-    #jdbc:redis://localhost:6380
+    # 支持格式: redis://host:port[/db] 或 redis://:password@host:port[/db]
     def parse_url(redis_db_url=REDIS_DB_URL):
         prefix, suffix = redis_db_url.split("//")
-        password = prefix.split(":")[-1]
-        host, port = suffix.split(":")
+        # 处理 password@host 格式
+        if "@" in suffix:
+            auth, host_port = suffix.split("@", 1)
+            password = auth.split(":")[-1] if ":" in auth else auth
+        else:
+            host_port = suffix
+            password = prefix.split(":")[-1] if ":" in prefix else ""
+        # 去掉路径部分（数据库编号，如 /0），避免 int("6379/0") 报错
+        host_port = host_port.split("/")[0]
+        host, port = host_port.split(":")
         return host, int(port), password
 
     def __init__(self, redis_db_url: str = REDIS_DB_URL, index_name:str = INDEX_NAME, cache_ttl = CACHE_DEFAULT_TTL):
