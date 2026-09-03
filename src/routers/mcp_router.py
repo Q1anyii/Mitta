@@ -9,7 +9,7 @@ MCP 配置存储在 PostgreSQL user_mcp_servers 表中，按 user_id 隔离。
 from fastapi import APIRouter, Depends
 
 from config import load_mcp_server_configs
-from service.mcp_config_service import mcp_config_service
+import service.mcp_config_service as mcp_config_module
 from utils.jwt_utils import get_current_user, TokenData
 from utils.response_util import Response
 
@@ -64,10 +64,10 @@ def update_user_mcp_config(
     if not isinstance(mcp_servers, list):
         return Response.failed("mcp_servers 必须是 JSON 数组")
 
-    if mcp_config_service is None:
+    if mcp_config_module.mcp_config_service is None:
         return Response.failed("MCP 配置服务未初始化，请稍后重试")
 
-    success, message = mcp_config_service.save_user_servers(user_id, mcp_servers)
+    success, message = mcp_config_module.mcp_config_service.save_user_servers(user_id, mcp_servers)
     if not success:
         return Response.failed(message)
 
@@ -92,10 +92,10 @@ def delete_user_mcp_server(
         { ok, detail }
     """
     user_id = current_user.user_id
-    if mcp_config_service is None:
+    if mcp_config_module.mcp_config_service is None:
         return Response.failed("MCP 配置服务未初始化")
 
-    deleted = mcp_config_service.delete_user_server(user_id, server_name)
+    deleted = mcp_config_module.mcp_config_service.delete_user_server(user_id, server_name)
     if deleted:
         return {"ok": True, "detail": f"已删除 MCP 服务器: {server_name}"}
     else:
