@@ -86,3 +86,4 @@ coverage.xml
 *.local.py
 config.local.py
 src/ragas_eval/
+/deploy/nginx/nginx-dev.conf
