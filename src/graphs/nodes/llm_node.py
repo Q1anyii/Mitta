@@ -7,7 +7,7 @@
 
 import re
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.store.base import BaseStore
@@ -120,6 +120,32 @@ def llm_node(
                     "操作外部服务），请如实告知暂时无法处理，不要编造结果或假装已执行。"
         ))
         model_with_tools = model
+
+    # ── 5.5 深度思考模式：根据用户在前端选择的开关动态 bind ──
+    # thinking_mode/reasoning_effort 从 chat_service._build_stream_config 写入 config.configurable，
+    # 不在 model 初始化时固定（container.py 的 model 保持普通模式），
+    # 这样 classify_node/memory_node 不会被拖慢，只有主回答节点按需开启
+    thinking_mode = config["configurable"].get("thinking_mode", False)
+    reasoning_effort = config["configurable"].get("reasoning_effort", "low")
+    logger.info(f"[thinking-debug] thinking_mode={thinking_mode} reasoning_effort={reasoning_effort}")
+    if thinking_mode:
+        # .bind() 返回新的 Runnable，在已有 bind_tools 基础上叠加 extra_body
+        model_with_tools = model_with_tools.bind(
+            extra_body={"thinking": {"type": "enabled"}},
+            reasoning_effort=reasoning_effort,
+        )
+        # 调试：打印 bind 后的 model 配置，确认 extra_body 是否真的传入
+        try:
+            bound_kwargs = getattr(model_with_tools, "kwargs", {})
+            logger.info(f"[thinking-debug] bound kwargs={bound_kwargs}")
+            # 打印底层 model 的配置
+            if hasattr(model_with_tools, "model"):
+                inner = model_with_tools.model
+                logger.info(f"[thinking-debug] inner model={type(inner).__name__} "
+                            f"extra_body={getattr(inner, 'extra_body', 'N/A')} "
+                            f"model_kwargs={getattr(inner, 'model_kwargs', 'N/A')}")
+        except Exception as e:
+            logger.info(f"[thinking-debug] failed to inspect model: {e}")
 
     # ── 6. 流式生成：累积 chunk，用 AIMessageChunk.__add__ 合并 ──
     # 注意：节点不能返回生成器——langgraph 1.x 会把生成器当单条消息转换，

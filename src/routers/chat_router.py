@@ -49,6 +49,8 @@ def chat(request_body: ChatRequest, current_user: TokenData = Depends(get_curren
         current_user.user_id, thread_id, query,
         user_info=user_info,
         file_ids=request_body.file_ids,
+        thinking_mode=request_body.thinking_mode,
+        reasoning_effort=request_body.reasoning_effort,
     )
     return StreamingResponse(event_stream, media_type="text/event-stream")
 

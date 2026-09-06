@@ -49,10 +49,33 @@ def _process_graph_chunk(chunk, meta) -> str | None:
         SSE 事件字符串；过滤掉的 chunk 返回 None
     """
     node = meta.get("langgraph_node")
+    # 调试：打印每个 chunk 的节点、类型、关键字段（部署后看 docker logs | grep chunk-debug）
+    chunk_type = type(chunk).__name__
+    has_reasoning = bool(
+        getattr(chunk, "reasoning_content", None)
+        or getattr(chunk, "reasoning", None)
+        or (getattr(chunk, "additional_kwargs", None) or {}).get("reasoning_content")
+        or (getattr(chunk, "additional_kwargs", None) or {}).get("reasoning")
+    )
+    logger.info(f"[chunk-debug] node={node} type={chunk_type} "
+                f"content_len={len(str(getattr(chunk, 'content', '')))} "
+                f"has_reasoning={has_reasoning} "
+                f"additional_kwargs={getattr(chunk, 'additional_kwargs', None)} "
+                f"reasoning_content={getattr(chunk, 'reasoning_content', 'N/A')}")
 
-    # llm_node：输出文本内容 + 检测工具调用开始
+    # llm_node：输出深度思考内容 + 文本内容 + 检测工具调用开始
     if node == "llm_node" and isinstance(chunk, AIMessageChunk):
         events = []
+        # 深度思考内容：DeepSeek thinking 模式返回 reasoning_content，
+        # LangChain 可能放在直接属性或 additional_kwargs 中，两种都检测
+        reasoning = (
+            getattr(chunk, "reasoning_content", None)
+            or getattr(chunk, "reasoning", None)
+            or (chunk.additional_kwargs or {}).get("reasoning_content")
+            or (chunk.additional_kwargs or {}).get("reasoning")
+        )
+        if reasoning:
+            events.append(_format_sse({"reasoning": reasoning}))
         # 检测工具调用开始：AIMessageChunk 含 tool_calls 字段
         if chunk.tool_calls:
             for tc in chunk.tool_calls:
@@ -359,7 +382,7 @@ class ChatService:
             for k in keys_to_remove:
                 del self._file_content_cache[k]
 
-    def _build_stream_config(self, user_id, thread_id, user_info) -> dict:
+    def _build_stream_config(self, user_id, thread_id, user_info, thinking_mode=False, reasoning_effort="low") -> dict:
         """构建流式对话的 LangGraph config。
 
         请求级用户上下文随 config 传入图（工具通过 RunnableConfig 参数读取），
@@ -379,11 +402,14 @@ class ChatService:
                 "thread_id": thread_id,
                 "user_id": user_id,
                 "user_info": user_info,
+                # 深度思考配置：随 config 传入图，llm_node 中读取并动态 bind
+                "thinking_mode": thinking_mode,
+                "reasoning_effort": reasoning_effort,
             },
             "metadata": {"user_id": user_id},  # 随 checkpoint 写入 metadata
         }
 
-    def stream(self, user_id, thread_id, input_str, user_info=None, file_ids: list[int] = None):
+    def stream(self, user_id, thread_id, input_str, user_info=None, file_ids: list[int] = None, thinking_mode: bool = False, reasoning_effort: str = "low"):
         """流式对话生成（SSE）。
 
         编排逻辑：拼接文件内容 → 构建 config → 遍历图输出 → 过滤节点 → 格式化 SSE 事件。
@@ -395,6 +421,8 @@ class ChatService:
             input_str: 用户输入文本
             user_info: 用户上下文信息
             file_ids: 上传文件 ID 列表，解析内容会拼接到 input_str 传入 llm_node
+            thinking_mode: 是否开启深度思考模式（前端用户选择）
+            reasoning_effort: 推理强度 low/high/max（仅 thinking_mode=True 时生效）
 
         Yields:
             SSE 事件字符串（"data: ...\n\n" 格式）
@@ -407,7 +435,7 @@ class ChatService:
             for fid in file_ids:
                 self._file_content_cache.pop(f"{user_id}:{fid}", None)
 
-        config = self._build_stream_config(user_id, thread_id, user_info)
+        config = self._build_stream_config(user_id, thread_id, user_info, thinking_mode, reasoning_effort)
 
         # 2. 流式输出：遍历图，过滤节点，格式化 SSE 事件
         try:

@@ -68,6 +68,35 @@
             return div.innerHTML;
         }
 
+        // Markdown 渲染：marked 解析 + highlight.js 代码高亮
+        function renderMarkdown(text) {
+            if (!text) return '';
+            if (typeof marked === 'undefined') return escapeHtml(text);
+            // 预处理：压缩连续空行（3个以上换行→2个），去除行尾空格，避免 AI 输出大量空行
+            let cleaned = text
+                .replace(/\r\n/g, '\n')
+                .replace(/[ \t]+\n/g, '\n')       // 行尾空格
+                .replace(/\n{3,}/g, '\n\n');       // 连续空行压缩
+            marked.setOptions({
+                gfm: true,
+                breaks: false,  // 标准 Markdown：空行才分段，单个换行不产生 <br>，避免大量空行
+                highlight: function(code, lang) {
+                    if (typeof hljs !== 'undefined') {
+                        try {
+                            if (lang && hljs.getLanguage(lang)) {
+                                return hljs.highlight(code, { language: lang }).value;
+                            }
+                            return hljs.highlightAuto(code).value;
+                        } catch (e) {
+                            return code;
+                        }
+                    }
+                    return code;
+                }
+            });
+            return marked.parse(cleaned);
+        }
+
         // 兼容 content 为字符串或列表（AIMessageChunk 多模态格式）的情况
         function extractContentText(content) {
             if (typeof content === 'string') return content;
@@ -184,11 +213,14 @@
             return ok ? data : null;
         }
 
-        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds) {
+        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort) {
             const body = { query, thread_id: threadId };
             if (fileIds && fileIds.length > 0) {
                 body.file_ids = fileIds;
             }
+            // 深度思考设置：随每次请求传入，后端 llm_node 动态 bind
+            body.thinking_mode = thinkingMode;
+            body.reasoning_effort = reasoningEffort;
             const response = await fetch(`${API_BASE}/api/chat/`, {
                 method: 'POST',
                 headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -243,6 +275,10 @@
                     // 工具调用结束事件：通知前端隐藏加载界面
                     if (chunk.tool_call_end && onToolCall) {
                         onToolCall({ type: 'end', name: chunk.tool_call_end.name, content: chunk.tool_call_end.content });
+                    }
+                    // 深度思考内容：DeepSeek 推理模型的思考过程，前端折叠展示，不混入正文
+                    if (chunk.reasoning && onReasoning) {
+                        onReasoning(chunk.reasoning);
                     }
                     const text = extractContentText(chunk.content);
                     if (text) {
@@ -750,20 +786,77 @@
                                             <span>·</span>
                                             <span>{{ msg.time }}</span>
                                         </div>
-                                        <div class="message-content">
-                                            <!-- v-show 双节点常驻：切换只改 display，不触发挂载/卸载，
-                                                规避 v-if/v-else 静态块提升 + insertStaticContent 的
-                                                nextSibling 空指针崩溃（Vue 3.5 流式切换白屏问题） -->
-                                            <div v-show="msg.content" v-html="escapeHtml(msg.content)"></div>
-                                            <div v-show="!msg.content" class="thinking-indicator">
-                                                <div class="thinking-dots"><span></span><span></span><span></span></div>
-                                                <span class="thinking-text">正在思考...</span>
+                                        <!-- 深度思考折叠面板：仅 AI 消息且有思考内容时显示，点击箭头展开/收起 -->
+                                        <div v-if="msg.role === 'assistant' && msg.reasoning" class="reasoning-panel">
+                                            <div class="reasoning-header" @click="msg.showReasoning = !msg.showReasoning">
+                                                <svg class="reasoning-arrow" :class="{ expanded: msg.showReasoning }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                <span class="reasoning-title">深度思考</span>
+                                                <span class="reasoning-hint">{{ msg.showReasoning ? '点击收起' : '点击展开' }}</span>
                                             </div>
-                                            <!-- 工具调用加载界面：当模型正在调用工具时显示 -->
-                                            <div v-if="currentToolCall && msg === messages[messages.length - 1]" class="tool-call-indicator">
-                                                <div class="tool-call-spinner"></div>
-                                                <span class="tool-call-text">正在调用工具：<strong>{{ currentToolCall.name }}</strong></span>
+                                            <div v-show="msg.showReasoning" class="reasoning-content" v-html="escapeHtml(msg.reasoning)"></div>
+                                        </div>
+                                        <!-- ═══ AI 消息：blocks 穿插渲染（文本块 + 工具调用块按顺序交错） ═══ -->
+                                        <template v-if="msg.role === 'assistant'">
+                                            <div class="message-content">
+                                                <!-- 有 blocks 时按块渲染（新消息） -->
+                                                <template v-if="msg.blocks && msg.blocks.length > 0">
+                                                    <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
+                                                        <!-- 文本块：Markdown 渲染 -->
+                                                        <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(block.content)"></div>
+                                                        <!-- 工具调用块：穿插在文本之间 -->
+                                                        <div v-else-if="block.type === 'tool'" class="tool-call-item" :class="{ running: block.status === 'running' }">
+                                                            <div class="tool-call-header" @click="block.expanded = !block.expanded">
+                                                                <svg class="tool-call-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                                                                <span class="tool-call-name">{{ block.name }}</span>
+                                                                <span class="tool-call-status" :class="block.status">
+                                                                    <span v-if="block.status === 'running'" class="tool-call-spinner"></span>
+                                                                    {{ block.status === 'running' ? '运行中' : '已完成' }}
+                                                                </span>
+                                                                <svg class="tool-call-arrow" :class="{ expanded: block.expanded }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                            </div>
+                                                            <div v-show="block.expanded" class="tool-call-detail">
+                                                                <div class="tool-call-section">
+                                                                    <div class="tool-call-label">输入参数</div>
+                                                                    <pre class="tool-call-json">{{ JSON.stringify(block.args, null, 2) }}</pre>
+                                                                </div>
+                                                                <div v-if="block.result" class="tool-call-section">
+                                                                    <div class="tool-call-label">输出结果</div>
+                                                                    <pre class="tool-call-result">{{ block.result }}</pre>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </template>
+                                                </template>
+                                                <!-- 兜底：blocks 为空但有 content（旧消息/流式首帧） -->
+                                                <div v-else-if="msg.content" class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
+                                                <!-- 正在思考动画 -->
+                                                <div v-show="!msg.content" class="thinking-indicator">
+                                                    <div class="thinking-dots"><span></span><span></span><span></span></div>
+                                                    <span class="thinking-text">正在思考...</span>
+                                                </div>
+                                                <!-- 工具调用加载界面 -->
+                                                <div v-if="currentToolCall && msg === messages[messages.length - 1]" class="tool-call-indicator">
+                                                    <div class="tool-call-spinner"></div>
+                                                    <span class="tool-call-text">正在调用工具：<strong>{{ currentToolCall.name }}</strong></span>
+                                                </div>
                                             </div>
+                                        </template>
+                                        <!-- ═══ 用户消息：纯文本，不做 Markdown 渲染，保留换行 ═══ -->
+                                        <div v-else class="message-content user-text">{{ msg.content }}</div>
+                                        <!-- AI 消息操作栏：复制 / 分享 / 重新生成 -->
+                                        <div v-if="msg.role === 'assistant' && msg.content && !isLoading" class="message-actions">
+                                            <button class="msg-action-btn" @click="copyMessage(msg)" title="复制">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                                <span>复制</span>
+                                            </button>
+                                            <button class="msg-action-btn" @click="shareMessage(msg)" title="分享">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+                                                <span>分享</span>
+                                            </button>
+                                            <button class="msg-action-btn" @click="regenerateMessage(msg)" title="重新生成">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                                <span>重新生成</span>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -796,6 +889,28 @@
                                     ref="textarea"
                                 ></textarea>
                                 <div class="input-actions">
+                                    <!-- 深度思考设置按钮 -->
+                                    <div class="thinking-toggle-wrapper">
+                                        <button
+                                            class="thinking-btn"
+                                            :class="{ active: thinkingMode }"
+                                            @click="toggleThinkingMode"
+                                            :title="thinkingMode ? '深度思考已开启' : '开启深度思考'"
+                                        >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"></path></svg>
+                                            <span v-if="thinkingMode" class="thinking-label" @click.stop="toggleEffortPanel">{{ reasoningEffort === 'low' ? '低' : reasoningEffort === 'high' ? '高' : 'max' }}</span>
+                                        </button>
+                                        <!-- 强度选择面板：开启思考且面板展开时显示 -->
+                                        <div v-if="thinkingMode && thinkingPanelOpen" class="thinking-effort-panel">
+                                            <span
+                                                v-for="effort in ['low', 'high', 'max']"
+                                                :key="effort"
+                                                class="effort-option"
+                                                :class="{ selected: reasoningEffort === effort }"
+                                                @click="setEffort(effort)"
+                                            >{{ effort === 'low' ? '低' : effort === 'high' ? '高' : 'max' }}</span>
+                                        </div>
+                                    </div>
                                     <!-- + 号上传按钮 -->
                                     <div class="user-menu-wrapper" style="position: relative;">
                                         <button v-if="uploadMenuOpen" class="upload-dropdown" @click.stop>
@@ -1004,6 +1119,72 @@
                 const mcpConfigPath = ref('');
                 const uploadedFiles = ref([]);
                 const abortController = ref(null);
+                // 深度思考设置：用户可在前端切换，状态持久化到 localStorage
+                const thinkingMode = ref(localStorage.getItem('thinkingMode') === 'true');
+                const reasoningEffort = ref(localStorage.getItem('reasoningEffort') || 'low');
+                const thinkingPanelOpen = ref(false);  // 思考设置面板展开状态
+                // 封装方法：Vue 模板不能直接访问全局 localStorage，必须通过 setup 方法调用
+                function toggleThinkingMode() {
+                    thinkingMode.value = !thinkingMode.value;
+                    localStorage.setItem('thinkingMode', thinkingMode.value);
+                    // 开启思考时自动展开强度选择面板，关闭时收起
+                    thinkingPanelOpen.value = thinkingMode.value;
+                }
+                function setEffort(effort) {
+                    reasoningEffort.value = effort;
+                    localStorage.setItem('reasoningEffort', effort);
+                    // 选择强度后自动收起面板
+                    thinkingPanelOpen.value = false;
+                }
+                // 点击强度标签重新展开面板（不改变开关状态）
+                function toggleEffortPanel() {
+                    if (thinkingMode.value) {
+                        thinkingPanelOpen.value = !thinkingPanelOpen.value;
+                    }
+                }
+
+                // ── AI 消息操作：复制 / 分享 / 重新生成 ──
+                function copyMessage(msg) {
+                    // 去除 HTML 标签，复制纯文本
+                    const text = msg.content.replace(/<[^>]*>/g, '');
+                    navigator.clipboard.writeText(text).then(() => {
+                        showToast('已复制到剪贴板', 'success');
+                    }).catch(() => {
+                        // 降级：用 textarea 复制
+                        const ta = document.createElement('textarea');
+                        ta.value = text;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        showToast('已复制到剪贴板', 'success');
+                    });
+                }
+
+                function shareMessage(msg) {
+                    const text = msg.content.replace(/<[^>]*>/g, '');
+                    if (navigator.share) {
+                        // 移动端原生分享
+                        navigator.share({ title: 'Mitta AI 回复', text }).catch(() => {});
+                    } else {
+                        // 桌面端：复制到剪贴板
+                        copyMessage(msg);
+                    }
+                }
+
+                function regenerateMessage(msg) {
+                    // 找到这条 AI 消息对应的上一条用户消息
+                    const idx = messages.value.findIndex(m => m.id === msg.id);
+                    if (idx <= 0) return;
+                    const userMsg = messages.value[idx - 1];
+                    if (!userMsg || userMsg.role !== 'user') return;
+                    // 删除 AI 回复和用户消息，重新发送
+                    messages.value.splice(idx - 1, 2);
+                    saveMessages();
+                    // 用用户消息的内容重新发送
+                    inputText.value = userMsg.content;
+                    sendMessage();
+                }
 
                 const profileForm = ref({
                     username: '',
@@ -1140,13 +1321,51 @@
                         }
                         // 网络/服务异常：回退本地缓存兜底，保证弱网下仍可阅读
                         const cached = cache.getMessages(currentThreadId.value);
-                        messages.value = cached && cached.length > 0 ? cached : [];
+                        messages.value = cached && cached.length > 0 ? cached.map(normalizeMessage) : [];
+                    }
+                };
+
+                // 消息归一化：给旧格式消息补充新字段，避免模板渲染时 undefined.length 报错
+                const normalizeMessage = (msg) => {
+                    if (msg.role === 'assistant') {
+                        msg.tool_calls = msg.tool_calls || [];
+                        msg.reasoning = msg.reasoning || '';
+                        msg.showReasoning = msg.showReasoning || false;
+                        // blocks 不存在时（旧消息），用 content 初始化一个文本块
+                        if (!msg.blocks) {
+                            msg.blocks = msg.content ? [{ type: 'text', content: msg.content }] : [];
+                        }
+                    }
+                    return msg;
+                };
+
+                // 同步文本块：保证 blocks 中最后一个 text 块内容与流式全文一致
+                // 工具块之后来了新文本时自动新建文本块，实现"文本-工具-文本"穿插
+                const _syncTextBlock = (aiMsg, fullText) => {
+                    if (!aiMsg.blocks) aiMsg.blocks = [];
+                    const blocks = aiMsg.blocks;
+                    // 找到最后一个文本块的位置
+                    let lastTextIdx = -1;
+                    for (let i = blocks.length - 1; i >= 0; i--) {
+                        if (blocks[i].type === 'text') { lastTextIdx = i; break; }
+                    }
+                    // 计算"最后一个文本块之后"新增的文本（工具块之后的新文本）
+                    let prevTextLen = 0;
+                    for (let i = 0; i < lastTextIdx; i++) {
+                        if (blocks[i].type === 'text') prevTextLen += blocks[i].content.length;
+                    }
+                    if (lastTextIdx === -1) {
+                        // 还没有文本块，新建
+                        if (fullText) blocks.push({ type: 'text', content: fullText });
+                    } else {
+                        // 更新最后一个文本块：全文减去之前文本块的长度
+                        blocks[lastTextIdx].content = fullText.slice(prevTextLen) || '';
                     }
                 };
 
                 const parseHistory = (history) => {
                     if (!Array.isArray(history)) return [];
-                    return history.map(item => ({
+                    return history.map(item => normalizeMessage({
                         id: generateId(), // 唯一 key，避免数组变更时 DOM 错乱
                         role: item.role === 'human' ? 'user' : 'assistant',
                         content: extractContentText(item.content),
@@ -1290,7 +1509,7 @@
                         // 注意：push 后必须从响应式代理中取回引用。Vue 3 的 proxy 是惰性转换的，
                         // push 进数组的是原始对象，若直接持有它并赋值 content，不会触发响应式
                         // 更新（流式输出卡在"正在思考..."，刷新后从缓存整体赋值才显示）。
-                        messages.value.push({ id: generateId(), role: 'assistant', content: '', time: formatTime() });
+                        messages.value.push({ id: generateId(), role: 'assistant', content: '', reasoning: '', showReasoning: false, tool_calls: [], blocks: [], time: formatTime() });
                         const aiMsg = messages.value[messages.value.length - 1];
                         saveMessages();
                         scrollToBottom();
@@ -1313,6 +1532,8 @@
                                 renderTimer = setTimeout(() => {
                                     renderTimer = null;
                                     aiMsg.content = latestText;
+                                    // 同步更新 blocks 中最后一个文本块（穿插式渲染）
+                                    _syncTextBlock(aiMsg, latestText);
                                     scrollToBottom();
                                 }, 100);
                             }
@@ -1323,19 +1544,50 @@
                                 }, 500);
                             }
                         }, abortController.value.signal, (toolEvent) => {
-                            // 工具调用事件：显示/隐藏加载界面
+                            // 工具调用事件：加载界面 + 写入 blocks 实现穿插
                             if (toolEvent.type === 'start') {
                                 currentToolCall.value = { name: toolEvent.name, args: toolEvent.args };
+                                // 新建工具调用块，插入到当前文本块之后
+                                aiMsg.blocks.push({
+                                    type: 'tool',
+                                    name: toolEvent.name,
+                                    args: toolEvent.args || {},
+                                    result: '',
+                                    status: 'running',
+                                    expanded: false,
+                                    time: formatTime()
+                                });
                             } else if (toolEvent.type === 'end') {
                                 currentToolCall.value = null;
+                                // 更新最后一个 running 状态的同名工具块
+                                for (let i = aiMsg.blocks.length - 1; i >= 0; i--) {
+                                    const b = aiMsg.blocks[i];
+                                    if (b.type === 'tool' && b.status === 'running' && b.name === toolEvent.name) {
+                                        b.status = 'done';
+                                        b.result = toolEvent.content || '';
+                                        break;
+                                    }
+                                }
                             }
-                        }, pendingFileIds);
+                        }, pendingFileIds, (reasoningText) => {
+                            // 深度思考内容：追加到 aiMsg.reasoning，节流渲染
+                            aiMsg.reasoning += reasoningText;
+                            if (!renderTimer) {
+                                renderTimer = setTimeout(() => {
+                                    renderTimer = null;
+                                    aiMsg.content = latestText;
+                                    _syncTextBlock(aiMsg, latestText);
+                                    scrollToBottom();
+                                }, 100);
+                            }
+                        }, thinkingMode.value, reasoningEffort.value);
 
                         // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染
                         if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
                         if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
                         currentToolCall.value = null;  // 清除工具调用状态
                         aiMsg.content = answer || '（无回复）';
+                        _syncTextBlock(aiMsg, answer || '（无回复）');
                         streaming.value = false;
                         saveMessages();
                         saveSessions();
@@ -1791,7 +2043,7 @@
                     createNewSession, switchSession, deleteSession,
                     clearCurrentChat, sendMessage, sendQuick,
                     handleKeydown, autoResize, openSidebar, closeSidebar,
-                    logout, escapeHtml,
+                    logout, escapeHtml, renderMarkdown,
                     // 新增
                     userMenuOpen, uploadMenuOpen, profileModalOpen, settingsModalOpen,
                     profileForm, settingsForm, profileSaving, settingsSaving,
@@ -1802,6 +2054,11 @@
                     toggleUploadMenu, handleFileUpload, removeUploadedFile,
                     stopResponse, restartNoticeOpen, confirmRestartNotice,
                     mcpJsonText, mcpJsonError, formatMcpJson, clearMcpJson, mcpConfigPath,
+                    // 深度思考
+                    thinkingMode, reasoningEffort, thinkingPanelOpen,
+                    toggleThinkingMode, setEffort, toggleEffortPanel,
+                    // 消息操作
+                    copyMessage, shareMessage, regenerateMessage,
                 };
             }
         };

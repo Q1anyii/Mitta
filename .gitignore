@@ -87,3 +87,7 @@ coverage.xml
 config.local.py
 src/ragas_eval/
 /deploy/nginx/nginx-dev.conf
+/database.db
+/database.db-shm
+/fix_reasoning_debug.py
+/database.db-wal

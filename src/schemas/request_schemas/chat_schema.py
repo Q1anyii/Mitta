@@ -7,3 +7,5 @@ class ChatRequest(BaseModel):
     query: str
     thread_id: str  # 会话id，用来做langgraph checkpointer thread_id
     file_ids: Optional[List[int]] = None  # 上传文件 ID 列表，解析内容拼接到 query 传入 LLM
+    thinking_mode: Optional[bool] = False  # 是否开启深度思考模式
+    reasoning_effort: Optional[str] = "low"  # 推理强度：low/high/max（仅 thinking_mode=True 时生效）

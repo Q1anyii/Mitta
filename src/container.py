@@ -40,6 +40,7 @@ class AppDependencies:
             model_provider="openai",
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             base_url="https://api.deepseek.com",
+            # 思考模式不在此固定开启，由每次请求的 thinking_mode 参数动态 bind（见 llm_node）
         )
         self.selector_llm = self.model
 
