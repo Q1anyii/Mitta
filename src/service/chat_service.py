@@ -440,9 +440,12 @@ class ChatService:
 
         config = self._build_stream_config(user_id, thread_id, user_info, thinking_mode, reasoning_effort)
 
-        # 2. 流式输出：遍历图，过滤节点，格式化 SSE 事件
+        # 2. 流式输出：遍历用户专属图（含用户自定义 MCP 工具），无配置时自动降级全局图
+        # 必须走 _get_user_graph，不能直接用 self.main_graph，否则数据库中的用户
+        # MCP 配置不会被加载（invoke 非流式路径已正确使用，stream 此前漏掉导致工具=0）
         try:
-            for chunk, meta in self.main_graph.stream(
+            graph = self._get_user_graph(user_id)
+            for chunk, meta in graph.stream(
                 {"input_str": input_str},
                 config=config,
                 stream_mode="messages",
