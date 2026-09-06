@@ -62,7 +62,22 @@ jobs:
             cd /opt/mitta
 
             echo "=== [1/5] 同步最新代码（前端/配置/compose） ==="
-            git pull origin main
+            # 国内ECS访问GitHub不稳定：强制HTTP/1.1（GnuTLS HTTP/2兼容问题）+ 重试3次
+            git config --global http.version HTTP/1.1
+            git config --global http.postBuffer 524288000
+            for retry in 1 2 3; do
+              echo "  git pull 第 ${retry} 次尝试..."
+              if git pull origin main; then
+                echo "  git pull 成功"
+                break
+              fi
+              if [ "$retry" = "3" ]; then
+                echo "❌ git pull 连续3次失败，中止部署"
+                exit 1
+              fi
+              echo "  失败，5秒后重试..."
+              sleep 5
+            done
 
             echo "=== [2/5] 登录 ACR 并拉取新镜像 ==="
             docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
