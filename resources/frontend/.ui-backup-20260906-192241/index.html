@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#071024">
+    <title>Mitta AI — 智能助理</title>
+    <link rel="icon" href="favicon.png">
+    <!-- CDN 预连接：提前建立 DNS/TCP/TLS 连接，Vue 脚本下载更快 -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://cdn.bootcdn.net" crossorigin>
+    <link rel="dns-prefetch" href="https://unpkg.com">
+    <!-- 字体：移除 Google Fonts 外链（fonts.googleapis.com 在国内网络下经常挂起，
+         <link rel="stylesheet"> 是渲染阻塞资源，会导致页面长时间空白转圈），
+         字体栈自动回退到系统字体（见 :root 的 --font-display / --font-body） -->
+    <!-- Vue 3 + Vue Router CDN（主源 jsdelivr，备源 unpkg/bootcdn，按顺序加载） -->
+    <script>
+        // CDN 加载失败检测与回退：按顺序尝试多个源
+        (function loadScript(srcs, callback) {
+            var i = 0;
+            (function tryNext() {
+                if (i >= srcs.length) {
+                    callback(false);
+                    return;
+                }
+                var s = document.createElement('script');
+                s.src = srcs[i++];
+                s.onload = function () { callback(true); };
+                s.onerror = tryNext;
+                document.head.appendChild(s);
+            })();
+        })([
+            'https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js',
+            'https://cdn.bootcdn.net/ajax/libs/vue/3.5.13/vue.global.prod.min.js',
+            'https://unpkg.com/vue@3/dist/vue.global.js'
+        ], function (ok) {
+            if (!ok) {
+                window.__vueFailed = true;
+                // 所有 CDN 源均失败：显示友好错误提示而非空白页
+                setTimeout(showLoadError, 1000);
+                return;
+            }
+            loadRouter();
+        });
+
+        function showLoadError() {
+            var app = document.getElementById('app');
+            if (app && (!window.Vue || !window.VueRouter)) {
+                app.innerHTML = [
+                    '<div style="display:flex;min-height:100vh;align-items:center;justify-content:center;font-family:sans-serif;background:#F4F7FE;">',
+                    '<div style="text-align:center;padding:40px;max-width:440px;">',
+                    '<h2 style="margin-bottom:12px;color:#071024;">页面加载失败</h2>',
+                    '<p style="color:#4A5B7A;line-height:1.7;font-size:14px;">',
+                    'Vue 框架资源加载失败，请检查网络连接后刷新重试。<br>',
+                    '若网络受限，请下载 vue.global.prod.js 与 vue-router.global.prod.js 到本地，',
+                    '并将 HTML 中 CDN 引用替换为本地路径。</p>',
+                    '</div></div>'
+                ].join('');
+            }
+        }
+
+        function loadRouter() {
+            (function loadScript(srcs, callback) {
+                var i = 0;
+                (function tryNext() {
+                    if (i >= srcs.length) {
+                        callback(false);
+                        return;
+                    }
+                    var s = document.createElement('script');
+                    s.src = srcs[i++];
+                    s.onload = function () { callback(true); };
+                    s.onerror = tryNext;
+                    document.head.appendChild(s);
+                })();
+            })([
+                'https://cdn.jsdelivr.net/npm/vue-router@4.5.0/dist/vue-router.global.prod.js',
+                'https://cdn.bootcdn.net/ajax/libs/vue-router/4.5.0/vue-router.global.prod.min.js',
+                'https://unpkg.com/vue-router@4/dist/vue-router.global.js'
+            ], function (ok) {
+                window.__routerReady = ok;
+                window.__depsReady = true;
+                if (ok) {
+                    // 依赖全部就绪，触发应用初始化
+                    var evt = new Event('deps-ready');
+                    window.dispatchEvent(evt);
+                } else {
+                    // Vue Router 加载失败：显示错误提示
+                    setTimeout(showLoadError, 1000);
+                }
+            });
+        }
+    </script>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <!-- Markdown 渲染 + 代码高亮 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/highlight.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 首屏骨架屏：Vue/CDN 加载期间显示，避免白屏；Vue mount 后自动被替换 -->
+        <div id="mitta-skeleton" style="display:flex;min-height:100vh;background:#F4F7FE;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+            <!-- 左侧边栏骨架 -->
+            <div style="width:260px;background:#071024;padding:20px;flex-shrink:0;display:none;" class="sk-sidebar">
+                <div style="height:32px;width:140px;background:rgba(255,255,255,0.08);border-radius:8px;margin-bottom:24px;animation:sk-pulse 1.5s ease-in-out infinite;"></div>
+                <div style="height:36px;background:rgba(255,255,255,0.06);border-radius:8px;margin-bottom:12px;animation:sk-pulse 1.5s ease-in-out infinite;"></div>
+                <div style="height:36px;background:rgba(255,255,255,0.06);border-radius:8px;margin-bottom:12px;animation:sk-pulse 1.5s ease-in-out infinite 0.2s;"></div>
+                <div style="height:36px;background:rgba(255,255,255,0.06);border-radius:8px;animation:sk-pulse 1.5s ease-in-out infinite 0.4s;"></div>
+            </div>
+            <!-- 主内容区骨架 -->
+            <div style="flex:1;display:flex;flex-direction:column;">
+                <!-- 顶部 header -->
+                <div style="height:56px;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;padding:0 24px;gap:12px;">
+                    <div style="width:36px;height:36px;background:rgba(0,0,0,0.05);border-radius:8px;animation:sk-pulse 1.5s ease-in-out infinite;"></div>
+                    <div style="height:18px;width:120px;background:rgba(0,0,0,0.05);border-radius:4px;animation:sk-pulse 1.5s ease-in-out infinite 0.1s;"></div>
+                </div>
+                <!-- 欢迎区骨架 -->
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;gap:20px;">
+                    <div style="width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,0.05);animation:sk-pulse 1.5s ease-in-out infinite;"></div>
+                    <div style="height:28px;width:200px;background:rgba(0,0,0,0.06);border-radius:6px;animation:sk-pulse 1.5s ease-in-out infinite 0.15s;"></div>
+                    <div style="height:16px;width:280px;background:rgba(0,0,0,0.04);border-radius:4px;animation:sk-pulse 1.5s ease-in-out infinite 0.3s;"></div>
+                    <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;justify-content:center;max-width:500px;">
+                        <div style="height:38px;width:160px;background:rgba(0,0,0,0.04);border-radius:20px;animation:sk-pulse 1.5s ease-in-out infinite 0.4s;"></div>
+                        <div style="height:38px;width:160px;background:rgba(0,0,0,0.04);border-radius:20px;animation:sk-pulse 1.5s ease-in-out infinite 0.55s;"></div>
+                    </div>
+                </div>
+                <!-- 底部输入区骨架 -->
+                <div style="padding:16px 24px 24px;">
+                    <div style="height:48px;background:rgba(0,0,0,0.04);border-radius:12px;animation:sk-pulse 1.5s ease-in-out infinite;"></div>
+                </div>
+            </div>
+        </div>
+        <style>
+            @keyframes sk-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+            @media (min-width: 769px) { .sk-sidebar { display:block !important; } }
+        </style>
+    </div>
+
+    <script src="assets/js/app.js"></script>
+</body>
+</html>
