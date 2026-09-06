@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#071024">
     <title>Mitta AI — 智能助理</title>
     <link rel="icon" href="favicon.png">
     <!-- CDN 预连接：提前建立 DNS/TCP/TLS 连接，Vue 脚本下载更快 -->
@@ -46,10 +47,10 @@
             var app = document.getElementById('app');
             if (app && (!window.Vue || !window.VueRouter)) {
                 app.innerHTML = [
-                    '<div style="display:flex;min-height:100vh;align-items:center;justify-content:center;font-family:sans-serif;background:#F7F5F0;">',
+                    '<div style="display:flex;min-height:100vh;align-items:center;justify-content:center;font-family:sans-serif;background:#F4F7FE;">',
                     '<div style="text-align:center;padding:40px;max-width:440px;">',
-                    '<h2 style="margin-bottom:12px;color:#1A1A19;">页面加载失败</h2>',
-                    '<p style="color:#6E6C66;line-height:1.7;font-size:14px;">',
+                    '<h2 style="margin-bottom:12px;color:#071024;">页面加载失败</h2>',
+                    '<p style="color:#4A5B7A;line-height:1.7;font-size:14px;">',
                     'Vue 框架资源加载失败，请检查网络连接后刷新重试。<br>',
                     '若网络受限，请下载 vue.global.prod.js 与 vue-router.global.prod.js 到本地，',
                     '并将 HTML 中 CDN 引用替换为本地路径。</p>',
@@ -99,9 +100,9 @@
 <body>
     <div id="app">
         <!-- 首屏骨架屏：Vue/CDN 加载期间显示，避免白屏；Vue mount 后自动被替换 -->
-        <div id="mitta-skeleton" style="display:flex;min-height:100vh;background:#F7F5F0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+        <div id="mitta-skeleton" style="display:flex;min-height:100vh;background:#F4F7FE;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
             <!-- 左侧边栏骨架 -->
-            <div style="width:260px;background:#1C1E1D;padding:20px;flex-shrink:0;display:none;" class="sk-sidebar">
+            <div style="width:260px;background:#071024;padding:20px;flex-shrink:0;display:none;" class="sk-sidebar">
                 <div style="height:32px;width:140px;background:rgba(255,255,255,0.08);border-radius:8px;margin-bottom:24px;animation:sk-pulse 1.5s ease-in-out infinite;"></div>
                 <div style="height:36px;background:rgba(255,255,255,0.06);border-radius:8px;margin-bottom:12px;animation:sk-pulse 1.5s ease-in-out infinite;"></div>
                 <div style="height:36px;background:rgba(255,255,255,0.06);border-radius:8px;margin-bottom:12px;animation:sk-pulse 1.5s ease-in-out infinite 0.2s;"></div>

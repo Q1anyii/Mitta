@@ -19,10 +19,10 @@
                         var app = document.getElementById('app');
                         if (app) {
                             app.innerHTML = [
-                                '<div style="display:flex;min-height:100vh;align-items:center;justify-content:center;font-family:sans-serif;background:#F7F5F0;">',
+                                '<div style="display:flex;min-height:100vh;align-items:center;justify-content:center;font-family:sans-serif;background:#F4F7FE;">',
                                 '<div style="text-align:center;padding:40px;max-width:440px;">',
-                                '<h2 style="margin-bottom:12px;color:#1A1A19;">页面加载失败</h2>',
-                                '<p style="color:#6E6C66;line-height:1.7;font-size:14px;">',
+                                '<h2 style="margin-bottom:12px;color:#071024;">页面加载失败</h2>',
+                                '<p style="color:#4A5B7A;line-height:1.7;font-size:14px;">',
                                 'Vue 框架资源加载失败，请检查网络连接后刷新重试。</p>',
                                 '</div></div>'
                             ].join('');
@@ -1282,12 +1282,12 @@
                 });
 
                 const themes = [
-                    { value: 'default', name: '默认', preview: 'linear-gradient(135deg, #3D6B5B, #F7F5F0)' },
-                    { value: 'dark', name: '深色', preview: 'linear-gradient(135deg, #6BA896, #1A1A19)' },
-                    { value: 'ocean', name: '海洋', preview: 'linear-gradient(135deg, #2E6B9E, #F0F4F8)' },
-                    { value: 'sunset', name: '日落', preview: 'linear-gradient(135deg, #C4622E, #FBF5F0)' },
-                    { value: 'forest', name: '森林', preview: 'linear-gradient(135deg, #2E8B57, #F0F5F0)' },
-                    { value: 'lavender', name: '薰衣草', preview: 'linear-gradient(135deg, #7B4FA8, #F5F0F8)' },
+                    { value: 'default', name: '默认', preview: 'linear-gradient(135deg, #00CFFD, #F4F7FE)' },
+                    { value: 'dark', name: '深色', preview: 'linear-gradient(135deg, #00E0FF, #050913)' },
+                    { value: 'ocean', name: '海洋', preview: 'linear-gradient(135deg, #0099FF, #071024)' },
+                    { value: 'sunset', name: '日落', preview: 'linear-gradient(135deg, #FF5C9A, #071024)' },
+                    { value: 'forest', name: '森林', preview: 'linear-gradient(135deg, #00D68F, #071024)' },
+                    { value: 'lavender', name: '薰衣草', preview: 'linear-gradient(135deg, #9D7BFF, #071024)' },
                 ];
 
                 // 知识库主题提示词池：基于 AI Agent 全栈开发知识库（10大主题），每次随机选取 4 个展示
