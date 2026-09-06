@@ -384,26 +384,36 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     box-shadow: var(--shadow-red); }
 .message.user .user-text { white-space: pre-wrap; line-height: 1.7; font-size: 14.5px; }
 
-/* 深度思考内嵌（直接显示在回答中，浅色小字斜体，与正式回答形成对比） */
+/* 深度思考块：独立折叠（同工具调用行内风格），流式中展开、结束后收起 */
 .reasoning-inline {
-    margin: 4px 0 12px;
-    padding: 10px 14px;
+    margin: 6px 0 10px;
+    padding: 8px 12px;
     border-left: 3px solid var(--text-3);
     background: var(--surface-2);
     border-radius: 0 var(--r-sm) var(--r-sm) 0;
-    opacity: .85;
 }
-.reasoning-inline-label {
-    display: flex; align-items: center; gap: 5px;
-    font-size: 11px; font-weight: 800; letter-spacing: 1px;
-    color: var(--text-3); text-transform: uppercase;
-    margin-bottom: 6px;
+/* 收起态：只保留标题行，去掉内容区内边距感 */
+.reasoning-inline.collapsed { padding: 6px 12px; }
+.reasoning-inline-header {
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none;
+    font-size: 12px; font-weight: 700; color: var(--text-3);
+    transition: color .15s;
 }
+.reasoning-inline-header:hover { color: var(--brand-deep); }
+.reasoning-inline-bulb { flex-shrink: 0; }
+.reasoning-inline-title { letter-spacing: .5px; }
+.reasoning-inline-arrow {
+    margin-left: auto; transition: transform .2s var(--ease-pop);
+    color: var(--text-3);
+}
+.reasoning-inline-arrow.expanded { transform: rotate(90deg); }
 .reasoning-inline-text {
+    margin-top: 6px;
     font-size: 12.5px; line-height: 1.75;
     color: var(--text-2); font-style: italic;
     white-space: pre-wrap; word-break: break-word;
-    opacity: .8;
+    opacity: .85;
 }
 /* 正式回答（markdown-body）保持正常深色大字，自然比思考内容醒目 */
 
