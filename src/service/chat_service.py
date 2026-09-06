@@ -91,10 +91,18 @@ def _process_graph_chunk(chunk, meta) -> str | None:
 
     # tool_node：工具执行结果，发送工具调用结束事件（供前端关闭加载动画）
     if node == "tool_node" and isinstance(chunk, ToolMessage):
+        # ToolMessage.content 可能是 str 或 list[dict]（多模态格式），
+        # 列表格式需提取 text 字段拼接，否则前端显示原始 JSON
+        tool_content = chunk.content
+        if isinstance(tool_content, list):
+            tool_content = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in tool_content
+            )
         return _format_sse({
             "tool_call_end": {
                 "name": chunk.name,
-                "content": str(chunk.content)[:200],  # 截断防止工具输出过大
+                "content": str(tool_content)[:300],  # 截断防止工具输出过大
             }
         })
 
