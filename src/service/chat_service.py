@@ -64,14 +64,19 @@ def _process_graph_chunk(chunk, meta) -> str | None:
         if reasoning:
             events.append(_format_sse({"reasoning": reasoning}))
         # 检测工具调用开始：AIMessageChunk 含 tool_calls 字段
+        # 注意：LangChain 流式输出中 tool_calls 分块传输——首块含 name+空 args，
+        # 后续块 name 为空、args 为增量。只在首块（有 name）时发 start，
+        # 否则每个工具会产生多张重复卡片（空调用问题的根因）
         if chunk.tool_calls:
             for tc in chunk.tool_calls:
-                events.append(_format_sse({
-                    "tool_call_start": {
-                        "name": tc.get("name", ""),
-                        "args": tc.get("args", {}),
-                    }
-                }))
+                tool_name = tc.get("name", "")
+                if tool_name:  # 仅首块有 name，过滤掉 args 增量块
+                    events.append(_format_sse({
+                        "tool_call_start": {
+                            "name": tool_name,
+                            "args": tc.get("args", {}),
+                        }
+                    }))
         # 输出文本内容（content 可能是 str 或 list[dict]，多模态模型返回 list）
         if chunk.content:
             content = chunk.content

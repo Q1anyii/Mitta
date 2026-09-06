@@ -68,33 +68,112 @@
             return div.innerHTML;
         }
 
-        // Markdown 渲染：marked 解析 + highlight.js 代码高亮
+        // 工具名 → 中文操作概要映射（不直接暴露英文工具名给用户）
+        const TOOL_SUMMARY_MAP = {
+            // 文件操作
+            'list_directory': '浏览目录',
+            'list_directory_with_sizes': '浏览目录',
+            'directory_tree': '查看目录树',
+            'read_file': '读取文件',
+            'read_text_file': '读取文本文件',
+            'read_media_file': '读取媒体文件',
+            'read_multiple_files': '批量读取文件',
+            'search_files': '搜索文件',
+            'get_file_info': '查看文件信息',
+            'create_directory': '创建目录',
+            'write_file': '写入文件',
+            'create_file': '创建文件',
+            'list_allowed_directories': '查看可访问目录',
+            // 网页抓取
+            'fetch': '抓取网页内容',
+            // Git 操作
+            'git_status': '查看 Git 状态',
+            'git_log': '查看提交历史',
+            'git_show': '查看提交详情',
+            'git_diff': '查看代码差异',
+            'git_diff_staged': '查看暂存差异',
+            'git_diff_unstaged': '查看未暂存差异',
+            'git_add': '暂存文件',
+            'git_commit': '提交代码',
+            'git_branch': '查看分支',
+            'git_checkout': '切换分支',
+            'git_create_branch': '创建分支',
+            // 数据库
+            'query': '查询数据库',
+            'create-table': '创建数据表',
+            'update-record': '更新记录',
+            'describe-table': '查看表结构',
+            'transaction': '数据库事务',
+            // 知识图谱
+            'create_entities': '创建知识实体',
+            'create_relations': '创建知识关系',
+            'add_observations': '添加观察记录',
+            'read_graph': '读取知识图谱',
+            'search_nodes': '搜索图谱节点',
+            'open_nodes': '打开节点详情',
+            // 其他
+            'sequentialthinking': '逐步推理',
+        };
+        function toolSummary(name) {
+            if (!name) return '工具调用';
+            if (TOOL_SUMMARY_MAP[name]) return TOOL_SUMMARY_MAP[name];
+            // 未匹配：下划线转空格，首字母大写
+            return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        // 代码块复制功能（全局，供 marked 渲染的 HTML onclick 调用）
+        function copyCodeBlock(btn) {
+            const wrapper = btn.closest('.code-block-wrapper');
+            if (!wrapper) return;
+            const code = wrapper.querySelector('code');
+            if (!code) return;
+            navigator.clipboard.writeText(code.innerText).then(() => {
+                const original = btn.innerHTML;
+                btn.innerHTML = '<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg>';
+                btn.style.color = '#10b981';
+                setTimeout(() => { btn.innerHTML = original; btn.style.color = ''; }, 1500);
+            }).catch(() => {});
+        }
+
+        // Markdown 渲染：marked 解析 + 自定义代码块窗口（标题栏+复制按钮）+ highlight.js
         function renderMarkdown(text) {
             if (!text) return '';
             if (typeof marked === 'undefined') return escapeHtml(text);
             // 预处理：压缩连续空行（3个以上换行→2个），去除行尾空格，避免 AI 输出大量空行
             let cleaned = text
                 .replace(/\r\n/g, '\n')
-                .replace(/[ \t]+\n/g, '\n')       // 行尾空格
-                .replace(/\n{3,}/g, '\n\n');       // 连续空行压缩
+                .replace(/[ \t]+\n/g, '\n')
+                .replace(/\n{3,}/g, '\n\n');
+            // 自定义代码块渲染：包裹成带语言标题栏+复制按钮的窗口
+            const renderer = new marked.Renderer();
+            renderer.code = function({ text, lang }) {
+                const language = lang || 'code';
+                const escaped = escapeHtml(text);
+                return '<div class=\"code-block-wrapper\">' +
+                    '<div class=\"code-block-header\">' +
+                    '<span class=\"code-block-lang\">' + escapeHtml(language) + '</span>' +
+                    '<button class=\"code-block-copy\" onclick=\"copyCodeBlock(this)\" title=\"复制代码\">' +
+                    '<svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"9\" y=\"9\" width=\"13\" height=\"13\" rx=\"2\" ry=\"2\"></rect><path d=\"M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\"></path></svg>' +
+                    '</button></div>' +
+                    '<pre><code class=\"language-' + escapeHtml(language) + '\">' + escaped + '</code></pre>' +
+                    '</div>';
+            };
             marked.setOptions({
                 gfm: true,
-                breaks: false,  // 标准 Markdown：空行才分段，单个换行不产生 <br>，避免大量空行
-                highlight: function(code, lang) {
-                    if (typeof hljs !== 'undefined') {
-                        try {
-                            if (lang && hljs.getLanguage(lang)) {
-                                return hljs.highlight(code, { language: lang }).value;
-                            }
-                            return hljs.highlightAuto(code).value;
-                        } catch (e) {
-                            return code;
-                        }
-                    }
-                    return code;
-                }
+                breaks: false,
+                renderer: renderer,
             });
-            return marked.parse(cleaned);
+            let html = marked.parse(cleaned);
+            // highlight.js 代码高亮（渲染后处理）
+            if (typeof hljs !== 'undefined') {
+                const tmp = document.createElement('div');
+                tmp.innerHTML = html;
+                tmp.querySelectorAll('pre code').forEach(block => {
+                    try { hljs.highlightElement(block); } catch(e) {}
+                });
+                html = tmp.innerHTML;
+            }
+            return html;
         }
 
         // 兼容 content 为字符串或列表（AIMessageChunk 多模态格式）的情况
@@ -803,19 +882,20 @@
                                                     <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
                                                         <!-- 文本块：Markdown 渲染 -->
                                                         <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(block.content)"></div>
-                                                        <!-- 工具调用块：穿插在文本之间 -->
+                                                        <!-- 工具调用块：穿插在文本之间，显示中文操作概要 -->
                                                         <div v-else-if="block.type === 'tool'" class="tool-call-item" :class="{ running: block.status === 'running' }">
                                                             <div class="tool-call-header" @click="block.expanded = !block.expanded">
                                                                 <svg class="tool-call-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-                                                                <span class="tool-call-name">{{ block.name }}</span>
+                                                                <span class="tool-call-name">{{ toolSummary(block.name) }}</span>
                                                                 <span class="tool-call-status" :class="block.status">
                                                                     <span v-if="block.status === 'running'" class="tool-call-spinner"></span>
-                                                                    {{ block.status === 'running' ? '运行中' : '已完成' }}
+                                                                    <span v-else class="tool-call-done">✓</span>
                                                                 </span>
                                                                 <svg class="tool-call-arrow" :class="{ expanded: block.expanded }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                                                             </div>
                                                             <div v-show="block.expanded" class="tool-call-detail">
-                                                                <div class="tool-call-section">
+                                                                <!-- 仅当有实际参数时才显示输入区域（过滤 {} 空调用） -->
+                                                                <div v-if="block.args && Object.keys(block.args).length > 0" class="tool-call-section">
                                                                     <div class="tool-call-label">输入参数</div>
                                                                     <pre class="tool-call-json">{{ JSON.stringify(block.args, null, 2) }}</pre>
                                                                 </div>
@@ -823,6 +903,7 @@
                                                                     <div class="tool-call-label">输出结果</div>
                                                                     <pre class="tool-call-result">{{ block.result }}</pre>
                                                                 </div>
+                                                                <div v-if="(!block.args || Object.keys(block.args).length === 0) && !block.result" class="tool-call-empty">无详细参数</div>
                                                             </div>
                                                         </div>
                                                     </template>
@@ -1297,11 +1378,18 @@
                         return;
                     }
                     try {
-                        // 优先请求后端历史：同时完成归属校验（403 抛错），
-                        // 不能先读本地缓存——他人会话的缓存消息会直接展示，造成"会话共享"假象
+                        // 先请求后端历史做归属校验（403 抛错），不能跳过校验直接读本地
                         const history = await apiGetHistory(currentThreadId.value);
-                        messages.value = parseHistory(history);
-                        cache.setMessages(currentThreadId.value, messages.value);
+                        // 校验通过后优先用本地缓存：后端 checkpoint 只存标准消息，
+                        // 不含前端扩展字段（blocks 穿插、reasoning 深度思考、tool_calls），
+                        // 直接用后端历史会导致刷新后工具调用记录和深度思考全部丢失
+                        const cached = cache.getMessages(currentThreadId.value);
+                        if (cached && cached.length > 0) {
+                            messages.value = cached.map(normalizeMessage);
+                        } else {
+                            // 本地无缓存时才用后端历史兜底（同样需要归一化，补 blocks/reasoning）
+                            messages.value = parseHistory(history).map(normalizeMessage);
+                        }
                     } catch (err) {
                         if (err && err.status === 403) {
                             // 会话属于其他账号：从列表移除并提示，避免残留
@@ -2044,7 +2132,7 @@
                     createNewSession, switchSession, deleteSession,
                     clearCurrentChat, sendMessage, sendQuick,
                     handleKeydown, autoResize, openSidebar, closeSidebar,
-                    logout, escapeHtml, renderMarkdown,
+                    logout, escapeHtml, renderMarkdown, toolSummary, copyCodeBlock,
                     // 新增
                     userMenuOpen, uploadMenuOpen, profileModalOpen, settingsModalOpen,
                     profileForm, settingsForm, profileSaving, settingsSaving,

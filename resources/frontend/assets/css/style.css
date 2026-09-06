@@ -2585,3 +2585,174 @@
 .message-content .tool-call-item .tool-call-header {
     padding: 8px 12px;
 }
+
+/* ═══ 工具调用卡片紧凑化 ═══ */
+.tool-call-item {
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px;
+    margin: 6px 0 !important;
+    overflow: hidden;
+    background: var(--bg-hover, #fafafa);
+    transition: background 0.15s;
+}
+.tool-call-item:hover {
+    background: var(--bg-card, #fff);
+}
+.tool-call-item.running {
+    border-color: var(--primary-color, #3D6B5B);
+    background: rgba(61, 107, 91, 0.04);
+}
+.tool-call-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px !important;
+    cursor: pointer;
+    user-select: none;
+}
+.tool-call-icon {
+    color: var(--primary-color, #3D6B5B);
+    flex-shrink: 0;
+}
+.tool-call-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary, #1f2937);
+}
+.tool-call-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-secondary, #6b7280);
+}
+.tool-call-done {
+    color: #10b981;
+    font-weight: 600;
+}
+.tool-call-arrow {
+    transition: transform 0.2s;
+    color: var(--text-secondary, #9ca3af);
+}
+.tool-call-arrow.expanded {
+    transform: rotate(90deg);
+}
+.tool-call-detail {
+    padding: 0 12px 10px;
+    border-top: 1px solid var(--border-color, #f0f0f0);
+}
+.tool-call-section {
+    margin-top: 8px;
+}
+.tool-call-label {
+    font-size: 11px;
+    color: var(--text-secondary, #9ca3af);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.tool-call-json, .tool-call-result {
+    margin: 0;
+    padding: 8px 10px;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.tool-call-empty {
+    font-size: 12px;
+    color: var(--text-secondary, #9ca3af);
+    padding: 6px 0;
+}
+/* 运行中旋转动画 */
+.tool-call-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--primary-color, #3D6B5B);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: tool-spin 0.8s linear infinite;
+}
+@keyframes tool-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ═══ 代码块窗口样式（带标题栏+复制按钮）═══ */
+.markdown-body .code-block-wrapper {
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 12px 0;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #1e1e2e;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.markdown-body .code-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: #2a2a3c;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    user-select: none;
+}
+.markdown-body .code-block-lang {
+    font-size: 12px;
+    font-weight: 600;
+    color: #a0a0b8;
+    text-transform: lowercase;
+    letter-spacing: 0.5px;
+}
+.markdown-body .code-block-copy {
+    background: transparent;
+    border: none;
+    color: #8888a0;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    transition: all 0.15s;
+}
+.markdown-body .code-block-copy:hover {
+    background: rgba(255,255,255,0.1);
+    color: #d0d0e0;
+}
+.markdown-body .code-block-wrapper pre {
+    margin: 0 !important;
+    padding: 14px 16px !important;
+    background: #1e1e2e !important;
+    border-radius: 0 !important;
+    overflow-x: auto;
+}
+.markdown-body .code-block-wrapper pre code {
+    background: transparent !important;
+    padding: 0 !important;
+    font-size: 13px;
+    line-height: 1.65;
+    color: #cdd6f4;
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+/* 深色模式适配 */
+[data-theme="dark"] .markdown-body .code-block-wrapper {
+    border-color: rgba(255,255,255,0.06);
+}
+/* 手机端紧凑 */
+@media (max-width: 768px) {
+    .markdown-body .code-block-wrapper {
+        margin: 8px 0;
+        border-radius: 8px;
+    }
+    .markdown-body .code-block-header {
+        padding: 6px 10px;
+    }
+    .markdown-body .code-block-wrapper pre {
+        padding: 10px 12px !important;
+    }
+}
