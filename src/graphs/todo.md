@@ -128,5 +128,3 @@ return {
 3. **RRF 后取 top 20 送 rerank**，rerank top_n=5，分数阈值 0.05 过滤
 4. **缓存层不变**——cache_service 仍按 thread_id + question 缓存 reranked_docs
 5. **可加动态预检**：如果原始 query 向量检索 top1 rerank 分数 >0.5，跳过改写和 BM25，直接用单路结果（降低延迟）
-
-需要我把这个思路落成代码吗？
