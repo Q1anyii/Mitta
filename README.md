@@ -1,6 +1,6 @@
 # Mitta AI 智能助理（米塔）
 
-基于 **LangGraph + RAG + MCP + 流式 SSE** 的企业级智能助理系统。系统内置完整的知识库检索链路（查询改写 → 多路召回 → RRF 融合 → 在线重排），支持短期记忆（多轮对话恢复）与长期记忆（用户档案），通过 MCP 协议接入外部工具（文件系统、Git、数据库等），并通过 SSE 流式输出实现打字机效果。
+基于 **LangGraph + RAG + MCP + 流式 SSE** 的智能助理系统。系统内置完整的知识库检索链路（查询改写 → 多路召回 → RRF 融合 → 在线重排），支持短期记忆（多轮对话恢复）与长期记忆（用户档案），通过 MCP 协议接入外部工具（文件系统、Git、数据库等），并通过 SSE 流式输出实现打字机效果。
 
 ## 功能特性
 
@@ -17,7 +17,7 @@
 - **多主题前端**：Vue 3 SPA（CDN 单文件），支持多种配色主题、个人信息管理、MCP 配置、文件上传
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
-- **P3/P5 风格前端**：Vue 3 SPA 重写为女神异闻录风格 UI（高对比几何切角 + 微动效），响应式适配移动端，工具调用记录穿插展示、复制/分享/重新生成
+- **现代化前端**：Vue 3 SPA（高对比几何切角 + 微动效），响应式适配移动端，工具调用记录穿插展示、复制/分享/重新生成
 - **安全认证**：JWT（access 15 分钟 + 隐式 refresh 30 天自动续签）+ bcrypt + 登出即时失效（Redis 删除 token）+ 请求限流
 - **节点级缓存**：LangGraph CachePolicy + Redis，检索/工具/记忆节点结果按 TTL 缓存，降低 API 消耗
 
@@ -36,7 +36,7 @@
 | 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                               |
 | MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                   |
 | Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                                      |
-| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写 P3/P5 风格设计系统 + 多主题 + 响应式移动端                          |
+| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写设计系统 + 多主题 + 响应式移动端                          |
 | 反向代理      | Nginx（静态托管 + API 代理 + SSE 缓冲关闭）                                                                  |
 | 认证        | JWT（PyJWT）+ bcrypt 密码哈希                                                                          |
 | 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                                 |
@@ -276,8 +276,8 @@ AgentProject/
 │   │   ├── .mcp_config_path              # MCP 配置文件路径记录
 │   │   └── .vector_config_path           # 向量库配置文件路径记录
 │   ├── frontend/
-│   │   ├── index.html                    # Vue 3 SPA 入口（P3/P5 风格骨架）
-│   │   ├── assets/css/style.css          # NEO-TOKYO 设计系统（CSS 变量+切角+动效+响应式）
+│   │   ├── index.html                    # Vue 3 SPA 入口
+│   │   ├── assets/css/style.css          # 设计系统（CSS 变量+切角+动效+响应式）
 │   │   ├── assets/js/app.js              # Vue 组件+业务逻辑（模板字符串内嵌，setup/methods）
 │   │   ├── deploy/nginx/default.conf     # Nginx 配置（静态托管+API代理+SSE缓冲关闭+gzip）
 │   │   └── favicon.png

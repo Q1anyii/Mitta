@@ -114,10 +114,85 @@
             // 其他
             'sequentialthinking': '逐步推理',
         };
-        function toolSummary(name) {
+        // 按工具类型返回对应图标 SVG（搜索/文件/代码/图谱/完成）
+        function toolIcon(name, status) {
+            if (status === 'running') {
+                return '<span class="tool-inline-spinner"></span>';
+            }
+            // 搜索/网页类
+            if (name === 'fetch' || name === 'search_files' || name === 'search_nodes') {
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+            }
+            // 文件类
+            if (name.startsWith('read_') || name.startsWith('list_') || name === 'directory_tree' || name === 'get_file_info') {
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+            }
+            // 代码/Git 类
+            if (name.startsWith('git_') || name === 'transaction') {
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
+            }
+            // 图谱类
+            if (name === 'read_graph' || name === 'open_nodes' || name === 'create_entities' || name === 'create_relations' || name === 'add_observations') {
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"></circle><circle cx="5" cy="19" r="3"></circle><circle cx="19" cy="19" r="3"></circle><line x1="12" y1="8" x2="5" y2="16"></line><line x1="12" y1="8" x2="19" y2="16"></line></svg>';
+            }
+            // 数据库类
+            if (name === 'create-table' || name === 'update-record' || name === 'query' || name === 'describe-table') {
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>';
+            }
+            // 推理类
+            if (name === 'sequentialthinking') {
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"></path></svg>';
+            }
+            // 默认：对勾（完成）
+            return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        }
+
+        // 根据工具名+参数生成自然语言概要（行内显示用）
+        function toolSummary(name, args) {
             if (!name) return '工具调用';
+            const a = args || {};
+            // 文件类工具：显示文件名
+            if (name === 'read_file' || name === 'read_text_file' || name === 'read_media_file') {
+                return '读取文件' + (a.file_path ? ': ' + a.file_path.split(/[\\/]/).pop() : '');
+            }
+            if (name === 'read_multiple_files') return '读取多个文件';
+            if (name === 'list_directory' || name === 'list_directory_with_sizes') {
+                return '浏览目录' + (a.path ? ': ' + a.path : '');
+            }
+            if (name === 'search_files') return '搜索文件';
+            if (name === 'directory_tree') return '查看目录树';
+            if (name === 'get_file_info') return '查看文件信息';
+            if (name === 'create_directory') return '创建目录';
+            if (name === 'list_allowed_directories') return '查看允许目录';
+            // 网页/抓取类
+            if (name === 'fetch') return '获取网页内容' + (a.url ? ': ' + a.url.slice(0, 50) : '');
+            // 知识图谱类
+            if (name === 'read_graph') return '读取知识图谱';
+            if (name === 'search_nodes') return '搜索图谱节点';
+            if (name === 'open_nodes') return '打开节点详情';
+            if (name === 'create_entities') return '创建实体';
+            if (name === 'create_relations') return '创建关系';
+            if (name === 'add_observations') return '添加观察';
+            // 数据库类
+            if (name === 'create-table') return '创建数据表';
+            if (name === 'update-record') return '更新记录';
+            if (name === 'query') return '查询数据';
+            if (name === 'describe-table') return '查看表结构';
+            // Git 类
+            if (name === 'git_status') return '查看 Git 状态';
+            if (name === 'git_log') return '查看提交记录';
+            if (name === 'git_branch') return '查看分支';
+            if (name === 'git_diff' || name === 'git_diff_staged' || name === 'git_diff_unstaged') return '查看代码变更';
+            if (name === 'git_add') return '暂存文件';
+            if (name === 'git_commit') return '提交代码';
+            if (name === 'git_checkout') return '切换分支';
+            if (name === 'git_create_branch') return '创建分支';
+            // 推理类
+            if (name === 'sequentialthinking') return '逐步推理';
+            // 事务
+            if (name === 'transaction') return '执行事务';
+            // 兜底：已有映射表
             if (TOOL_SUMMARY_MAP[name]) return TOOL_SUMMARY_MAP[name];
-            // 未匹配：下划线转空格，首字母大写
             return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         }
 
@@ -888,26 +963,18 @@
                                                 <template v-if="msg.blocks && msg.blocks.length > 0">
                                                     <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
                                                         <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(block.content)"></div>
-                                                        <div v-else-if="block.type === 'tool'" class="tool-call-item" :class="{ running: block.status === 'running' }">
-                                                            <div class="tool-call-header" @click="block.expanded = !block.expanded">
-                                                                <svg class="tool-call-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-                                                                <span class="tool-call-name">{{ toolSummary(block.name) }}</span>
-                                                                <span class="tool-call-status" :class="block.status">
-                                                                    <span v-if="block.status === 'running'" class="tool-call-spinner"></span>
-                                                                    <span v-else class="tool-call-done">✓</span>
-                                                                </span>
-                                                                <svg class="tool-call-arrow" :class="{ expanded: block.expanded }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                        <div v-else-if="block.type === 'tool'" class="tool-call-inline" :class="{ running: block.status === 'running', done: block.status === 'done' }">
+                                                            <span class="tool-inline-icon" v-html="toolIcon(block.name, block.status)"></span>
+                                                            <span class="tool-inline-summary">{{ toolSummary(block.name, block.args) }}</span>
+                                                            <span class="tool-inline-toggle" @click="block.expanded = !block.expanded">
+                                                                <svg :class="{ expanded: block.expanded }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                            </span>
+                                                            <div v-show="block.expanded && block.result" class="tool-inline-result-block">
+                                                                <pre class="tool-inline-result-text">{{ block.result }}</pre>
                                                             </div>
-                                                            <div v-show="block.expanded" class="tool-call-detail">
-                                                                <div v-if="block.args && Object.keys(block.args).length > 0" class="tool-call-section">
-                                                                    <div class="tool-call-label">输入参数</div>
-                                                                    <pre class="tool-call-json">{{ JSON.stringify(block.args, null, 2) }}</pre>
-                                                                </div>
-                                                                <div v-if="block.result" class="tool-call-section">
-                                                                    <div class="tool-call-label">输出结果</div>
-                                                                    <pre class="tool-call-result">{{ block.result }}</pre>
-                                                                </div>
-                                                                <div v-if="(!block.args || Object.keys(block.args).length === 0) && !block.result" class="tool-call-empty">无详细参数</div>
+                                                            <div v-show="block.expanded && block.args && Object.keys(block.args).length > 0" class="tool-inline-detail">
+                                                                <div class="tool-inline-label">参数</div>
+                                                                <pre class="tool-inline-json">{{ JSON.stringify(block.args, null, 2) }}</pre>
                                                             </div>
                                                         </div>
                                                     </template>
@@ -2190,7 +2257,7 @@
                     createNewSession, switchSession, deleteSession,
                     clearCurrentChat, sendMessage, sendQuick,
                     handleKeydown, autoResize, openSidebar, closeSidebar,
-                    logout, escapeHtml, renderMarkdown, toolSummary, copyCodeBlock,
+                    logout, escapeHtml, renderMarkdown, toolSummary, toolIcon, copyCodeBlock,
                     // 新增
                     userMenuOpen, uploadMenuOpen, profileModalOpen, settingsModalOpen,
                     profileForm, settingsForm, profileSaving, settingsSaving,
