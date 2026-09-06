@@ -2028,9 +2028,19 @@
                         settingsForm.value.mcp_servers = parsedMcp;
                         applyTheme(settingsForm.value.theme);
 
-                        // MCP 配置变更：弹出重启提示（不自动关闭设置弹窗）
+                        // MCP 配置变更：调用后端重载接口立即生效（清除图缓存+关闭旧连接），
+                        // 不再弹"需重启后端"提示——后端 _get_user_graph 已通过 hash 检测自动热重载
                         if (mcpChanged) {
-                            restartNoticeOpen.value = true;
+                            try {
+                                const reloadRes = await fetch(`${API_BASE}/api/mcp/reload`, {
+                                    method: 'POST',
+                                    headers: authHeaders(),
+                                });
+                                syncTokenFromHeaders(reloadRes.headers);
+                                // 重载接口失败不影响：hash 检测仍会在下次对话自动重建
+                            } catch (e) {}
+                            showToast('MCP 配置已保存并生效', 'success');
+                            closeSettingsModal();
                         } else {
                             // 仅主题变更：即时生效，直接提示成功
                             showToast('设置已保存', 'success');

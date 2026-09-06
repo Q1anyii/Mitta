@@ -100,3 +100,49 @@ def delete_user_mcp_server(
         return {"ok": True, "detail": f"已删除 MCP 服务器: {server_name}"}
     else:
         return Response.failed(f"未找到 MCP 服务器: {server_name}")
+
+
+@router.post("/api/mcp/reload")
+def reload_user_mcp(current_user: TokenData = Depends(get_current_user)):
+    """主动重载当前用户的 MCP 配置：清除图缓存并关闭旧连接，下次对话立即重建。
+
+    【为什么需要这个接口】
+    ChatService._get_user_graph 已通过配置 hash 检测实现自动热重载——用户保存
+    配置后，下一次发消息时 hash 变化会自动触发图重建。但存在两个体验问题：
+    1. 旧 MCP 连接（子进程/stdio）不会主动关闭，占用资源；
+    2. 用户保存后无法感知"已生效"，前端只能提示"下次对话生效"。
+    本接口主动清除该用户的缓存条目并关闭旧连接，让配置立即生效且资源干净。
+
+    Returns:
+        { ok, detail, cleared: bool }
+    """
+    import asyncio
+    from service.chat_service import chat_service
+
+    user_id = current_user.user_id
+    cleared = False
+    try:
+        cache = getattr(chat_service, "_user_graph_cache", None)
+        if cache and user_id in cache:
+            cached = cache.pop(user_id)
+            cleared = True
+            # cached = (config_hash, graph, connections)，关闭旧 MCP 连接释放子进程
+            connections = cached[2] if len(cached) > 2 else []
+            if connections and chat_service._tool_loop:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        chat_service._close_connections(connections),
+                        chat_service._tool_loop,
+                    ).result(timeout=5)
+                except Exception:
+                    pass  # 关闭失败不影响重载，下次重建时旧连接会被 GC
+    except Exception as e:
+        # 缓存清除失败不影响功能：hash 检测仍会在下次对话时自动重建
+        return {"ok": True, "detail": f"重载完成（缓存清除异常，不影响自动重建）: {e}", "cleared": False}
+
+    return {
+        "ok": True,
+        "detail": "MCP 配置已重载，新工具将在下次对话中生效",
+        "cleared": cleared,
+        "user_id": user_id,
+    }

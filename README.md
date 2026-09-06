@@ -15,7 +15,10 @@
 - **文件上传与解析**：支持上传多种格式文件，上传后立即解析文本内容，发送消息时与用户输入一并送入 LLM
 - **流式输出**：`stream_mode="messages"` 逐 token 输出，前端打字机效果；工具调用时实时显示加载状态
 - **多主题前端**：Vue 3 SPA（CDN 单文件），支持多种配色主题、个人信息管理、MCP 配置、文件上传
-- **安全认证**：JWT（access token + 隐式 refresh token 自动续签）+ bcrypt 密码哈希 + 请求限流
+- **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
+- **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
+- **P3/P5 风格前端**：Vue 3 SPA 重写为女神异闻录风格 UI（高对比几何切角 + 微动效），响应式适配移动端，工具调用记录穿插展示、复制/分享/重新生成
+- **安全认证**：JWT（access 15 分钟 + 隐式 refresh 30 天自动续签）+ bcrypt + 登出即时失效（Redis 删除 token）+ 请求限流
 - **节点级缓存**：LangGraph CachePolicy + Redis，检索/工具/记忆节点结果按 TTL 缓存，降低 API 消耗
 
 ## 技术栈
@@ -25,15 +28,15 @@
 | 语言/环境     | Python 3.13                                                                                      |
 | Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）                       |
 | LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                                        |
-| 大模型       | DeepSeek V3（deepseek-chat），OpenAI 兼容协议                                                           |
+| 大模型       | DeepSeek（deepseek-v4-flash），OpenAI 兼容协议，支持 reasoning_content 深度思考                           |
 | Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                                |
 | 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                                       |
-| 向量库       | Milvus（默认）/ ChromaDB（可插拔，Protocol 抽象，零业务改动切换）                                                    |
+| 向量库       | Milvus / ChromaDB 可插拔（Protocol 抽象，零业务改动切换；低配服务器推荐 ChromaDB 免 Milvus 部署）                    |
 | 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store）+ MySQL 8.0（用户表 userInfo / user_profile / user_files） |
 | 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                               |
 | MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                   |
 | Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                                      |
-| 前端        | Vue 3（CDN 单文件 SPA）+ 原生 CSS 多主题                                                                   |
+| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写 P3/P5 风格设计系统 + 多主题 + 响应式移动端                          |
 | 反向代理      | Nginx（静态托管 + API 代理 + SSE 缓冲关闭）                                                                  |
 | 认证        | JWT（PyJWT）+ bcrypt 密码哈希                                                                          |
 | 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                                 |
@@ -235,10 +238,10 @@ AgentProject/
 │   │   └── *_report.json/csv             # 各评估脚本输出的报告
 │   ├── routers/                          # FastAPI 路由（按模块拆分）
 │   │   ├── deps.py                       # 公共依赖（require_self_or_admin）
-│   │   ├── auth_router.py                # 登录/注册/密码找回
+│   │   ├── auth_router.py                # 登录/注册/密码找回/登出（Redis 即时失效）
 │   │   ├── chat_router.py                # 对话(SSE)/历史/删除/停止/文件上传
-│   │   ├── user_router.py                # 个人资料/密码/Prompt/主题/记忆/文件/MCP
-│   │   ├── mcp_router.py                 # 全局 MCP 配置读写
+│   │   ├── user_router.py                # 个人资料/密码/Prompt/主题/记忆/文件
+│   │   ├── mcp_router.py                 # 用户级 MCP 配置读写 + 热重载（/api/mcp/reload）
 │   │   └── system_router.py              # 健康检查/认证页面/SPA 兜底（必须最后注册）
 │   ├── schemas/                          # Pydantic 请求/响应模型
 │   │   ├── request_schemas/
@@ -248,18 +251,20 @@ AgentProject/
 │   │   └── response_schemas/
 │   │       └── login_schema.py
 │   ├── service/                          # 业务服务层
-│   │   ├── chat_service.py               # 对话编排：图构建/流式输出/文件解析缓存
+│   │   ├── chat_service.py               # 对话编排：用户级图缓存(hash热重载)/流式输出/文件解析缓存
 │   │   ├── login_service.py              # 用户登录/注册（MySQL 连接池）
-│   │   ├── user_profile_service.py       # 用户扩展信息（头像/风格/Prompt/主题/MCP）
+│   │   ├── user_profile_service.py       # 用户扩展信息（头像/风格/Prompt/主题）
+│   │   ├── mcp_config_service.py         # 用户级 MCP 配置（PostgreSQL 存储，按用户隔离，安全校验+路径转换）
 │   │   ├── file_upload_service.py        # 文件上传（base64 存 MySQL）/文本解析
 │   │   └── cache_service.py              # Redis 缓存/LSH 向量检索/重排验证
 │   ├── utils/                            # 工具函数
-│   │   ├── jwt_utils.py                  # JWT 签发/验证/密码哈希
+│   │   ├── jwt_utils.py                  # JWT 签发/验证/自动续签/登出失效/密码哈希
 │   │   ├── response_util.py              # 统一响应格式
 │   │   ├── doc_util.py                   # Document ↔ dict 转换
 │   │   ├── lsh_util.py                   # 局部敏感哈希（缓存快速过滤）
 │   │   ├── rand_id_util.py               # 随机 ID 生成
-│   │   └── tools_util.py                 # 工具安全过滤/向量化/格式化
+│   │   ├── tools_util.py                 # 工具安全过滤/向量化/格式化
+│   │   └── deepseek_patch.py             # DeepSeek reasoning_content monkey-patch（补回 langchain_openai 丢失的思考内容）
 │   └── vector/                           # 向量库抽象层
 │       ├── vector_store.py               # VectorStore Protocol + Chroma/Milvus 实现
 │       ├── embedding.py                  # EmbeddingProcessor：文档加载→切分→入库
@@ -271,8 +276,10 @@ AgentProject/
 │   │   ├── .mcp_config_path              # MCP 配置文件路径记录
 │   │   └── .vector_config_path           # 向量库配置文件路径记录
 │   ├── frontend/
-│   │   ├── index.html                    # Vue 3 SPA 单文件前端
-│   │   ├── nginx.conf                    # Nginx 配置（静态托管+API代理+SSE）
+│   │   ├── index.html                    # Vue 3 SPA 入口（P3/P5 风格骨架）
+│   │   ├── assets/css/style.css          # NEO-TOKYO 设计系统（CSS 变量+切角+动效+响应式）
+│   │   ├── assets/js/app.js              # Vue 组件+业务逻辑（模板字符串内嵌，setup/methods）
+│   │   ├── deploy/nginx/default.conf     # Nginx 配置（静态托管+API代理+SSE缓冲关闭+gzip）
 │   │   └── favicon.png
 │   ├── system_prompt/
 │   │   └── default_system_prompt.txt     # 默认 System Prompt（Mitta 角色设定）
@@ -299,7 +306,7 @@ AgentProject/
 - PostgreSQL 16+
 - MySQL 8.0+
 - Redis 7+
-- Milvus 2.x（或使用 ChromaDB 免部署）
+- Milvus 2.x（可选，或使用 ChromaDB 免部署；api 服务不硬依赖 Milvus）
 - Node.js（MCP stdio 服务器需要 npx/uvx）
 
 ### 1. 克隆项目并安装依赖
@@ -330,11 +337,13 @@ cp .env.example .env
 ### 3. 启动基础设施
 
 ```bash
-# 使用 Docker Compose 启动 PostgreSQL + MySQL + Redis + Milvus
-docker-compose up -d postgres mysql redis etcd minio milvus
+# api 核心依赖：PostgreSQL + MySQL + Redis（Milvus 可选）
+docker-compose up -d postgres mysql redis
+# 如需 Milvus 向量库（可选）：
+docker-compose up -d etcd minio milvus
 ```
 
-或手动启动各服务。MySQL 需创建数据库 `mitta`，PostgreSQL 需创建数据库 `mitta`（表由服务启动时自动创建）。
+或手动启动各服务。MySQL 需创建数据库 `mitta`，PostgreSQL 需创建数据库 `mitta`（表由服务启动时自动创建）。**低配服务器（<2GB 内存）推荐使用 ChromaDB 免 Milvus 部署**，见下方向量库配置。
 
 ### 4. 配置向量库
 
@@ -358,9 +367,11 @@ docker-compose up -d postgres mysql redis etcd minio milvus
 }
 ```
 
-### 5. 配置 MCP 服务器（可选）
+### 5. 配置 MCP 服务器（网页端，推荐）
 
-编辑 `resources/config/mcp_servers.json`，添加需要的 MCP 服务器。示例配置：
+登录后在「设置 → MCP 配置」中直接编辑 JSON 并保存，配置存入 PostgreSQL 按用户隔离，**保存后自动热重载生效，无需重启后端**。后端通过配置 hash 检测自动重建对话图，`POST /api/mcp/reload` 可主动清除缓存立即生效。
+
+全局默认 MCP 服务器仍可通过 `resources/config/mcp_servers.json` 配置（启动时加载，所有用户共享）。示例：
 
 ```json
 [
@@ -368,18 +379,12 @@ docker-compose up -d postgres mysql redis etcd minio milvus
     "name": "filesystem",
     "type": "stdio",
     "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/工作文件/AgentProject"]
-  },
-  {
-    "name": "git",
-    "type": "stdio",
-    "command": "uvx",
-    "args": ["mcp-server-git", "--repository", "E:/工作文件/AgentProject"]
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/app/user_files"]
   }
 ]
 ```
 
-不配置 MCP 不影响核心对话功能。
+不配置 MCP 不影响核心对话功能。安全校验：命令白名单（npx/uvx/node/python/python3/pipx）、Windows 路径自动转换为 Linux 容器路径、filesystem 限制在 `/app/user_files/{user_id}/` 下。
 
 ### 6. 知识库入库（可选）
 
@@ -414,9 +419,10 @@ nginx
 
 | 方法   | 路径              | 说明   |
 | ---- | --------------- | ---- |
-| POST | `/api/login`    | 用户登录 |
+| POST | `/api/login`    | 用户登录（返回 access token，refresh 隐式存 Redis） |
 | POST | `/api/register` | 用户注册 |
 | POST | `/api/recover`  | 密码找回 |
+| POST | `/api/logout`   | 登出（Redis 删除 access+refresh，即时失效） |
 
 ### 对话
 
@@ -447,7 +453,9 @@ nginx
 
 | 方法      | 路径                | 说明                    |
 | ------- | ----------------- | --------------------- |
-| GET/PUT | `/api/mcp/config` | 全局 MCP 配置读写           |
+| GET/PUT | `/api/mcp/config` | 当前用户 MCP 配置读写（PostgreSQL 按用户隔离） |
+| POST    | `/api/mcp/reload` | 重载当前用户 MCP 配置（清除图缓存+关闭旧连接，立即生效） |
+| DELETE  | `/api/mcp/config/{server_name}` | 删除单个 MCP 服务器配置 |
 | GET     | `/health`         | 健康检查                  |
 | GET     | `/mcp`            | 内置 MCP 服务器端点（FastMCP） |
 
@@ -523,6 +531,24 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 - 全局异常处理器：记录完整堆栈到日志，返回给客户端的信息不含堆栈细节
 - MCP 文件系统工具通过 allowed directories 限制访问范围
 
+### 用户级 MCP 热重载
+
+MCP 配置从「全局文件 + 重启生效」升级为「PostgreSQL 按用户存储 + 运行时热重载」：
+
+- **存储隔离**：`user_mcp_servers` 表按 `user_id` 存储，每个用户独立配置，互不影响
+- **自动重建**：`ChatService._user_graph_cache` 以 `(config_hash, graph, mcp_connections)` 缓存用户图，每次对话调用 `_get_user_graph(user_id)` 时计算配置 MD5，hash 变化则关闭旧 MCP 连接、建立新连接、重建 LangGraph
+- **主动重载**：`POST /api/mcp/reload` 主动 pop 缓存条目并关闭旧子进程连接，让配置立即生效（不等下一条消息的 hash 检测）
+- **安全校验**：保存时校验命令白名单、包名白名单、Windows→Linux 路径自动转换、filesystem 目录隔离、禁止敏感环境变量、sse 禁止内网地址
+- **降级策略**：用户 MCP 连接失败时静默降级为全局工具，不阻塞对话
+
+### 深度思考（reasoning_content）
+
+DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_openai 的标准解析中会被丢弃。通过 `utils/deepseek_patch.py` monkey-patch `langchain_openai.chat_models.base` 的消息解析逻辑，将 `reasoning_content` 补回 `AIMessage.additional_kwargs`，经 SSE 流式推送到前端：
+
+- 前端可切换「深度思考」开关与推理强度（low/medium/high），状态持久化到 localStorage
+- 思考过程以折叠面板展示在 AI 回复上方，点击展开/收起，流式更新时自动滚动到底部
+- 思考内容不参与最终回答，但可帮助用户理解模型推理链路
+
 ### RAGAS 质量评估
 
 项目内置完整的 RAGAS 评估体系（`src/ragas_test/`），覆盖检索质量、生成质量、系统性能三大维度：
@@ -564,14 +590,16 @@ docker-compose up -d
 
 | 服务         | 端口        | 说明                 |
 | ---------- | --------- | ------------------ |
-| Nginx      | 80        | 前端 + API 统一入口      |
+| Nginx      | 80/443    | 前端 + API 统一入口（HTTPS） |
 | FastAPI    | 8000      | 后端 API（直接访问）       |
-| PostgreSQL | 5432      | Checkpointer/Store |
+| PostgreSQL | 5432      | Checkpointer/Store/MCP配置 |
 | MySQL      | 3306      | 用户数据               |
-| Redis      | 6379      | 缓存                 |
-| Milvus     | 19530     | 向量库                |
-| etcd       | 2379      | Milvus 依赖          |
-| MinIO      | 9000/9001 | Milvus 依赖          |
+| Redis      | 6379/8001 | 缓存 + RedisSearch BM25  |
+| Milvus     | 19530     | 向量库（可选，api 不硬依赖）  |
+| etcd       | 2379      | Milvus 依赖（可选）       |
+| MinIO      | 9000/9001 | Milvus 依赖（可选）       |
+
+> **低配服务器方案**：1核2GB 以下服务器建议停用 Milvus/etcd/MinIO，将 `resources/config/vector_db.json` 改为 `chroma` 类型，仅运行 api+nginx+postgres+mysql+redis 五个容器。
 
 ### 仅启动后端
 
@@ -584,6 +612,9 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 ### 新增 MCP 工具
 
+**用户级（推荐）**：登录后在网页「设置 → MCP 配置」中添加，保存后自动热重载生效。
+
+**全局默认**：
 1. 在 `resources/config/mcp_servers.json` 添加服务器配置
 2. 如需规则层命中，在 `src/mcp_client/client.py` 的 `SERVER_TAGS` 中添加关键词
 3. 重启后端，日志会显示加载的工具数量
@@ -605,8 +636,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
     3.引入skills相关功能
     4.引入interrupt功能，在涉及敏感操作时，由用户确认是否继续
     5.目前只在源码层面支持自定义模型，后续需在设置界面添加接口
-    6.支持显示模型思考过程
-    7.引入token消耗检测
+    6.引入token消耗检测
 
 ## 许可证
 
