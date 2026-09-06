@@ -1594,21 +1594,21 @@
                     isLoading.value = true;
                     streaming.value = false;
 
+                    // 变量必须声明在 try 之外（函数作用域），否则 catch 块访问不到
+                    // try 内的 let 变量，导致停止回复时报 renderTimer is not defined
+                    let aiMsg = null;
+                    let latestText = '';
+                    let renderTimer = null;
+                    let saveTimer = null;
+
                     try {
                         // 注意：push 后必须从响应式代理中取回引用。Vue 3 的 proxy 是惰性转换的，
                         // push 进数组的是原始对象，若直接持有它并赋值 content，不会触发响应式
                         // 更新（流式输出卡在"正在思考..."，刷新后从缓存整体赋值才显示）。
                         messages.value.push({ id: generateId(), role: 'assistant', content: '', reasoning: '', showReasoning: false, tool_calls: [], blocks: [], time: formatTime() });
-                        const aiMsg = messages.value[messages.value.length - 1];
+                        aiMsg = messages.value[messages.value.length - 1];
                         saveMessages();
                         scrollToBottom();
-
-                        // 流式节流：避免每个 token 都做全量 v-html 重渲染 + localStorage 序列化，
-                        // 长回答下会阻塞主线程导致界面冻结/整页白屏。latestText 只保留最新文本，
-                        // 定时器触发时渲染最新值（节流而非防抖，视觉上仍是平滑逐字输出）。
-                        let latestText = '';
-                        let renderTimer = null;
-                        let saveTimer = null;
 
                         // 创建 AbortController 用于停止回复
                         abortController.value = new AbortController();
@@ -1687,8 +1687,12 @@
                             // 保留已生成的部分内容，不删除 AI 消息
                             if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
                             if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-                            aiMsg.content = aiMsg.content || '（已停止）';
+                            if (aiMsg) {
+                                aiMsg.content = aiMsg.content || '（已停止）';
+                            }
                             streaming.value = false;
+                            isLoading.value = false;
+                            currentToolCall.value = null;
                             saveMessages();
                             scrollToBottom();
                             return;
