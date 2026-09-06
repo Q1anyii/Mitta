@@ -437,6 +437,7 @@
             template: `
                 <div class="auth-form-wrapper">
                     <div class="auth-card">
+                        <div class="auth-tag">01 / SIGN IN</div>
                         <h1>欢迎回来</h1>
                         <p class="auth-subtitle">登录后继续与 Mitta 智能助理对话</p>
                         <form @submit.prevent="handleLogin">
@@ -452,7 +453,7 @@
                             </div>
                             <button type="submit" class="btn btn-primary auth-submit" :disabled="isSubmitting">
                                 <span v-if="isSubmitting">登录中...</span>
-                                <span v-else>登录</span>
+                                <span v-else>登 录  →</span>
                             </button>
                         </form>
                         <div class="auth-links">
@@ -534,6 +535,7 @@
             template: `
                 <div class="auth-form-wrapper">
                     <div class="auth-card">
+                        <div class="auth-tag tag-mint">02 / JOIN US</div>
                         <h1>创建账号</h1>
                         <p class="auth-subtitle">注册后即可体验智能助理服务</p>
                         <form @submit.prevent="handleRegister">
@@ -560,7 +562,7 @@
                             <div class="form-error auth-msg">{{ formMsg }}</div>
                             <button type="submit" class="btn btn-primary auth-submit" :disabled="isSubmitting">
                                 <span v-if="isSubmitting">注册中...</span>
-                                <span v-else>注册</span>
+                                <span v-else>注 册  →</span>
                             </button>
                         </form>
                         <div class="auth-links">
@@ -629,7 +631,8 @@
         const RecoverForm = {
             template: `
                 <div class="auth-form-wrapper">
-                    <div class="auth-card">
+                    <div class="auth-card tag-violet">
+                        <div class="auth-tag">03 / RESET</div>
                         <h1>找回密码</h1>
                         <p class="auth-subtitle">输入用户 ID，我们将为您重置密码</p>
                         <form @submit.prevent="handleRecover">
@@ -646,7 +649,7 @@
                             <div class="form-error auth-msg">{{ formMsg }}</div>
                             <button type="submit" class="btn btn-primary auth-submit" :disabled="isSubmitting">
                                 <span v-if="isSubmitting">处理中...</span>
-                                <span v-else>重置密码</span>
+                                <span v-else>重置密码  →</span>
                             </button>
                         </form>
                         <div class="auth-links">
@@ -702,6 +705,7 @@
             template: `
                 <div class="auth-layout">
                     <div class="auth-brand">
+                        <div class="auth-side-deco">NEO · TOKYO</div>
                         <div class="auth-logo">
                             <div class="auth-logo-mark"><img src="/favicon.png" alt=""></div>
                             <span>Mitta AI</span>
@@ -710,7 +714,7 @@
                             <h2>Mitta，你的元气智能助理 (๑•̀ㅂ•́)و✧</h2>
                             <p>我是 Mitta，一名元气 AI 助理呀～基于知识库为你提供准确客观的信息，可爱只是糖衣，内核是绝对可靠的知识管家呢 (｡•̀ᴗ-)✧</p>
                         </div>
-                        <div class="auth-footer">© 2026 Mitta AI. All rights reserved.</div>
+                        <div class="auth-footer">© 2026 MITTA AI — TAKE YOUR HEART</div>
                     </div>
                     <router-view v-slot="{ Component }">
                         <!-- 不用 out-in 过渡：mode="out-in" 切换时计算 anchor 会触发 nextSibling 空指针崩溃 -->
@@ -726,14 +730,16 @@
         const ChatApp = {
             template: `
                 <div class="chat-layout">
+                    <!-- ══════════ 侧边栏 ══════════ -->
                     <aside class="sidebar" :class="{ open: sidebarOpen }" role="navigation" aria-label="会话列表">
+                        <div class="sidebar-vert-deco">MITTA</div>
                         <div class="sidebar-header">
                             <div class="sidebar-brand">
                                 <div class="sidebar-brand-mark"><img src="/favicon.png" alt=""></div>
                                 <span>Mitta AI</span>
                             </div>
                             <button class="new-chat-btn" @click="createNewSession" title="新建会话" aria-label="新建会话">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                                     <line x1="12" y1="5" x2="12" y2="19"></line>
                                     <line x1="5" y1="12" x2="19" y2="12"></line>
                                 </svg>
@@ -756,7 +762,7 @@
                                 </svg>
                                 <span class="session-name">{{ session.title }}</span>
                                 <span class="session-delete" @click.stop="deleteSession(session.id)" role="button" aria-label="删除会话">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                                         <line x1="18" y1="6" x2="6" y2="18"></line>
                                         <line x1="6" y1="6" x2="18" y2="18"></line>
                                     </svg>
@@ -804,11 +810,12 @@
 
                     <div class="overlay" :class="{ active: sidebarOpen }" @click="closeSidebar"></div>
 
+                    <!-- ══════════ 主区域 ══════════ -->
                     <main class="main-area">
                         <header class="main-header">
                             <div class="header-left">
                                 <button class="menu-toggle" @click="openSidebar" aria-label="展开菜单">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
                                         <line x1="3" y1="6" x2="21" y2="6"></line>
                                         <line x1="3" y1="12" x2="21" y2="12"></line>
                                         <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -828,26 +835,26 @@
 
                         <div class="messages-container" ref="messagesContainer">
                             <div class="messages-wrapper">
+                                <!-- 欢迎空态 -->
                                 <div v-if="messages.length === 0" class="welcome-state">
                                     <div class="welcome-badge">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <circle cx="12" cy="12" r="10"></circle>
-                                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                                         </svg>
                                         智能助理已就绪
                                     </div>
-                                    <h1>您好，{{ greetingName }}！有什么可以帮您的？</h1>
+                                    <h1>您好，{{ greetingName }}！<br>有什么可以帮您的？</h1>
                                     <p>开始一段新的对话，或从左侧选择一个历史会话继续交流。</p>
                                     <div class="quick-actions">
                                         <button v-for="q in randomQuestions" :key="q" class="quick-action" @click="sendQuick(q)">{{ q }}</button>
                                     </div>
                                     <button class="refresh-questions-btn" @click="refreshQuestions()" title="换一批提示词">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                                         换一批
                                     </button>
                                 </div>
 
+                                <!-- 消息列表 -->
                                 <div
                                     v-for="(msg, index) in messages"
                                     :key="msg.id || index"
@@ -865,7 +872,7 @@
                                             <span>·</span>
                                             <span>{{ msg.time }}</span>
                                         </div>
-                                        <!-- 深度思考折叠面板：仅 AI 消息且有思考内容时显示，点击箭头展开/收起 -->
+                                        <!-- 深度思考折叠面板 -->
                                         <div v-if="msg.role === 'assistant' && msg.reasoning" class="reasoning-panel">
                                             <div class="reasoning-header" @click="msg.showReasoning = !msg.showReasoning">
                                                 <svg class="reasoning-arrow" :class="{ expanded: msg.showReasoning }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -874,15 +881,12 @@
                                             </div>
                                             <div v-show="msg.showReasoning" class="reasoning-content" v-html="escapeHtml(msg.reasoning)"></div>
                                         </div>
-                                        <!-- ═══ AI 消息：blocks 穿插渲染（文本块 + 工具调用块按顺序交错） ═══ -->
+                                        <!-- AI 消息：blocks 穿插渲染 -->
                                         <template v-if="msg.role === 'assistant'">
                                             <div class="message-content">
-                                                <!-- 有 blocks 时按块渲染（新消息） -->
                                                 <template v-if="msg.blocks && msg.blocks.length > 0">
                                                     <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
-                                                        <!-- 文本块：Markdown 渲染 -->
                                                         <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(block.content)"></div>
-                                                        <!-- 工具调用块：穿插在文本之间，显示中文操作概要 -->
                                                         <div v-else-if="block.type === 'tool'" class="tool-call-item" :class="{ running: block.status === 'running' }">
                                                             <div class="tool-call-header" @click="block.expanded = !block.expanded">
                                                                 <svg class="tool-call-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
@@ -894,7 +898,6 @@
                                                                 <svg class="tool-call-arrow" :class="{ expanded: block.expanded }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                                                             </div>
                                                             <div v-show="block.expanded" class="tool-call-detail">
-                                                                <!-- 仅当有实际参数时才显示输入区域（过滤 {} 空调用） -->
                                                                 <div v-if="block.args && Object.keys(block.args).length > 0" class="tool-call-section">
                                                                     <div class="tool-call-label">输入参数</div>
                                                                     <pre class="tool-call-json">{{ JSON.stringify(block.args, null, 2) }}</pre>
@@ -908,23 +911,20 @@
                                                         </div>
                                                     </template>
                                                 </template>
-                                                <!-- 兜底：blocks 为空但有 content（旧消息/流式首帧） -->
                                                 <div v-else-if="msg.content" class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
-                                                <!-- 正在思考动画 -->
                                                 <div v-show="!msg.content" class="thinking-indicator">
                                                     <div class="thinking-dots"><span></span><span></span><span></span></div>
                                                     <span class="thinking-text">正在思考...</span>
                                                 </div>
-                                                <!-- 工具调用加载界面 -->
                                                 <div v-if="currentToolCall && msg === messages[messages.length - 1]" class="tool-call-indicator">
                                                     <div class="tool-call-spinner"></div>
                                                     <span class="tool-call-text">正在调用工具：<strong>{{ currentToolCall.name }}</strong></span>
                                                 </div>
                                             </div>
                                         </template>
-                                        <!-- ═══ 用户消息：纯文本，不做 Markdown 渲染，保留换行 ═══ -->
+                                        <!-- 用户消息：纯文本 -->
                                         <div v-else class="message-content user-text">{{ msg.content }}</div>
-                                        <!-- AI 消息操作栏：复制 / 分享 / 重新生成 -->
+                                        <!-- AI 消息操作栏 -->
                                         <div v-if="msg.role === 'assistant' && msg.content && !isLoading" class="message-actions">
                                             <button class="msg-action-btn" @click="copyMessage(msg)" title="复制">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -944,8 +944,8 @@
                             </div>
                         </div>
 
+                        <!-- ══════════ 输入区 ══════════ -->
                         <div class="input-area">
-                            <!-- 已上传文件列表（输入框上方，卡片式，从左到右排列） -->
                             <div v-if="uploadedFiles.length > 0" class="uploaded-files">
                                 <div v-for="(file, idx) in uploadedFiles" :key="idx" class="uploaded-file-card">
                                     <div class="file-icon">
@@ -970,7 +970,7 @@
                                     ref="textarea"
                                 ></textarea>
                                 <div class="input-actions">
-                                    <!-- 深度思考设置按钮 -->
+                                    <!-- 深度思考 -->
                                     <div class="thinking-toggle-wrapper">
                                         <button
                                             class="thinking-btn"
@@ -981,7 +981,6 @@
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"></path></svg>
                                             <span v-if="thinkingMode" class="thinking-label" @click.stop="toggleEffortPanel">{{ reasoningEffort === 'low' ? '低' : reasoningEffort === 'high' ? '高' : 'max' }}</span>
                                         </button>
-                                        <!-- 强度选择面板：开启思考且面板展开时显示 -->
                                         <div v-if="thinkingMode && thinkingPanelOpen" class="thinking-effort-panel">
                                             <span
                                                 v-for="effort in ['low', 'high', 'max']"
@@ -992,7 +991,7 @@
                                             >{{ effort === 'low' ? '低' : effort === 'high' ? '高' : 'max' }}</span>
                                         </div>
                                     </div>
-                                    <!-- + 号上传按钮 -->
+                                    <!-- 上传 -->
                                     <div class="user-menu-wrapper" style="position: relative;">
                                         <button v-if="uploadMenuOpen" class="upload-dropdown" @click.stop>
                                             <label class="upload-dropdown-item" style="cursor: pointer;">
@@ -1002,18 +1001,19 @@
                                             </label>
                                         </button>
                                         <button class="upload-btn" @click="toggleUploadMenu" title="上传文件" aria-label="上传文件">
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                                         </button>
                                     </div>
-                                    <!-- 发送按钮 / 暂停按钮 -->
+                                    <!-- 发送 / 停止 -->
                                     <button v-if="!isLoading" class="send-btn" @click="sendMessage" :disabled="!canSend" aria-label="发送消息">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                                             <line x1="22" y1="2" x2="11" y2="13"></line>
                                             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                                         </svg>
                                     </button>
                                     <button v-else class="stop-btn" @click="stopResponse" title="停止回复" aria-label="停止回复">
                                         <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
+                                        <span>停止</span>
                                     </button>
                                 </div>
                             </div>
@@ -1021,17 +1021,16 @@
                         </div>
                     </main>
 
-                    <!-- ===== 个人信息弹窗 ===== -->
+                    <!-- ══════════ 个人信息弹窗 ══════════ -->
                     <div v-if="profileModalOpen" class="modal-overlay" @click.self="closeProfileModal">
                         <div class="modal" @mousedown.stop>
                             <div class="modal-header">
                                 <h3>个人信息</h3>
                                 <button class="modal-close" @click="closeProfileModal" aria-label="关闭">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                 </button>
                             </div>
                             <div class="modal-body">
-                                <!-- 头像设置 -->
                                 <div class="form-group">
                                     <label>头像</label>
                                     <div class="avatar-selector">
@@ -1048,19 +1047,16 @@
                                         </div>
                                     </div>
                                 </div>
-                                <!-- 用户名 -->
                                 <div class="form-group">
                                     <label>用户名</label>
                                     <input v-model="profileForm.username" type="text" placeholder="请输入用户名" maxlength="32">
                                 </div>
-                                <!-- 助手风格 / 自定义设定 -->
                                 <div class="form-group">
                                     <label>助手风格 / 自定义设定</label>
                                     <textarea v-model="profileForm.assistant_style" placeholder="描述你希望 AI 助手具备的风格、角色设定或特殊要求（如：你是一个专业的编程助手，回答简洁，多用代码示例）" rows="3" maxlength="500"></textarea>
                                     <div class="form-hint">此设定会作为 system prompt 的一部分，影响 AI 的回答风格（最多 500 字）</div>
                                 </div>
-                                <hr style="border: none; border-top: 1px solid var(--border); margin: 20px 0;">
-                                <!-- 修改密码 -->
+                                <hr style="border: none; border-top: 2px dashed var(--line-soft); margin: 20px 0;">
                                 <div class="form-group">
                                     <label>原密码</label>
                                     <input v-model="profileForm.old_password" type="password" placeholder="请输入原密码">
@@ -1076,24 +1072,23 @@
                             </div>
                             <div class="modal-footer">
                                 <button class="btn-ghost" @click="closeProfileModal">取消</button>
-                                <button class="btn-primary" @click="saveProfile" :disabled="profileSaving">
+                                <button class="btn btn-primary" @click="saveProfile" :disabled="profileSaving">
                                     {{ profileSaving ? '保存中...' : '保存修改' }}
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ===== 系统设置弹窗 ===== -->
+                    <!-- ══════════ 系统设置弹窗 ══════════ -->
                     <div v-if="settingsModalOpen" class="modal-overlay" @click.self="closeSettingsModal">
                         <div class="modal" @mousedown.stop>
                             <div class="modal-header">
                                 <h3>系统设置</h3>
                                 <button class="modal-close" @click="closeSettingsModal" aria-label="关闭">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                 </button>
                             </div>
                             <div class="modal-body">
-                                <!-- 主题选择 -->
                                 <div class="form-group">
                                     <label>主题配色</label>
                                     <div class="theme-grid">
@@ -1103,69 +1098,65 @@
                                         </div>
                                     </div>
                                 </div>
-                                <hr style="border: none; border-top: 1px solid var(--border); margin: 20px 0;">
-                                <!-- MCP 服务器配置 -->
+                                <hr style="border: none; border-top: 2px dashed var(--line-soft); margin: 20px 0;">
                                 <div class="form-group">
                                     <label>MCP 服务器配置</label>
                                     <div class="form-hint" style="margin-bottom: 10px;">配置存储在本地 JSON 文件中，可自定义存储路径。直接粘贴 JSON 数组，每项支持 name / command / args / cwd / type(stdio|sse) / url 等字段。</div>
-                                    <!-- 配置文件路径 -->
                                     <div style="margin-bottom: 12px;">
                                         <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 6px;">配置文件路径</label>
                                         <input
                                             v-model="mcpConfigPath"
                                             type="text"
                                             placeholder="如：E:/工作文件/AgentProject/resources/config/mcp_servers.json"
-                                            style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: 'Consolas', monospace; background: var(--bg-secondary); color: var(--text-primary);"
+                                            class="mcp-path-input"
                                         >
-                                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">允许路径：项目 resources/、config/ 目录，或用户主目录下任意路径</div>
+                                        <div class="form-hint">允许路径：项目 resources/、config/ 目录，或用户主目录下任意路径</div>
                                     </div>
-                                    <!-- JSON 配置编辑器 -->
                                     <textarea
                                         v-model="mcpJsonText"
                                         class="mcp-json-editor"
                                         placeholder='[&#10;  {&#10;    "name": "文件系统",&#10;    "command": "npx",&#10;    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed"]&#10;  }&#10;]'
                                         rows="10"
                                         spellcheck="false"
-                                        style="width: 100%; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); resize: vertical; line-height: 1.5;"
                                     ></textarea>
                                     <div style="display: flex; gap: 8px; margin-top: 8px;">
                                         <button type="button" class="btn-ghost" @click="formatMcpJson" style="flex: 1;">格式化 JSON</button>
                                         <button type="button" class="btn-ghost" @click="clearMcpJson" style="flex: 1;">清空</button>
                                     </div>
-                                    <div v-if="mcpJsonError" style="color: var(--error, #ff4d4f); font-size: 12px; margin-top: 6px;">{{ mcpJsonError }}</div>
+                                    <div v-if="mcpJsonError" class="form-error" style="margin-top: 6px;">{{ mcpJsonError }}</div>
                                 </div>
                             </div>
                             <div class="modal-footer">
                                 <button class="btn-ghost" @click="closeSettingsModal">取消</button>
-                                <button class="btn-primary" @click="saveSettings" :disabled="settingsSaving">
+                                <button class="btn btn-primary" @click="saveSettings" :disabled="settingsSaving">
                                     {{ settingsSaving ? '保存中...' : '保存设置' }}
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- ===== MCP 重启提示弹窗 ===== -->
+                    <!-- ══════════ MCP 重启提示弹窗 ══════════ -->
                     <div v-if="restartNoticeOpen" class="modal-overlay" @click.self="restartNoticeOpen = false">
                         <div class="modal" @mousedown.stop style="max-width: 480px;">
                             <div class="modal-header">
                                 <h3>配置已保存</h3>
                                 <button class="modal-close" @click="restartNoticeOpen = false" aria-label="关闭">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                 </button>
                             </div>
                             <div class="modal-body">
                                 <div style="display: flex; gap: 12px; align-items: flex-start;">
-                                    <div style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--warning-bg, #FFF4E5); display: flex; align-items: center; justify-content: center; font-size: 20px;">⚠️</div>
+                                    <div class="restart-icon">!</div>
                                     <div>
-                                        <p style="margin: 0 0 10px 0; font-weight: 600;">MCP 配置需重启后端生效</p>
-                                        <p style="margin: 0 0 8px 0; color: var(--text-secondary); line-height: 1.6;">MCP 服务器在后端服务启动时初始化并编译进对话图，运行中修改配置不会自动热重载。</p>
-                                        <p style="margin: 0; color: var(--text-secondary); line-height: 1.6;">请重启后端服务（<code style="background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; font-size: 12px;">python main.py</code>）后，新配置的 MCP 工具才会在对话中生效。</p>
-                                        <p style="margin: 10px 0 0 0; color: var(--success, #52c41a); font-size: 13px;">✓ 主题配色已即时生效，无需重启。</p>
+                                        <p style="margin: 0 0 10px 0; font-weight: 800;">MCP 配置需重启后端生效</p>
+                                        <p style="margin: 0 0 8px 0; color: var(--text-2); line-height: 1.6;">MCP 服务器在后端服务启动时初始化并编译进对话图，运行中修改配置不会自动热重载。</p>
+                                        <p style="margin: 0; color: var(--text-2); line-height: 1.6;">请重启后端服务（<code class="inline-code">python main.py</code>）后，新配置的 MCP 工具才会在对话中生效。</p>
+                                        <p style="margin: 10px 0 0 0; color: var(--mint); font-size: 13px; font-weight: 700;">✓ 主题配色已即时生效，无需重启。</p>
                                     </div>
                                 </div>
                             </div>
                             <div class="modal-footer">
-                                <button class="btn-primary" @click="confirmRestartNotice">知道了</button>
+                                <button class="btn btn-primary" @click="confirmRestartNotice">知道了</button>
                             </div>
                         </div>
                     </div>
