@@ -1,4 +1,4 @@
-name: ACR-CI-CD
+name: ACR-CI
 
 on:
   push:
@@ -9,9 +9,8 @@ env:
   IMAGE_REPO: mitta
 
 jobs:
-  build_deploy:
+  build:
     runs-on: ubuntu-latest
-    # GHA 缓存需要 actions:write 权限
     permissions:
       contents: read
       actions: write
@@ -38,7 +37,6 @@ jobs:
         with:
           context: .
           push: true
-          # 适配阿里云 ACR：关闭 provenance 和 sbom，生成 Docker V2 格式
           provenance: false
           sbom: false
           tags: |
@@ -50,71 +48,8 @@ jobs:
             APT_MIRROR=deb.debian.org
             PIP_INDEX=https://pypi.org/simple
 
-      - name: Deploy to Aliyun ECS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.ECS_HOST }}
-          username: ${{ secrets.ECS_USER }}
-          key: ${{ secrets.ECS_SSH_KEY }}
-          command_timeout: 30m
-          script: |
-            set -e
-            cd /opt/mitta
-
-            echo "=== [1/5] 同步最新代码（前端/配置/compose） ==="
-            # 国内ECS访问GitHub不稳定：强制HTTP/1.1（GnuTLS HTTP/2兼容问题）+ 重试3次
-            git config --global http.version HTTP/1.1
-            git config --global http.postBuffer 524288000
-            for retry in 1 2 3; do
-              echo "  git pull 第 ${retry} 次尝试..."
-              if git pull origin main; then
-                echo "  git pull 成功"
-                break
-              fi
-              if [ "$retry" = "3" ]; then
-                echo "❌ git pull 连续3次失败，中止部署"
-                exit 1
-              fi
-              echo "  失败，5秒后重试..."
-              sleep 5
-            done
-
-            echo "=== [2/5] 登录 ACR 并拉取新镜像 ==="
-            docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
-            docker compose pull api
-
-            echo "=== [3/5] 记录旧镜像 ID（用于回滚） ==="
-            OLD_IMAGE=$(docker inspect --format='{{.Image}}' mitta-api 2>/dev/null || echo "")
-            echo "旧容器镜像: $OLD_IMAGE"
-
-            echo "=== [4/5] 重建 api 容器 ==="
-            docker compose up -d --no-build api
-
-            echo "=== [5/5] 健康检查（最多等 60 秒） ==="
-            for i in $(seq 1 12); do
-              sleep 5
-              HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
-              echo "  第 ${i} 次检查: HTTP $HEALTH"
-              if [ "$HEALTH" = "200" ]; then
-                echo "✅ 部署成功，服务健康"
-                docker logs mitta-api --tail 5 2>&1 | tail -5
-                break
-              fi
-              if [ "$i" = "12" ]; then
-                echo "❌ 健康检查失败，回滚到旧镜像..."
-                if [ -n "$OLD_IMAGE" ]; then
-                  docker stop mitta-api
-                  docker rm mitta-api
-                  docker run -d --name mitta-api --network mitta_default -p 8000:8000 "$OLD_IMAGE"
-                  echo "已回滚到旧镜像: $OLD_IMAGE"
-                else
-                  echo "无旧镜像可回滚，请手动检查"
-                fi
-                docker logs mitta-api --tail 30 2>&1
-                exit 1
-              fi
-            done
-
-            echo "=== 清理悬空镜像（保留最近 2 个版本） ==="
-            docker image prune -f --filter "until=24h"
-            echo "=== 部署完成 ==="
+      # 服务器无法访问 GitHub，已移除自动部署步骤。
+      # 手动部署命令（在服务器 /opt/mitta 目录执行）：
+      #   git pull origin main          # 同步前端/配置
+      #   docker compose pull api       # 拉取新镜像
+      #   docker compose up -d --no-build api  # 重建容器
