@@ -174,8 +174,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      milvus:
-        condition: service_healthy
+      # milvus 已停用（改用 ChromaDB），不再依赖 etcd/minio/milvus
     volumes:
       # 挂载 MCP 配置和 System Prompt（修改后重启容器生效）
       - ./resources/config:/app/resources/config
