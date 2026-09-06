@@ -6,7 +6,7 @@ from loguru import logger
 
 from config import load_vector_db_config
 from constant.tool_constant import TOOLS_COLLECTION, TOOL_DISTANCE_THRESHOLD, TOOLS_EMBEDDING_LIMIT, TOP_FILTER_TOOLS
-from init import selector_llm
+# selector_llm 由构造函数注入（依赖注入），不再全局 import
 from utils.tools_util import format_tools_for_prompt, parse_tool_names
 from vector.vector_store import create_vector_store
 
@@ -18,11 +18,23 @@ class ToolFilter:
     绝不让工具筛选阻塞主对话链路；失败一次后熔断，避免每轮重试刷屏。
     """
 
-    def __init__(self):
+    def __init__(self, selector_llm=None, embedding_function=None):
+        """工具筛选器。
+
+        Args:
+            selector_llm: 用于工具精筛的 LLM（依赖注入），None 时延迟导入（兼容旧调用）
+            embedding_function: 向量库 Embedding 函数（依赖注入），None 时降级
+        """
         self._semantic_available = True  # 语义层熔断开关：失败后降级规则层，重启恢复
+        # 兼容旧调用：未注入时延迟导入
+        if selector_llm is None:
+            from init import selector_llm as _selector
+            self.selector_llm = _selector
+        else:
+            self.selector_llm = selector_llm
         cfg = dict(load_vector_db_config())
         cfg["collection"] = TOOLS_COLLECTION
-        vector_store = create_vector_store(cfg)
+        vector_store = create_vector_store(cfg, embedding_function=embedding_function)
         self.vector_store = vector_store
     @staticmethod
     def rule_based_filter(query, tools: list[BaseTool]):
@@ -79,15 +91,15 @@ class ToolFilter:
             logger.exception(f"工具筛选异常，本轮使用全量工具：{e}")
             return tools
 
-    @staticmethod
-    def llm_refine_tools(query: str, candidate_tools: list[BaseTool]) -> list[BaseTool]:
+    def llm_refine_tools(self, query: str, candidate_tools: list[BaseTool]) -> list[BaseTool]:
+        """用 LLM 对候选工具做精筛（用注入的 selector_llm）。"""
         prompt = f"""Given the user query: "{query}"
     Select the most relevant tools from the following list. Return a JSON list of tool names.
 
     Available tools:
     {format_tools_for_prompt(candidate_tools)}
     """
-        response = selector_llm.invoke(prompt)
+        response = self.selector_llm.invoke(prompt)
         selected_names = parse_tool_names(response.content)
         if not selected_names:
             # 精筛失败（格式错/无匹配）：回退向量检索结果，宁多勿漏，不缩水

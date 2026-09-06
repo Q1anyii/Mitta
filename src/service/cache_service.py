@@ -8,7 +8,7 @@ from redis.commands.search.index_definition import IndexDefinition, IndexType
 from redis.commands.search.field import TextField, NumericField, TagField, VectorField
 import numpy as np
 import redis
-from init import embed_model, online_rerank
+# embed_model / online_rerank 由构造函数注入（依赖注入），不再全局 import
 import json
 import time
 import uuid
@@ -45,7 +45,7 @@ class CacheService:
         host, port = host_port.split(":")
         return host, int(port), password
 
-    def __init__(self, redis_db_url: str = REDIS_DB_URL, index_name:str = INDEX_NAME, cache_ttl = CACHE_DEFAULT_TTL):
+    def __init__(self, redis_db_url: str = REDIS_DB_URL, index_name:str = INDEX_NAME, cache_ttl = CACHE_DEFAULT_TTL, embed_model=None, online_rerank=None):
         self.db_url = redis_db_url or os.getenv("REDIS_DB_URL")
         self.host, self.port, self.password = self.parse_url(self.db_url)
         self.redis = redis.Redis(
@@ -62,9 +62,28 @@ class CacheService:
         self._lsh = None      # LSH 模型复用：planes 必须固定，否则同一 query 每次映射不同 bucket，缓存 key 无限膨胀
         self._lsh_dim = 0
         self.cache_ttl =cache_ttl
+        # 依赖注入：embed_model / online_rerank 由调用方传入；未传入时延迟导入（兼容旧调用）
+        if embed_model is None or online_rerank is None:
+            from init import embed_model as _embed, online_rerank as _rerank
+            self.embed_model = embed_model or _embed
+            self.online_rerank = online_rerank or _rerank
+        else:
+            self.embed_model = embed_model
+            self.online_rerank = online_rerank
 
 
-    def open(self):
+    def open(self, embed_model=None, online_rerank=None):
+        """初始化 Redis 连接和索引。
+
+        Args:
+            embed_model: Embedding 模型（依赖注入），None 时用构造函数注入的
+            online_rerank: 在线重排函数（依赖注入），None 时用构造函数注入的
+        """
+        # 允许在 open 时覆盖注入的依赖（main.py lifespan 统一注入）
+        if embed_model is not None:
+            self.embed_model = embed_model
+        if online_rerank is not None:
+            self.online_rerank = online_rerank
         self.create_index()
         self.create_sparse_index()
         try:
@@ -141,9 +160,9 @@ class CacheService:
         except Exception as e:
             logger.info("Index may already exist:", e)
 
-    @staticmethod
-    def query_to_vector(query: str) -> list[float]:
-        return embed_model.embed_query(query)
+    def query_to_vector(self, query: str) -> list[float]:
+        """将查询文本转为向量（用注入的 embed_model）。"""
+        return self.embed_model.embed_query(query)
 
     def _get_lsh(self, dim: int) -> RandomProjectionLSH:
         """惰性创建并复用 LSH 模型（planes 固定，保证同一 query 稳定映射同一 bucket）"""
@@ -209,7 +228,7 @@ class CacheService:
         # 必须再用重排模型验证候选问题与当前问题是否语义等价，才允许命中缓存
         candidate_texts = [doc.query_text for doc in res.docs]
         try:
-            results = online_rerank(query, candidate_texts, top_n=len(candidate_texts))
+            results = self.online_rerank(query, candidate_texts, top_n=len(candidate_texts))
         except Exception as e:
             # 缓存是优化而非正确性依赖：验证服务不可用时按未命中降级，不阻塞主流程
             logger.warning(f"缓存验证重排调用失败，按未命中处理：{e}")

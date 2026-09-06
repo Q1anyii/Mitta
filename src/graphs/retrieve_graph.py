@@ -39,10 +39,10 @@ from constant.retrieval_constants import TOP_K, DISTANCE_THRESHOLD, REWRITE_PROM
 from vector.vector_store import VectorStore
 from vector.retrieve_doc import RetrievedDoc
 import json, re
-from init import model, online_rerank
+# model / online_rerank 由调用方通过参数注入（依赖注入），不再全局 import
 
 
-def build_retrieve_graph(vector_store: VectorStore):
+def build_retrieve_graph(vector_store: VectorStore, model=None, online_rerank=None):
     """构建并编译检索图。
 
     Args:
@@ -53,6 +53,11 @@ def build_retrieve_graph(vector_store: VectorStore):
     """
     # Redis 检索缓存：全局单例（main.py lifespan 统一 open/close），节点内直接使用，不自行管理生命周期
     cache_service = _cache_service
+    # 兼容旧调用：未注入 model/online_rerank 时延迟导入（双轨运行期）
+    if model is None or online_rerank is None:
+        from init import model as _model, online_rerank as _rerank
+        model = model or _model
+        online_rerank = online_rerank or _rerank
 
     # ── 状态定义 ──────────────────────────────────────────────
     class OutputState(TypedDict):

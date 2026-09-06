@@ -46,10 +46,14 @@ class ChatService:
         # 工具常驻事件循环（MCP session 创建与调用必须同循环）
         self._tool_loop = None
 
-    def open(self, mcp_tools: list | None = None, tool_loop=None):
+    def open(self, mcp_tools: list | None = None, tool_loop=None, deps=None):
         self._global_mcp_tools = mcp_tools or []
         self._tool_loop = tool_loop
-        self.vector_store = create_vector_store(load_vector_db_config())
+        self._deps = deps  # AppDependencies 容器（依赖注入），None 时各构建函数降级到全局 import
+        # 创建向量库：注入 embedding_function，未提供 deps 时 create_vector_store 内部降级
+        vec_cfg = load_vector_db_config()
+        embed_fn = deps.embedding_function if deps else None
+        self.vector_store = create_vector_store(vec_cfg, embedding_function=embed_fn)
         self.pool = ConnectionPool(
             conninfo=self.db_url,
             kwargs={"autocommit": True},
@@ -72,12 +76,20 @@ class ChatService:
         # 节点（如 retrieve_node）命中/写入都走 Redis（键前缀 langgraph:cache:，带 TTL），
         # 多 worker 间共享；Redis 不可用时 RedisCache 内部静默降级为不缓存
         self.cache = RedisCache(cache_service.redis)  # ← self.，且 compile 用它
-        self.retrieve_graph = build_retrieve_graph(self.vector_store)   # 只 build 一次，替代 @lru_cache
-        self.main_graph = build_main_graph(  # 改：显式传参
+        # 构建检索图：注入 model 和 online_rerank，未提供 deps 时函数内部降级
+        rg_model = deps.model if deps else None
+        rg_rerank = deps.online_rerank if deps else None
+        self.retrieve_graph = build_retrieve_graph(self.vector_store, model=rg_model, online_rerank=rg_rerank)
+        # 构建主图：注入 model 和 system_prompt，未提供 deps 时函数内部降级
+        mg_model = deps.model if deps else None
+        mg_prompt = deps.system_prompt if deps else None
+        self.main_graph = build_main_graph(
             retrieve_graph=self.retrieve_graph,
             pool=self.pool,
             checkpointer=self.checkpointer,
             store=self.store,
+            model=mg_model,
+            system_prompt=mg_prompt,
             cache=self.cache,
             mcp_tools=mcp_tools,
         )

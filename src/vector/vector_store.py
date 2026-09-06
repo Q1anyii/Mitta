@@ -208,19 +208,25 @@ class MilvusVectorStore:
         return int(stats.get("row_count", 0))
 
 
-def create_vector_store(cfg: dict[str, Any]) -> VectorStore:
+def create_vector_store(cfg: dict[str, Any], embedding_function: Any = None) -> VectorStore:
     """工厂：按配置创建向量库实例（注入方式落点）。
 
     cfg 来自 resources/config/vector_db.json：
       {"type": "chroma", "persist_path": "../resources/chroma_db", "collection": "FAQ_KNOWLEDGE_BASE"}
       {"type": "milvus", "uri": "http://localhost:19530", "collection": "FAQ_KNOWLEDGE_BASE", "dimension": 1024}
     换库只改配置 + 保证实现类存在，业务层零改动。
+
+    Args:
+        cfg: 向量库配置
+        embedding_function: Embedding 函数（依赖注入），None 时延迟从 init 导入（兼容旧调用）
     """
     collection_name = cfg.get("collection") or COLLECTION_NAME
 
-    if cfg.get("type") == "milvus":
-        from init import embedding_function  # 延迟导入：init 会初始化模型等重资源
+    # 兼容旧调用：未注入时延迟导入全局 embedding_function（双轨运行期）
+    if embedding_function is None:
+        from init import embedding_function
 
+    if cfg.get("type") == "milvus":
         return MilvusVectorStore(
             uri=cfg["uri"],
             collection_name=collection_name,
@@ -230,7 +236,6 @@ def create_vector_store(cfg: dict[str, Any]) -> VectorStore:
 
     # 默认 chroma
     import chromadb
-    from init import embedding_function
 
     client = chromadb.PersistentClient(path=str(cfg.get("persist_path", "../resources/chroma_db")))
     collection = client.get_or_create_collection(

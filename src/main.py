@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 from loguru import logger
 
+from container import AppDependencies
 from config import validate_config, load_mcp_server_configs
 from mcp_client.client import init_mcp_holders
 from mcp_client.mcp_server.agent_server import mcp
@@ -47,9 +48,12 @@ async def lifespan(app: FastAPI):
         tools_embedding(filtered_tools)
         logger.success(f"已加载{len(filtered_tools)}个MCP 工具，共{len(mcp_holders)}类")
     logger.info("正在初始化 LangGraph 资源...")
-    chat_service.open(filtered_tools, tool_loop=tool_loop)
+    # 创建依赖容器：所有外部依赖（LLM/Embedding/重排/System Prompt）统一在这里创建，
+    # 通过参数注入到各服务和图中，替代原 init.py 全局初始化
+    deps = AppDependencies()
+    chat_service.open(filtered_tools, tool_loop=tool_loop, deps=deps)
     login_service.open()
-    cache_service.open()
+    cache_service.open(embed_model=deps.embed_model, online_rerank=deps.online_rerank)
     user_profile_service.open()
     file_upload_service.open()
     logger.success("资源初始化完成")

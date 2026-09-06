@@ -1,5 +1,4 @@
 import numpy as np
-from init import embed_model
 
 class RandomProjectionLSH:
     def __init__(self, dim, num_bits):

@@ -14,7 +14,7 @@ from langgraph.prebuilt import ToolNode
 from loguru import logger
 from pydantic import Field
 from graphs.tool_filter import ToolFilter
-from init import model, system_prompt
+# model / system_prompt 由 build_main_graph 参数注入（依赖注入）
 from utils.doc_util import documents_to_dicts
 from constant.prompt_constants import MEMORY_EXTRACT_PROMPT, CLASSIFIER_PROMPT, NO_INFO_MARKS
 from constant.cache_constant import CACHE_MEMORY_NODE_TTL
@@ -43,11 +43,19 @@ def build_main_graph(retrieve_graph,
     pool,
     checkpointer,
     store,
+    model=None,
+    system_prompt: str = None,
     cache=None,
     mcp_tools: list[BaseTool] | None = None,):
+    # 兼容旧调用：未注入 model/system_prompt 时延迟导入（双轨运行期）
+    if model is None or system_prompt is None:
+        from init import model as _model, system_prompt as _prompt
+        model = model or _model
+        system_prompt = system_prompt or _prompt
+
     # 工具：ToolNode 绑定全量安全工具（按 name 路由执行），
     # LLM 侧在 llm_node 里按本轮 query 运行时筛选后 bind_tools（见 llm_node）
-    tool_filter = ToolFilter()
+    tool_filter = ToolFilter(selector_llm=model)
     tools = list(mcp_tools or [])  # build 期无用户 query，不做筛选，直接全量绑定路由
     # handle_tool_errors 必须显式配置：langgraph 1.1.x 默认只兜底参数校验错误，
     # MCP 工具执行异常（如 search_files 的 ENOTDIR）会原样抛出让整图中断（SSE 断流）；
