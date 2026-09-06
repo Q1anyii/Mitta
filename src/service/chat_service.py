@@ -242,14 +242,17 @@ class ChatService:
             try:
                 connections = asyncio.run_coroutine_threadsafe(
                     init_mcp_holders(user_servers), self._tool_loop
-                ).result(timeout=30)
+                ).result(timeout=60)
                 user_tools = [t for conn in connections for t in conn.tools]
                 if user_tools:
                     user_tools = safety_filter(user_tools)
                     tools_embedding(user_tools)
-                    logger.info(f"用户 [{user_id}] 加载了 {len(user_tools)} 个自定义 MCP 工具")
+                    logger.info(f"用户 [{user_id}] 加载了 {len(user_tools)} 个自定义 MCP 工具（来自 {len(connections)} 个服务器）")
+                else:
+                    logger.warning(f"用户 [{user_id}] MCP 连接成功但未获取到工具（服务器数={len(connections)}），检查 MCP 服务器是否正常启动")
             except Exception as e:
-                logger.warning(f"用户 [{user_id}] MCP 工具加载失败，使用全局工具: {e}")
+                server_names = [s.get('name','?') for s in user_servers]
+                logger.warning(f"用户 [{user_id}] MCP 工具加载失败（服务器={server_names}），使用全局工具: {type(e).__name__}: {e}")
                 connections = []
                 user_tools = []
 

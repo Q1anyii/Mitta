@@ -35,7 +35,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && npm config set registry https://registry.npmmirror.com \
+    && npm install -g \
+        @modelcontextprotocol/server-filesystem \
+        @modelcontextprotocol/server-github \
+        @modelcontextprotocol/server-sequential-thinking \
+        @modelcontextprotocol/server-memory \
+        @modelcontextprotocol/server-fetch \
+    || echo "WARN: some MCP packages pre-install failed, npx fallback at runtime" 
 
 # 先复制依赖文件，利用 Docker 缓存层（代码变更不触发重装）
 COPY requirements.txt .
