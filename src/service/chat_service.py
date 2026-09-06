@@ -19,6 +19,74 @@ from service.file_upload_service import file_upload_service
 from vector.vector_store import create_vector_store
 
 
+def _format_sse(data) -> str:
+    """格式化 SSE 事件为标准格式。
+
+    Args:
+        data: dict（自动 json.dumps）或字符串（如 "[DONE]"）
+
+    Returns:
+        "data: {...}\n\n" 格式的 SSE 事件字符串
+    """
+    if isinstance(data, str):
+        return f"data: {data}\n\n"
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _process_graph_chunk(chunk, meta) -> str | None:
+    """处理 LangGraph stream 的单个 chunk，返回 SSE 事件字符串或 None。
+
+    stream_mode="messages" 会捕获图中所有 LLM 调用的 token 事件，
+    包括 classify_node 的 yes/no 与 memory_node 的记忆提取输出，
+    必须按 meta["langgraph_node"] 过滤，只输出 llm_node 的增量，
+    否则分类器的 "no" 会混入流式回答出现在前端。
+
+    Args:
+        chunk: LangGraph 输出的消息 chunk（AIMessageChunk / ToolMessage 等）
+        meta: 包含 langgraph_node 等元信息
+
+    Returns:
+        SSE 事件字符串；过滤掉的 chunk 返回 None
+    """
+    node = meta.get("langgraph_node")
+
+    # llm_node：输出文本内容 + 检测工具调用开始
+    if node == "llm_node" and isinstance(chunk, AIMessageChunk):
+        events = []
+        # 检测工具调用开始：AIMessageChunk 含 tool_calls 字段
+        if chunk.tool_calls:
+            for tc in chunk.tool_calls:
+                events.append(_format_sse({
+                    "tool_call_start": {
+                        "name": tc.get("name", ""),
+                        "args": tc.get("args", {}),
+                    }
+                }))
+        # 输出文本内容（content 可能是 str 或 list[dict]，多模态模型返回 list）
+        if chunk.content:
+            content = chunk.content
+            if isinstance(content, list):
+                content = "".join(
+                    part.get("text", "") if isinstance(part, dict) else str(part)
+                    for part in content
+                )
+            if content:
+                events.append(_format_sse({"content": content}))
+        return "".join(events) if events else None
+
+    # tool_node：工具执行结果，发送工具调用结束事件（供前端关闭加载动画）
+    if node == "tool_node" and isinstance(chunk, ToolMessage):
+        return _format_sse({
+            "tool_call_end": {
+                "name": chunk.name,
+                "content": str(chunk.content)[:200],  # 截断防止工具输出过大
+            }
+        })
+
+    # classify_node / memory_node 等其他节点：过滤，不输出到前端
+    return None
+
+
 class ChatService:
 
     POSTGRESQL_DB_URL = os.getenv("POSTGRESQL_DB_URL")
@@ -291,8 +359,35 @@ class ChatService:
             for k in keys_to_remove:
                 del self._file_content_cache[k]
 
+    def _build_stream_config(self, user_id, thread_id, user_info) -> dict:
+        """构建流式对话的 LangGraph config。
+
+        请求级用户上下文随 config 传入图（工具通过 RunnableConfig 参数读取），
+        不依赖 contextvars：StreamingResponse 每次 next() 都在新线程/新 context 执行，
+        contextvars 的 set/reset 会跨 context 报错且 get() 拿不到值。
+
+        Args:
+            user_id: 用户 ID
+            thread_id: 会话 ID
+            user_info: 用户上下文信息
+
+        Returns:
+            LangGraph config dict
+        """
+        return {
+            "configurable": {
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "user_info": user_info,
+            },
+            "metadata": {"user_id": user_id},  # 随 checkpoint 写入 metadata
+        }
+
     def stream(self, user_id, thread_id, input_str, user_info=None, file_ids: list[int] = None):
-        """流式对话生成。
+        """流式对话生成（SSE）。
+
+        编排逻辑：拼接文件内容 → 构建 config → 遍历图输出 → 过滤节点 → 格式化 SSE 事件。
+        节点过滤和 SSE 格式化由模块级 _process_graph_chunk / _format_sse 处理。
 
         Args:
             user_id: 用户 ID
@@ -300,8 +395,11 @@ class ChatService:
             input_str: 用户输入文本
             user_info: 用户上下文信息
             file_ids: 上传文件 ID 列表，解析内容会拼接到 input_str 传入 llm_node
+
+        Yields:
+            SSE 事件字符串（"data: ...\n\n" 格式）
         """
-        # 拼接用户输入与上传文件解析内容（文件内容作为上下文传入 LLM）
+        # 1. 拼接用户输入与上传文件解析内容（文件内容作为上下文传入 LLM）
         if file_ids:
             input_str = self._build_input_with_files(input_str, file_ids, user_id)
             logger.info(f"拼接文件内容后 input_str 长度: {len(input_str)}, 文件数: {len(file_ids)}")
@@ -309,77 +407,28 @@ class ChatService:
             for fid in file_ids:
                 self._file_content_cache.pop(f"{user_id}:{fid}", None)
 
-        def make_serializable(obj):
-            # 处理 LangChain 消息对象
-            if isinstance(obj, BaseMessage):
-                return {
-                    "type": obj.type,
-                    "content": obj.content,
-                }
-            # 递归处理字典
-            if isinstance(obj, dict):
-                return {k: make_serializable(v) for k, v in obj.items()}
-            # 递归处理列表/元组
-            if isinstance(obj, (list, tuple)):
-                return [make_serializable(v) for v in obj]
-            # 其他类型直接返回
-            return obj
+        config = self._build_stream_config(user_id, thread_id, user_info)
 
-        config = {
-            "configurable": {
-                "thread_id": thread_id,
-                "user_id": user_id,
-                # 请求级用户上下文随 config 传入图（工具通过 RunnableConfig 参数读取），
-                # 不依赖 contextvars：StreamingResponse 每次 next() 都在新线程/新 context 执行，
-                # contextvars 的 set/reset 会跨 context 报错且 get() 拿不到值
-                "user_info": user_info,
-            },
-            "metadata": {"user_id": user_id},  # 随 checkpoint 写入 metadata
-        }  # 会话隔离
-
+        # 2. 流式输出：遍历图，过滤节点，格式化 SSE 事件
         try:
-            # stream_mode="messages" 会捕获图中所有 LLM 调用的 token 事件，
-            # 包括 classify_node 的 yes/no 与 memory_node 的记忆提取输出，
-            # 必须按 meta["langgraph_node"] 过滤，只输出 llm_node 的增量，
-            # 否则分类器的 "no" 会混入流式回答出现在前端。
-            # 同时捕获 tool_call 开始/结束事件，供前端显示工具调用加载界面。
             for chunk, meta in self.main_graph.stream(
-                    {"input_str": input_str},
-                    config=config,
-                    stream_mode="messages",
+                {"input_str": input_str},
+                config=config,
+                stream_mode="messages",
             ):
-                node = meta.get("langgraph_node")
-                # llm_node：输出内容 + 检测工具调用开始
-                if node == "llm_node":
-                    if isinstance(chunk, AIMessageChunk):
-                        # 检测工具调用开始：AIMessageChunk 含 tool_calls 字段
-                        if chunk.tool_calls:
-                            for tc in chunk.tool_calls:
-                                yield f"data: {json.dumps({'tool_call_start': {'name': tc.get('name', ''), 'args': tc.get('args', {})}})}\n\n"
-                        # 输出文本内容
-                        if chunk.content:
-                            content = chunk.content
-                            if isinstance(content, list):
-                                content = "".join(
-                                    part.get("text", "") if isinstance(part, dict) else str(part)
-                                    for part in content
-                                )
-                            if content:
-                                yield f"data: {json.dumps({'content': content})}\n\n"
-                # tool_node：工具执行结果，发送工具调用结束事件
-                elif node == "tool_node":
-                    if isinstance(chunk, ToolMessage):
-                        yield f"data: {json.dumps({'tool_call_end': {'name': chunk.name, 'content': str(chunk.content)[:200]}})}\n\n"
-            yield f"data: [DONE]\n\n"
+                event = _process_graph_chunk(chunk, meta)
+                if event:  # None 表示该 chunk 被过滤（classify/memory 节点）
+                    yield event
+            yield _format_sse("[DONE]")
         except GeneratorExit:
             # 客户端断开连接时 StreamingResponse 会关闭生成器，这里静默退出即可
             raise
         except Exception as e:
-            # 图执行异常（工具执行跨事件循环/checkpoint 序列化等）：记录完整堆栈并
-            # 向前端推送错误事件，避免 SSE 静默断流导致前端报"发送消息失败"而日志无迹
+            # 图执行异常：记录完整堆栈并向前端推送错误事件，
+            # 避免 SSE 静默断流导致前端报"发送消息失败"而日志无迹
             logger.exception(f"对话流生成异常（thread_id={thread_id}）：{e}")
-            yield f"data: {json.dumps({'error': str(e), 'error_type': type(e).__name__})}\n\n"
-            yield f"data: [DONE]\n\n"
+            yield _format_sse({"error": str(e), "error_type": type(e).__name__})
+            yield _format_sse("[DONE]")
 
     def get_history_session(self, thread_id: str):
         config = {
