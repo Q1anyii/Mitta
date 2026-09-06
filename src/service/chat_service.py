@@ -240,9 +240,11 @@ class ChatService:
         connections = []
         if self._tool_loop:
             try:
+                # timeout=45：容器内 npx/uvx 首次启动需联网解析包，国内服务器较慢，
+                # 单服务器握手给 45s（init_mcp_holders 内部并发连接，总时长≈最慢的一个）
                 connections = asyncio.run_coroutine_threadsafe(
-                    init_mcp_holders(user_servers), self._tool_loop
-                ).result(timeout=60)
+                    init_mcp_holders(user_servers, timeout=45), self._tool_loop
+                ).result(timeout=120)
                 user_tools = [t for conn in connections for t in conn.tools]
                 if user_tools:
                     user_tools = safety_filter(user_tools)

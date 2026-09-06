@@ -384,20 +384,28 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     box-shadow: var(--shadow-red); }
 .message.user .user-text { white-space: pre-wrap; line-height: 1.7; font-size: 14.5px; }
 
-/* 深度思考折叠面板 */
-.reasoning-panel { margin-bottom: 8px; border: 2px solid var(--ink); border-radius: var(--r-sm);
-    background: var(--surface-2); overflow: hidden; box-shadow: var(--shadow-hard-sm); }
-.reasoning-header { display: flex; align-items: center; gap: 8px; padding: 9px 13px; cursor: pointer;
-    font-size: 13px; font-weight: 800; user-select: none; transition: background .15s; }
-.reasoning-header:hover { background: var(--brand-soft); }
-.reasoning-arrow { transition: transform .2s var(--ease-pop); color: var(--brand-deep); }
-.reasoning-arrow.expanded { transform: rotate(90deg); }
-.reasoning-title { letter-spacing: .5px; }
-.reasoning-title::before { content: "◈ "; color: var(--violet); }
-.reasoning-hint { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--text-3); }
-.reasoning-content { padding: 12px 14px; border-top: 2px dashed var(--line-soft); font-size: 13px;
-    line-height: 1.8; color: var(--text-2); white-space: pre-wrap; max-height: 340px; overflow-y: auto;
-    background: var(--surface); }
+/* 深度思考内嵌（直接显示在回答中，浅色小字斜体，与正式回答形成对比） */
+.reasoning-inline {
+    margin: 4px 0 12px;
+    padding: 10px 14px;
+    border-left: 3px solid var(--text-3);
+    background: var(--surface-2);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    opacity: .85;
+}
+.reasoning-inline-label {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 800; letter-spacing: 1px;
+    color: var(--text-3); text-transform: uppercase;
+    margin-bottom: 6px;
+}
+.reasoning-inline-text {
+    font-size: 12.5px; line-height: 1.75;
+    color: var(--text-2); font-style: italic;
+    white-space: pre-wrap; word-break: break-word;
+    opacity: .8;
+}
+/* 正式回答（markdown-body）保持正常深色大字，自然比思考内容醒目 */
 
 /* 工具调用卡片（豆包式穿插） */
 .tool-call-item { margin: 10px 0; border: 2px solid var(--ink); border-radius: var(--r-sm);

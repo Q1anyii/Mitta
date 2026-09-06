@@ -37,6 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && npm config set registry https://registry.npmmirror.com \
+    && npm config set fund false \
+    && npm config set audit false \
+    && npm config set update-notifier false \
     && npm install -g \
         @modelcontextprotocol/server-filesystem \
         @modelcontextprotocol/server-github \
@@ -50,6 +53,10 @@ COPY requirements.txt .
 
 # 安装 Python 依赖（直接用 pip，不引入 uv 减少复杂度）
 RUN pip install --no-cache-dir -r requirements.txt -i ${PIP_INDEX}
+
+# 安装 uv（提供 uvx 命令）：Python 生态 MCP 服务器（如 mcp-server-fetch）
+# 通过 `uvx 包名` 启动，缺 uvx 会报 No such file: 'uvx'
+RUN pip install --no-cache-dir uv -i ${PIP_INDEX}
 
 # 复制项目代码
 COPY . .

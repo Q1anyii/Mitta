@@ -948,20 +948,19 @@
                                             <span>·</span>
                                             <span>{{ msg.time }}</span>
                                         </div>
-                                        <!-- 深度思考折叠面板 -->
-                                        <div v-if="msg.role === 'assistant' && msg.reasoning" class="reasoning-panel">
-                                            <div class="reasoning-header" @click="toggleReasoning(msg)">
-                                                <svg class="reasoning-arrow" :class="{ expanded: msg.showReasoning }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                                                <span class="reasoning-title">深度思考</span>
-                                                <span class="reasoning-hint">{{ msg.showReasoning ? '点击收起' : '点击展开' }}</span>
-                                            </div>
-                                            <div v-show="msg.showReasoning" class="reasoning-content" v-html="escapeHtml(msg.reasoning)"></div>
-                                        </div>
                                         <!-- AI 消息：blocks 穿插渲染 -->
                                         <template v-if="msg.role === 'assistant'">
                                             <div class="message-content">
                                                 <template v-if="msg.blocks && msg.blocks.length > 0">
-                                                    <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
+                                                    <!-- 深度思考内嵌：直接显示在回答最前面，浅色小字斜体，与正式回答形成对比 -->
+                                                <div v-if="msg.reasoning" class="reasoning-inline">
+                                                    <div class="reasoning-inline-label">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"></path></svg>
+                                                        <span>深度思考</span>
+                                                    </div>
+                                                    <div class="reasoning-inline-text" v-html="escapeHtml(msg.reasoning)"></div>
+                                                </div>
+                                                <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
                                                         <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(block.content)"></div>
                                                         <div v-else-if="block.type === 'tool'" class="tool-call-inline" :class="{ running: block.status === 'running', done: block.status === 'done' }">
                                                             <span class="tool-inline-icon" v-html="toolIcon(block.name, block.status)"></span>

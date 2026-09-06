@@ -138,10 +138,31 @@ class McpServerConnection:
         """
         server_type = self.cfg.get("type", "stdio")
         if server_type == "stdio":
+            # 容器环境下用户配置的 cwd 由 Windows 路径转换而来（/app/user_files/...），
+            # 这些目录首次使用时并不存在，而 asyncio 子进程在 cwd 不存在时会直接抛
+            # FileNotFoundError，导致整个 MCP 连接失败。启动前自动补齐工作目录。
+            cwd = self.cfg.get("cwd")
+            if cwd:
+                try:
+                    os.makedirs(cwd, exist_ok=True)
+                except OSError as _e:
+                    logger.warning(f"MCP [{self.cfg.get('name')}] 创建工作目录失败 {cwd}: {_e}")
+            # filesystem 类 MCP 通过 args 传入“允许访问的目录”，这些目录不存在时
+            # 服务端会启动失败；对 args 中的绝对路径一并补齐
+            args = self.cfg.get("args", [])
+            joined_args = " ".join(str(a) for a in args).lower()
+            if "filesystem" in joined_args:
+                for a in args:
+                    a_str = str(a)
+                    if a_str.startswith("/") and not a_str.startswith("-"):
+                        try:
+                            os.makedirs(a_str, exist_ok=True)
+                        except OSError:
+                            pass
             params = StdioServerParameters(
                 command=self._resolve_command(self.cfg["command"]),
-                args=self.cfg.get("args", []),
-                cwd=self.cfg.get("cwd"),
+                args=args,
+                cwd=cwd,
                 env=self._build_env(self.cfg.get("env") or {}),
             )
             # 预检：服务器脚本必须存在。避免子进程启动失败触发 mcp 库在
