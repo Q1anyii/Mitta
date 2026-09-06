@@ -1339,27 +1339,28 @@
                     return msg;
                 };
 
-                // 同步文本块：保证 blocks 中最后一个 text 块内容与流式全文一致
-                // 工具块之后来了新文本时自动新建文本块，实现"文本-工具-文本"穿插
+                // 同步文本块：保证 blocks 中文本块与流式全文一致
+                // 最后一个块是 text → 更新它；最后一个块是 tool（工具后新文本）→ 新建文本块
+                // 从而实现"文本-工具-文本"的豆包式穿插
                 const _syncTextBlock = (aiMsg, fullText) => {
                     if (!aiMsg.blocks) aiMsg.blocks = [];
                     const blocks = aiMsg.blocks;
-                    // 找到最后一个文本块的位置
-                    let lastTextIdx = -1;
-                    for (let i = blocks.length - 1; i >= 0; i--) {
-                        if (blocks[i].type === 'text') { lastTextIdx = i; break; }
-                    }
-                    // 计算"最后一个文本块之后"新增的文本（工具块之后的新文本）
-                    let prevTextLen = 0;
-                    for (let i = 0; i < lastTextIdx; i++) {
-                        if (blocks[i].type === 'text') prevTextLen += blocks[i].content.length;
-                    }
-                    if (lastTextIdx === -1) {
-                        // 还没有文本块，新建
-                        if (fullText) blocks.push({ type: 'text', content: fullText });
-                    } else {
-                        // 更新最后一个文本块：全文减去之前文本块的长度
-                        blocks[lastTextIdx].content = fullText.slice(prevTextLen) || '';
+                    const lastBlock = blocks[blocks.length - 1];
+                    // 统计指定下标之前所有 text 块的总长度
+                    const prevLenBefore = (endIdx) => {
+                        let len = 0;
+                        for (let i = 0; i < endIdx; i++) {
+                            if (blocks[i].type === 'text') len += blocks[i].content.length;
+                        }
+                        return len;
+                    };
+                    if (lastBlock && lastBlock.type === 'text') {
+                        // 最后是文本块：用全文减去之前文本块长度，得到当前块增量
+                        lastBlock.content = fullText.slice(prevLenBefore(blocks.length - 1)) || '';
+                    } else if (fullText) {
+                        // 最后是工具块（或空）：新建文本块，只装工具之后新增的文本
+                        const newContent = fullText.slice(prevLenBefore(blocks.length));
+                        if (newContent) blocks.push({ type: 'text', content: newContent });
                     }
                 };
 

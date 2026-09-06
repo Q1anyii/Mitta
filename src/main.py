@@ -1,4 +1,9 @@
 import asyncio
+# DeepSeek reasoning_content 兼容补丁：必须在任何 ChatOpenAI/init_chat_model
+# 创建模型之前应用，否则 langchain-openai 会丢弃思维链字段
+from utils.deepseek_patch import apply_patch as _apply_deepseek_patch
+_apply_deepseek_patch()
+
 import threading
 from contextlib import asynccontextmanager
 

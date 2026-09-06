@@ -49,19 +49,6 @@ def _process_graph_chunk(chunk, meta) -> str | None:
         SSE 事件字符串；过滤掉的 chunk 返回 None
     """
     node = meta.get("langgraph_node")
-    # 调试：打印每个 chunk 的节点、类型、关键字段（部署后看 docker logs | grep chunk-debug）
-    chunk_type = type(chunk).__name__
-    has_reasoning = bool(
-        getattr(chunk, "reasoning_content", None)
-        or getattr(chunk, "reasoning", None)
-        or (getattr(chunk, "additional_kwargs", None) or {}).get("reasoning_content")
-        or (getattr(chunk, "additional_kwargs", None) or {}).get("reasoning")
-    )
-    logger.info(f"[chunk-debug] node={node} type={chunk_type} "
-                f"content_len={len(str(getattr(chunk, 'content', '')))} "
-                f"has_reasoning={has_reasoning} "
-                f"additional_kwargs={getattr(chunk, 'additional_kwargs', None)} "
-                f"reasoning_content={getattr(chunk, 'reasoning_content', 'N/A')}")
 
     # llm_node：输出深度思考内容 + 文本内容 + 检测工具调用开始
     if node == "llm_node" and isinstance(chunk, AIMessageChunk):
