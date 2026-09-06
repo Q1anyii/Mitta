@@ -1,12 +1,13 @@
 """
-认证路由：登录 / 注册 / 密码找回
+认证路由：登录 / 注册 / 密码找回 / 登出
 
-对应原 main.py 中的 /api/login、/api/register、/api/recover 接口。
+对应原 main.py 中的 /api/login、/api/register、/api/recover、/api/logout 接口。
 """
 
 from datetime import timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from loguru import logger
 
 from config import get_env_int
 from constant.cache_constant import USER_TOKEN_KEY, USER_REFRESH_TOKEN_KEY
@@ -14,7 +15,13 @@ from schemas.request_schemas.login_schema import LoginRequest, RegisterRequest, 
 from service.cache_service import cache_service
 from service.login_service import login_service
 from utils.response_util import Response
-from utils.jwt_utils import create_access_token, create_refresh_token, REFRESH_TOKEN_EXPIRE_DAYS
+from utils.jwt_utils import (
+    create_access_token,
+    create_refresh_token,
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    get_current_user,
+    TokenData,
+)
 
 router = APIRouter(tags=["认证"])
 
@@ -80,3 +87,20 @@ def recover(request_body: RecoverRequest):
         return Response.success()
     else:
         return Response.failed(response)
+
+
+@router.post("/api/logout")
+def logout(current_user: TokenData = Depends(get_current_user)):
+    """用户登出：删除 Redis 中的 access + refresh token，实现即时失效。
+
+    无状态 JWT 本身无法作废，通过 Redis 白名单机制实现：
+    登录时 token 存入 Redis，每次请求校验 Redis 中是否存在；
+    登出时删除 Redis 中的两个 key，下次请求校验失败即 401。
+    """
+    user_id = current_user.user_id
+    r = cache_service.redis
+    # 同时删除 access 和 refresh，防止 access 过期后用 refresh 续签
+    r.delete(USER_TOKEN_KEY.format(user_id=user_id))
+    r.delete(USER_REFRESH_TOKEN_KEY.format(user_id=user_id))
+    logger.info(f"用户 [{user_id}] 登出，Redis 登录态已清除")
+    return Response.success()

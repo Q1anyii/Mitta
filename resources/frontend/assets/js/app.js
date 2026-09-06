@@ -1402,7 +1402,17 @@
                 const openSidebar = () => { sidebarOpen.value = true; };
                 const closeSidebar = () => { sidebarOpen.value = false; };
 
-                const logout = () => {
+                const logout = async () => {
+                    // 先调用后端登出接口，删除 Redis 中的 access + refresh token，实现即时失效
+                    // 无状态 JWT 本身无法作废，通过 Redis 白名单删除实现登出即失效
+                    try {
+                        await fetch(`${API_BASE}/api/logout`, {
+                            method: 'POST',
+                            headers: authHeaders(),
+                        });
+                    } catch (e) {
+                        // 网络错误不阻塞本地登出，用户仍需回到登录页
+                    }
                     // 会话缓存按 userId 隔离（sessionCacheKey），登出无需清理：
                     // 同一账号重新登录后仍能恢复自己的会话列表，不同账号之间天然隔离
                     cache.remove(STORAGE_KEY.USER);
