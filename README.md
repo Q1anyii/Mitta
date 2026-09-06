@@ -415,6 +415,8 @@ nginx
 
 ## API 接口一览
 
+> 完整的请求/响应示例、错误码说明、SSE 事件格式见 [docs/API.md](docs/API.md)。
+
 ### 认证
 
 | 方法   | 路径              | 说明   |
@@ -578,6 +580,36 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 所有评估脚本输出 JSON 报告到 `src/ragas_test/`，可用于 CI 回归或性能对比。
 
+## 测试
+
+### 单元测试
+
+使用 pytest 框架，覆盖核心工具模块：
+
+| 测试文件 | 覆盖模块 | 用例数 |
+| -------- | -------- | ------ |
+| \	ests/test_config.py\ | 环境变量加载/校验/布尔解析 | 18 |
+| \	ests/test_jwt_utils.py\ | JWT 签发/验证/过期/密码哈希(bcrypt) | 14 |
+| \	ests/test_rand_id_util.py\ | 随机 ID 生成/唯一性/MySQL int 范围 | 11 |
+
+**运行方式**：
+
+\\ash
+cd src
+pytest ../tests/ -v
+\
+**最新结果**（2026-09-06）：53 passed / 1 failed（98.1%）。失败项为 \	est_access_token_expiration\ 的微秒级精度断言（JWT exp 仅精确到秒），非业务逻辑问题。
+
+### RAGAS 质量评估
+
+\src/ragas_test/\ 目录包含完整的 RAGAS 评估体系，覆盖检索质量、生成质量、系统性能三大维度，详见上文「RAGAS 质量评估」节。运行方式：
+
+\\ash
+cd src
+python ragas_test/ragas_eval.py          # RAGAS 五项指标
+python ragas_test/eval_retrieval.py      # 检索召回率/延迟
+python ragas_test/eval_cache.py          # 缓存命中率
+\
 ## Docker 部署
 
 ### 一键启动全部服务
@@ -607,6 +639,10 @@ docker-compose up -d
 docker build -t mitta-ai .
 docker run -p 8000:8000 --env-file .env mitta-ai
 ```
+
+## 贡献指南
+
+欢迎提交 Issue 和 Pull Request！开发环境搭建、代码规范、提交规范、PR 流程详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 开发说明
 

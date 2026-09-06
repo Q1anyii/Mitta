@@ -1192,6 +1192,28 @@
                 const mcpConfigPath = ref('');
                 const uploadedFiles = ref([]);
                 const abortController = ref(null);
+                // 会话重命名：editingSessionId 记录当前编辑的会话 ID，null 表示无编辑
+                const editingSessionId = ref(null);
+                const renameInput = ref(null);
+                function startRenameSession(sessionId) {
+                    editingSessionId.value = sessionId;
+                    Vue.nextTick(() => {
+                        const inp = document.querySelector('.session-rename-input');
+                        if (inp) { inp.focus(); inp.select(); }
+                    });
+                }
+                function saveSessionTitle(sessionId, newTitle) {
+                    const title = (newTitle || '').trim();
+                    if (title) {
+                        const s = sessions.value.find(s => s.id === sessionId);
+                        if (s) s.title = title;
+                        saveSessions();
+                    }
+                    editingSessionId.value = null;
+                }
+                function cancelRenameSession() {
+                    editingSessionId.value = null;
+                }
                 // 深度思考设置：用户可在前端切换，状态持久化到 localStorage
                 const thinkingMode = ref(localStorage.getItem('thinkingMode') === 'true');
                 const reasoningEffort = ref(localStorage.getItem('reasoningEffort') || 'low');
@@ -2179,6 +2201,8 @@
                     toggleUploadMenu, handleFileUpload, removeUploadedFile,
                     stopResponse, restartNoticeOpen, confirmRestartNotice,
                     mcpJsonText, mcpJsonError, formatMcpJson, clearMcpJson, mcpConfigPath,
+                    // 会话重命名
+                    editingSessionId, renameInput, startRenameSession, saveSessionTitle, cancelRenameSession,
                     // 深度思考
                     thinkingMode, reasoningEffort, thinkingPanelOpen,
                     toggleThinkingMode, setEffort, toggleEffortPanel,
