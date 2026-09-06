@@ -952,15 +952,15 @@
                                         <template v-if="msg.role === 'assistant'">
                                             <div class="message-content">
                                                 <template v-if="msg.blocks && msg.blocks.length > 0">
-                                                    <!-- 深度思考内嵌：直接显示在回答最前面，浅色小字斜体，与正式回答形成对比 -->
-                                                <div v-if="msg.reasoning" class="reasoning-inline">
-                                                    <div class="reasoning-inline-label">
-                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"></path></svg>
-                                                        <span>深度思考</span>
-                                                    </div>
-                                                    <div class="reasoning-inline-text" v-html="escapeHtml(msg.reasoning)"></div>
-                                                </div>
-                                                <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
+                                                    <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
+                                                        <!-- 深度思考块：浅色小字斜体，与正式回答交替穿插 -->
+                                                        <div v-if="block.type === 'reasoning' && block.content" class="reasoning-inline">
+                                                            <div class="reasoning-inline-label">
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"></path></svg>
+                                                                <span>深度思考</span>
+                                                            </div>
+                                                            <div class="reasoning-inline-text" v-html="escapeHtml(block.content)"></div>
+                                                        </div>
                                                         <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(block.content)"></div>
                                                         <div v-else-if="block.type === 'tool'" class="tool-call-inline" :class="{ running: block.status === 'running', done: block.status === 'done' }">
                                                             <span class="tool-inline-icon" v-html="toolIcon(block.name, block.status)"></span>
@@ -1533,9 +1533,32 @@
                         // 最后是文本块：用全文减去之前文本块长度，得到当前块增量
                         lastBlock.content = fullText.slice(prevLenBefore(blocks.length - 1)) || '';
                     } else if (fullText) {
-                        // 最后是工具块（或空）：新建文本块，只装工具之后新增的文本
+                        // 最后是工具/思考块（或空）：新建文本块，只装之后新增的文本
                         const newContent = fullText.slice(prevLenBefore(blocks.length));
                         if (newContent) blocks.push({ type: 'text', content: newContent });
+                    }
+                };
+
+                // 深度思考块同步：与 _syncTextBlock 对称，把全量 reasoning 按增量
+                // 拆成独立 reasoning block 插入 blocks。当最后一个 block 是 text/tool
+                // 时新建 reasoning block，是 reasoning 时追加——从而形成
+                // "思考-回答-思考-回答"的豆包式交替穿插。
+                const _syncReasoningBlock = (aiMsg, fullReasoning) => {
+                    if (!aiMsg.blocks) aiMsg.blocks = [];
+                    const blocks = aiMsg.blocks;
+                    const lastBlock = blocks[blocks.length - 1];
+                    const prevReasoningLen = (endIdx) => {
+                        let len = 0;
+                        for (let i = 0; i < endIdx; i++) {
+                            if (blocks[i].type === 'reasoning') len += blocks[i].content.length;
+                        }
+                        return len;
+                    };
+                    if (lastBlock && lastBlock.type === 'reasoning') {
+                        lastBlock.content = fullReasoning.slice(prevReasoningLen(blocks.length - 1)) || '';
+                    } else if (fullReasoning) {
+                        const newContent = fullReasoning.slice(prevReasoningLen(blocks.length));
+                        if (newContent) blocks.push({ type: 'reasoning', content: newContent });
                     }
                 };
 
@@ -1729,7 +1752,8 @@
                                 renderTimer = setTimeout(() => {
                                     renderTimer = null;
                                     aiMsg.content = latestText;
-                                    // 同步更新 blocks 中最后一个文本块（穿插式渲染）
+                                    // 同步更新 blocks：思考块和文本块都按增量穿插
+                                    _syncReasoningBlock(aiMsg, aiMsg.reasoning);
                                     _syncTextBlock(aiMsg, latestText);
                                     scrollToBottom();
                                 }, 100);
@@ -1767,16 +1791,16 @@
                                 }
                             }
                         }, pendingFileIds, (reasoningText) => {
-                            // 深度思考内容：追加到 aiMsg.reasoning，节流渲染
+                            // 深度思考内容：追加到 aiMsg.reasoning（全量保留），
+                            // 节流时按增量插入 blocks，与 text 块交替形成穿插效果
                             aiMsg.reasoning += reasoningText;
                             if (!renderTimer) {
                                 renderTimer = setTimeout(() => {
                                     renderTimer = null;
                                     aiMsg.content = latestText;
+                                    _syncReasoningBlock(aiMsg, aiMsg.reasoning);
                                     _syncTextBlock(aiMsg, latestText);
                                     scrollToBottom();
-                                    // 思考面板展开时，内部滚动容器贴底显示最新内容
-                                    scrollReasoningToBottom(aiMsg);
                                 }, 100);
                             }
                         }, thinkingMode.value, reasoningEffort.value);
@@ -1786,6 +1810,7 @@
                         if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
                         currentToolCall.value = null;  // 清除工具调用状态
                         aiMsg.content = answer || '（无回复）';
+                        _syncReasoningBlock(aiMsg, aiMsg.reasoning);
                         _syncTextBlock(aiMsg, answer || '（无回复）');
                         streaming.value = false;
                         saveMessages();
