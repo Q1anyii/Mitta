@@ -132,6 +132,8 @@ class ChatService:
         # 按用户隔离的 MCP 图缓存：key=user_id，value=(config_hash, graph, mcp_connections)
         # 用户更新 MCP 配置后，下次对话自动重建图（检测 hash 变化）
         self._user_graph_cache: dict[str, tuple[str, object, list]] = {}
+        # 正在后台重建用户图的 user_id 集合，避免重复构建
+        self._rebuilding_users: set[str] = set()
         # 全局 MCP 工具（启动时加载的默认服务器），与用户工具合并
         self._global_mcp_tools: list = []
         # 工具常驻事件循环（MCP session 创建与调用必须同循环）
@@ -225,51 +227,76 @@ class ChatService:
         if cached and cached[0] == config_hash:
             return cached[1]
 
-        # 缓存失效：关闭旧连接
+        # 缓存未命中：触发后台异步构建，先返回全局图（不阻塞 SSE 流式响应）。
+        # 首次请求可能用全局图，后台构建完成后下次请求生效。
+        # 有旧缓存时先用旧图响应，避免配置变更后首次请求降级到全局图。
         if cached:
-            try:
-                if self._tool_loop:
-                    asyncio.run_coroutine_threadsafe(
-                        self._close_connections(cached[2]), self._tool_loop
-                    ).result(timeout=5)
-            except Exception:
-                pass
+            self._rebuild_user_graph_async(user_id, user_servers, config_hash)
+            return cached[1]
+        self._rebuild_user_graph_async(user_id, user_servers, config_hash)
+        return self.main_graph
 
-        # 连接用户 MCP 服务器，加载工具
-        user_tools = []
-        connections = []
-        if self._tool_loop:
+    def _rebuild_user_graph_async(self, user_id, user_servers, config_hash):
+        """后台异步构建用户专属图（含 MCP 工具），不阻塞流式响应。
+
+        构建完成后写入 _user_graph_cache，下一次请求命中缓存。
+        同一 user_id 同时只允许一个重建任务（_rebuilding_users 去重）。
+        """
+        if user_id in self._rebuilding_users:
+            return
+        self._rebuilding_users.add(user_id)
+
+        def _build():
+            import asyncio as _asyncio
             try:
-                # timeout=45：容器内 npx/uvx 首次启动需联网解析包，国内服务器较慢，
-                # 单服务器握手给 45s（init_mcp_holders 内部并发连接，总时长≈最慢的一个）
-                connections = asyncio.run_coroutine_threadsafe(
-                    init_mcp_holders(user_servers, timeout=45), self._tool_loop
-                ).result(timeout=120)
-                user_tools = [t for conn in connections for t in conn.tools]
-                if user_tools:
-                    user_tools = safety_filter(user_tools)
-                    tools_embedding(user_tools)
-                    logger.info(f"用户 [{user_id}] 加载了 {len(user_tools)} 个自定义 MCP 工具（来自 {len(connections)} 个服务器）")
-                else:
-                    logger.warning(f"用户 [{user_id}] MCP 连接成功但未获取到工具（服务器数={len(connections)}），检查 MCP 服务器是否正常启动")
-            except Exception as e:
-                server_names = [s.get('name','?') for s in user_servers]
-                logger.warning(f"用户 [{user_id}] MCP 工具加载失败（服务器={server_names}），使用全局工具: {type(e).__name__}: {e}")
+                from mcp_client.client import init_mcp_holders
+                from utils.tools_util import safety_filter, tools_embedding
+
                 connections = []
                 user_tools = []
+                if self._tool_loop:
+                    try:
+                        connections = _asyncio.run_coroutine_threadsafe(
+                            init_mcp_holders(user_servers, timeout=20), self._tool_loop
+                        ).result(timeout=30)
+                        user_tools = [t for conn in connections for t in conn.tools]
+                        if user_tools:
+                            user_tools = safety_filter(user_tools)
+                            tools_embedding(user_tools)
+                            logger.info(f"用户 [{user_id}] 后台加载 {len(user_tools)} 个 MCP 工具（{len(connections)} 个服务器）")
+                        else:
+                            logger.warning(f"用户 [{user_id}] MCP 连接成功但无工具（服务器数={len(connections)}）")
+                    except Exception as e:
+                        server_names = [s.get('name', '?') for s in user_servers]
+                        logger.warning(f"用户 [{user_id}] 后台 MCP 加载失败（服务器={server_names}），降级全局工具: {type(e).__name__}: {e}")
 
-        # 合并全局工具 + 用户工具，构建用户专属图
-        all_tools = self._global_mcp_tools + user_tools
-        user_graph = build_main_graph(
-            retrieve_graph=self.retrieve_graph,
-            pool=self.pool,
-            checkpointer=self.checkpointer,
-            store=self.store,
-            cache=self.cache,
-            mcp_tools=all_tools,
-        )
-        self._user_graph_cache[user_id] = (config_hash, user_graph, connections)
-        return user_graph
+                all_tools = self._global_mcp_tools + user_tools
+                user_graph = build_main_graph(
+                    retrieve_graph=self.retrieve_graph,
+                    pool=self.pool,
+                    checkpointer=self.checkpointer,
+                    store=self.store,
+                    cache=self.cache,
+                    mcp_tools=all_tools,
+                )
+                # 构建完成后关闭旧连接（如果有）
+                old_cache = self._user_graph_cache.get(user_id)
+                if old_cache and self._tool_loop:
+                    try:
+                        _asyncio.run_coroutine_threadsafe(
+                            self._close_connections(old_cache[2]), self._tool_loop
+                        ).result(timeout=5)
+                    except Exception:
+                        pass
+                self._user_graph_cache[user_id] = (config_hash, user_graph, connections)
+                logger.info(f"用户 [{user_id}] 专属图后台构建完成")
+            except Exception as e:
+                logger.exception(f"用户 [{user_id}] 后台图构建失败: {e}")
+            finally:
+                self._rebuilding_users.discard(user_id)
+
+        import threading
+        threading.Thread(target=_build, daemon=True).start()
 
     @staticmethod
     async def _close_connections(connections):

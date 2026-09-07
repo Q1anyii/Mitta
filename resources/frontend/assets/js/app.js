@@ -1562,33 +1562,53 @@
                     }
                 };
 
-                // 流结束后交替重排：DeepSeek API 先输出全部 reasoning 再输出全部 content，
-                // 流式过程中只能得到"全部思考-全部回答"。这里在流结束后按段落拆分两者，
-                // 再交替合并成"思考-回答-思考-回答"的豆包式穿插效果。
-                // 有工具调用时不重排（保持工具调用穿插的原始时序）。
+                // 流结束后交替重排：仅当流式过程中是"全部思考-全部回答"的简单结构时才执行。
+                // 如果服务器上 reasoning/content 已自然交替（多个块），则跳过重排避免碎片化。
+                // 重排时合并短段落、限制最多 3 段，防止思考内容被拆成大量碎片堆积。
                 const _interleaveReasoningAndContent = (aiMsg) => {
                     if (!aiMsg.reasoning || !aiMsg.reasoning.trim()) return;
                     if (!aiMsg.content || !aiMsg.content.trim()) return;
                     // 有工具调用块时保持原始顺序，不做交替重排
                     if (aiMsg.blocks.some(b => b.type === 'tool')) return;
 
-                    // 按空行拆分段落，过滤空段和过短的碎片
-                    const splitParas = (text) => text
-                        .split(/\n\s*\n/)
-                        .map(p => p.trim())
-                        .filter(p => p.length > 0);
+                    // 统计当前 blocks 中 reasoning 和 text 块数量
+                    const reasoningCount = aiMsg.blocks.filter(b => b.type === 'reasoning').length;
+                    const textCount = aiMsg.blocks.filter(b => b.type === 'text').length;
+                    // 已自然交替（>1 个同类块）时跳过重排，只统一收起思考块
+                    if (reasoningCount > 1 || textCount > 1) {
+                        aiMsg.blocks.forEach(b => { if (b.type === 'reasoning') b.expanded = false; });
+                        return;
+                    }
 
-                    const reasoningParas = splitParas(aiMsg.reasoning);
-                    const contentParas = splitParas(aiMsg.content);
+                    // 按空行拆分段落，合并过短段落（<30字并入前一段），最多保留 3 段
+                    const splitAndMerge = (text, maxSegs) => {
+                        const raw = text.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0);
+                        const merged = [];
+                        for (const p of raw) {
+                            if (merged.length > 0 && (p.length < 30 || merged[merged.length - 1].length < 30)) {
+                                merged[merged.length - 1] += '\n\n' + p;
+                            } else {
+                                merged.push(p);
+                            }
+                        }
+                        // 超过 maxSegs 时，把多余的合并到最后一段
+                        if (merged.length > maxSegs) {
+                            const head = merged.slice(0, maxSegs - 1);
+                            const tail = merged.slice(maxSegs - 1).join('\n\n');
+                            return [...head, tail];
+                        }
+                        return merged;
+                    };
+
+                    const reasoningParas = splitAndMerge(aiMsg.reasoning, 3);
+                    const contentParas = splitAndMerge(aiMsg.content, 3);
                     if (reasoningParas.length === 0 || contentParas.length === 0) return;
 
                     // 交替合并：思考1, 回答1, 思考2, 回答2, ...
-                    // 某一侧段落更多时，多余的追加在末尾
                     const newBlocks = [];
                     const maxLen = Math.max(reasoningParas.length, contentParas.length);
                     for (let i = 0; i < maxLen; i++) {
                         if (i < reasoningParas.length) {
-                            // 流结束重排：思考块默认收起，用户可点击箭头展开
                             newBlocks.push({ type: 'reasoning', content: reasoningParas[i], expanded: false });
                         }
                         if (i < contentParas.length) {

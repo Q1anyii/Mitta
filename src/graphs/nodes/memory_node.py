@@ -60,9 +60,10 @@ def memory_node(state: OverAllState, config: RunnableConfig, store: BaseStore, m
     user_id = config["configurable"].get("user_id", "default")
     namespace = ("rag_chat", user_id)
 
-    # 快速路径：idle 闲聊轮跳过记忆提取
-    if state.get("tool_status") == "idle" and not state.get("needs_retrieval"):
-        logger.debug(f"memory_node 跳过（idle 闲聊轮）user_id={user_id}")
+    # 快速路径：idle（筛选出工具但模型未调用）或 unavailable（无可用工具）且无需检索时，
+    # 跳过记忆提取，避免 model.invoke() 阻塞 SSE 流导致前端消息超时失效。
+    if state.get("tool_status") in ("idle", "unavailable") and not state.get("needs_retrieval"):
+        logger.debug(f"memory_node 跳过（{state.get('tool_status')} 轮，无新增长期信息）user_id={user_id}")
         return
 
     # 读取已有档案
