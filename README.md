@@ -5,7 +5,7 @@
 ## 功能特性
 
 - **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
-- **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回（Milvus）+ BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
+- **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回 + BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
 - **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、git、fetch、sqlite、sequential-thinking、memory 等外部工具；工具常驻事件循环，支持故障降级
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
 - **双通道记忆**：
@@ -14,10 +14,9 @@
 - **用户自定义 System Prompt**：支持用户在个人信息界面上传自定义设定文件，与默认 Prompt 合并后作用于全局
 - **文件上传与解析**：支持上传多种格式文件，上传后立即解析文本内容，发送消息时与用户输入一并送入 LLM
 - **流式输出**：`stream_mode="messages"` 逐 token 输出，前端打字机效果；工具调用时实时显示加载状态
-- **多主题前端**：Vue 3 SPA（CDN 单文件），支持多种配色主题、个人信息管理、MCP 配置、文件上传
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
-- **现代化前端**：Vue 3 SPA（高对比几何切角 + 微动效），响应式适配移动端，工具调用记录穿插展示、复制/分享/重新生成
+- **现代化前端**：Vue 3 SPA（CDN 单文件，多主题 + 响应式移动端 + 高对比几何切角动效），工具调用记录穿插展示、复制/分享/重新生成
 - **安全认证**：JWT（access 15 分钟 + 隐式 refresh 30 天自动续签）+ bcrypt + 登出即时失效（Redis 删除 token）+ 请求限流
 - **节点级缓存**：LangGraph CachePolicy + Redis，检索/工具/记忆节点结果按 TTL 缓存，降低 API 消耗
 
@@ -31,7 +30,7 @@
 | 大模型       | DeepSeek（deepseek-v4-flash），OpenAI 兼容协议，支持 reasoning_content 深度思考                           |
 | Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                                |
 | 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                                       |
-| 向量库       | Milvus / ChromaDB 可插拔（Protocol 抽象，零业务改动切换；低配服务器推荐 ChromaDB 免 Milvus 部署）                    |
+| 向量库       | ChromaDB（默认，免部署）/ Milvus（可插拔，Protocol 抽象，零业务改动切换）                                          |
 | 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store）+ MySQL 8.0（用户表 userInfo / user_profile / user_files） |
 | 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                               |
 | MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                   |
@@ -43,7 +42,7 @@
 
 ## 系统架构
 
-### # Mitta AI 流程图
+### Mitta AI 流程图
 
 ## 1. 主对话图（main_graph）
 
@@ -58,16 +57,14 @@ flowchart TD
 
     RETRIEVE -->|检索结果转dict存入state| LLM[llm_node]
 
-    LLM -->|组装提示词+tools过滤| ROUTE_LLM{route_after_llm 
-    tool_calls?}
+    LLM -->|组装提示词+tools过滤| ROUTE_LLM{route_after_llm<br/>tool_calls?}
 
-    ROUTE_LLM -->|Yes| TOOL[tool_nodeToolNode 执行 MCP 工具]
+    ROUTE_LLM -->|Yes| TOOL[tool_node<br/>ToolNode 执行 MCP 工具]
     ROUTE_LLM -->|No| MEMORY[memory_node]
 
     TOOL -->|工具执行结果 ToolMessage| LLM
 
-
-    MEMORY -->|idle 闲聊轮快速跳过executed/unavailable 轮LLM 提取记忆写入 Store| END_NODE([END])
+    MEMORY -->|idle 闲聊轮快速跳过 / executed-unavailable 轮 LLM 提取记忆写入 Store| END_NODE([END])
 
     classDef llmNode fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b
     classDef toolNode fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
@@ -111,7 +108,7 @@ flowchart TD
     CACHE_HIT -->|命中| OUTPUT[output_node<br/>返回缓存文档]
     CACHE_HIT -->|未命中| REWRITE[rewrite<br/>LLM 查询改写]
 
-    REWRITE -->|主查询 + 子查询| DENSE[dense_query<br/>稠密向量多路召回<br/>Milvus n_results=20]
+    REWRITE -->|主查询 + 子查询| DENSE[dense_query<br/>稠密向量多路召回<br/>n_results=20]
 
     DENSE --> BM25[bm25_search<br/>BM25 稀疏检索<br/>RedisSearch top_k=20]
 
@@ -147,7 +144,7 @@ flowchart TD
 | --------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
 | **check_cache** | Redis 检索缓存检查 | `cache_service.query_cache(thread_id, question)`，LSH 快速过滤 + 向量重排验证                                         |
 | **rewrite**     | LLM 查询改写     | 输出 JSON：`{主查询, 子查询[], 关键词[]}`，解决多轮指代问题                                                                     |
-| **dense_query** | 稠密向量多路召回     | 原始 query + 改写 query 独立检索 Milvus，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                               |
+| **dense_query** | 稠密向量多路召回     | 原始 query + 改写 query 独立检索向量库，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                               |
 | **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
 | **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
 | **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=5，分数写入 `doc.metadata["relevance_score"]` |
@@ -183,7 +180,7 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
 每轮对话时，`ToolFilter.select_tools(query, tools)` 执行两层筛选：
 
 1. **规则层**：检查工具 `tags`（如 filesystem 工具含 `["文件","目录","读写"]`），query 中包含关键词即命中
-2. **语义层**：将工具描述向量化存入 Milvus `MCP_TOOLS` 集合，用 query 做语义检索，top_k=12
+2. **语义层**：将工具描述向量化存入向量库 `MCP_TOOLS` 集合，用 query 做语义检索，top_k=12
 3. 两层结果按工具名去重并集，只把候选工具 `bind_tools` 给 LLM；无命中时注入"无工具可用"提示
 
 ### 记忆体系
@@ -271,10 +268,8 @@ AgentProject/
 │       └── retrieve_doc.py               # RetrievedDoc 数据结构
 ├── resources/
 │   ├── config/
-│   │   ├── vector_db.json                # 向量库配置（type/uri/collection）
-│   │   ├── mcp_servers.json              # MCP 服务器配置（JSON 数组）
-│   │   ├── .mcp_config_path              # MCP 配置文件路径记录
-│   │   └── .vector_config_path           # 向量库配置文件路径记录
+│   │   ├── vector_db.json                # 向量库配置（type/persist_path/collection）
+│   │   ├── mcp_servers.json              # 全局默认 MCP 服务器配置（JSON 数组）
 │   ├── frontend/
 │   │   ├── index.html                    # Vue 3 SPA 入口
 │   │   ├── assets/css/style.css          # 设计系统（CSS 变量+切角+动效+响应式）
@@ -284,17 +279,17 @@ AgentProject/
 │   ├── system_prompt/
 │   │   └── default_system_prompt.txt     # 默认 System Prompt（Mitta 角色设定）
 │   ├── knowledge-base/                   # 编程知识库（Markdown）
-│   │   ├── ingest_knowledge.py           # 知识库入库脚本（Milvus 向量 + RedisSearch BM25 双写）
+│   │   ├── ingest_knowledge.py           # 知识库入库脚本（向量库 + RedisSearch BM25 双写）
 │   │   ├── 01~10-*.md                    # 分类知识文档
 │   │   └── test-qa/                      # 测试 QA 集（eval_dataset.json）
 │   ├── FAQ/                              # 在线学习平台 FAQ 知识库
 │   └── chroma_db/                        # ChromaDB 持久化目录（Milvus 模式下不用）
 ├── tests/                                # 单元测试
-├── docs/                                 # 项目文档
+├── docs/                                 # 项目文档（API.md / devlog / ci-flow.html）
 ├── .env.example                          # 环境变量模板
 ├── requirements.txt                      # Python 依赖
 ├── Dockerfile                            # 后端容器镜像
-├── docker-compose.yml                    # 一键部署（PostgreSQL+MySQL+Redis+Milvus+API+Nginx）
+├── docker-compose.yml                    # 一键部署（PostgreSQL+MySQL+Redis+API+Nginx，ChromaDB 免 Milvus）
 └── README.md
 ```
 
@@ -306,7 +301,7 @@ AgentProject/
 - PostgreSQL 16+
 - MySQL 8.0+
 - Redis 7+
-- Milvus 2.x（可选，或使用 ChromaDB 免部署；api 服务不硬依赖 Milvus）
+- 向量库：默认 ChromaDB（免部署，api 服务不硬依赖 Milvus）；如需 Milvus 2.x 另行部署
 - Node.js（MCP stdio 服务器需要 npx/uvx）
 
 ### 1. 克隆项目并安装依赖
@@ -337,7 +332,7 @@ cp .env.example .env
 ### 3. 启动基础设施
 
 ```bash
-# api 核心依赖：PostgreSQL + MySQL + Redis（Milvus 可选）
+# api 核心依赖：PostgreSQL + MySQL + Redis
 docker-compose up -d postgres mysql redis
 # 如需 Milvus 向量库（可选）：
 docker-compose up -d etcd minio milvus
@@ -351,18 +346,20 @@ docker-compose up -d etcd minio milvus
 
 ```json
 {
-  "type": "milvus",
-  "uri": "http://localhost:19530",
+  "type": "chroma",
+  "persist_path": "resources/chroma_db",
   "collection": "FAQ_KNOWLEDGE_BASE"
 }
 ```
 
-如无 Milvus，可改为 ChromaDB（免部署）：
+> 注意：`persist_path` 使用相对路径，容器内（WORKDIR `/app`）与本地项目根目录均可正确解析到各自的 `chroma_db` 目录。
+
+如使用 Milvus（需自行部署），改为：
 
 ```json
 {
-  "type": "chroma",
-  "persist_path": "../resources/chroma_db",
+  "type": "milvus",
+  "uri": "http://localhost:19530",
   "collection": "FAQ_KNOWLEDGE_BASE"
 }
 ```
@@ -393,7 +390,7 @@ cd src
 python ../resources/knowledge-base/ingest_knowledge.py
 ```
 
-入库脚本同时写入 Milvus（向量索引）和 RedisSearch（BM25 全文索引），两者用相同 doc_id 对齐，RRF 融合时靠 id 匹配。
+入库脚本同时写入向量库（向量索引）和 RedisSearch（BM25 全文索引），两者用相同 doc_id 对齐，RRF 融合时靠 id 匹配。
 
 ### 7. 启动后端
 
@@ -478,22 +475,20 @@ MCP 工具通过 `langchain_mcp_adapters` 加载为 async 工具，闭包捕获�
 每轮对话时，`ToolFilter.select_tools(query, tools)` 执行两层筛选并集，只把候选工具暴露给 LLM：
 
 1. **规则层**：检查工具 `tags`（如 filesystem 工具含 `["文件","目录","读写","file"]`），query 中包含关键词即命中，零延迟
-2. **语义层**：工具描述向量化存入 Milvus `MCP_TOOLS` 集合，用 query 做语义检索（top_k=12，距离阈值 0.6），失败自动熔断降级为纯规则层
+2. **语义层**：工具描述向量化存入向量库 `MCP_TOOLS` 集合，用 query 做语义检索（top_k=12，距离阈值 0.6），失败自动熔断降级为纯规则层
 3. 两层结果按工具名去重并集；无命中时不 bind 空列表（OpenAI 兼容 API 会 400），改用裸模型并注入"无工具可用"提示
 4. 多轮指代增强：输入含"继续/刚才/那个"等指代词时，拼接最近一轮 AI 回复前 200 字符辅助筛选
 
 ### 节点级缓存（LangGraph CachePolicy + Redis）
 
-注：retrieve_noe和tool_node缓存已删除，原因：
-  1.子图retrieve_graph内置缓存机制，外层设置缓存目的减少一次子图创建，但后续可把子图缓存机制抽出
-  2.tool_node的缓存key不带tool_call_id，若缓存复用影响ToolMessage导致工具调用失败
+> 注：retrieve_node 和 tool_node 缓存已删除，原因：
+> 1. 子图 retrieve_graph 内置缓存机制，外层设置缓存目的减少一次子图创建，后续可把子图缓存机制抽出
+> 2. tool_node 的缓存 key 不带 tool_call_id，若缓存复用影响 ToolMessage 导致工具调用失败
 
 LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结果按 TTL 缓存到 Redis：
 
 | 节点            | 缓存键                                    | TTL | 策略                |
 | ------------- | -------------------------------------- | --- | ----------------- |
-| retrieve_node | 用户输入 `input_str`                       | 10s | 短窗口去重重复检索，不随历史变化  |
-| tool_node     | 工具名+参数（排除调用 ID）+消息轮次                   | 10s | 同工具同参数复用结果，含失败结果  |
 | memory_node   | 消息轮次+输入+AI回复（仅 executed/unavailable 轮） | 10s | idle 闲聊轮返回随机键永不命中 |
 
 缓存键自定义设计：默认 key_func 对节点输入整体 pickle 哈希，而 Send payload 含每轮变化的 messages，会导致缓存键每轮都变、永不命中。自定义 key_func 只取稳定部分（用户输入/工具参数），确保缓存可命中。
@@ -588,28 +583,30 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 | 测试文件 | 覆盖模块 | 用例数 |
 | -------- | -------- | ------ |
-| \	ests/test_config.py\ | 环境变量加载/校验/布尔解析 | 18 |
-| \	ests/test_jwt_utils.py\ | JWT 签发/验证/过期/密码哈希(bcrypt) | 14 |
-| \	ests/test_rand_id_util.py\ | 随机 ID 生成/唯一性/MySQL int 范围 | 11 |
+| `tests/test_config.py` | 环境变量加载/校验/布尔解析 | 18 |
+| `tests/test_jwt_utils.py` | JWT 签发/验证/过期/密码哈希(bcrypt) | 14 |
+| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/MySQL int 范围 | 11 |
 
 **运行方式**：
 
-\\ash
+```bash
 cd src
 pytest ../tests/ -v
-\
-**最新结果**（2026-09-06）：53 passed / 1 failed（98.1%）。失败项为 \	est_access_token_expiration\ 的微秒级精度断言（JWT exp 仅精确到秒），非业务逻辑问题。
+```
+
+**最新结果**（2026-09-06）：53 passed / 1 failed（98.1%）。失败项为 `test_access_token_expiration` 的微秒级精度断言（JWT exp 仅精确到秒），非业务逻辑问题。
 
 ### RAGAS 质量评估
 
-\src/ragas_test/\ 目录包含完整的 RAGAS 评估体系，覆盖检索质量、生成质量、系统性能三大维度，详见上文「RAGAS 质量评估」节。运行方式：
+`src/ragas_test/` 目录包含完整的 RAGAS 评估体系，覆盖检索质量、生成质量、系统性能三大维度，详见上文「RAGAS 质量评估」节。运行方式：
 
-\\ash
+```bash
 cd src
 python ragas_test/ragas_eval.py          # RAGAS 五项指标
 python ragas_test/eval_retrieval.py      # 检索召回率/延迟
 python ragas_test/eval_cache.py          # 缓存命中率
-\
+```
+
 ## Docker 部署
 
 ### 一键启动全部服务
@@ -640,6 +637,83 @@ docker build -t mitta-ai .
 docker run -p 8000:8000 --env-file .env mitta-ai
 ```
 
+## 持续集成与部署（CI/CD）
+
+项目使用 GitHub Actions 实现「**境外构建 → 阿里云 ACR 镜像仓库 → 服务器拉取部署**」的混合方案，解决两个部署痛点：
+
+1. **服务器无法访问 GitHub**：不走服务器 `git pull`，代码由 Actions 拉取后 SCP 同步
+2. **服务器本地 build 太慢**：`apt-get` 从 deb.debian.org 下载超时，改为服务器只从 ACR 拉现成镜像
+
+### 工作流文件
+
+`.github/workflows/acr-cicd.yml`，触发条件：push 到 `main` 分支。
+
+### 部署架构
+
+```
+┌─────────────┐   git push    ┌──────────────────────┐
+│  本地开发机   │ ────────────► │  GitHub Actions       │
+└─────────────┘               │  ① 拉代码+构建镜像       │
+                              │  ② 推 ACR（sha+latest） │
+                              └──────────┬───────────┘
+                                         │ SCP 同步前端/配置
+                                         ▼
+┌─────────────┐   docker pull    ┌──────────────────────┐
+│ 阿里云 ACR   │ ◄────────────── │  阿里云 ECS 服务器      │
+│ 镜像仓库      │                 │  docker compose up    │
+└─────────────┘                 └──────────────────────┘
+```
+
+### 完整流水线（7 步）
+
+```mermaid
+flowchart TD
+    PUSH[push 到 main] --> CHECK[① Checkout<br/>fetch-depth: 2]
+    CHECK --> DETECT{② 需要重建镜像？<br/>Dockerfile/requirements/workflow 变更}
+    DETECT -->|是| BUILD[③ Buildx + Login ACR<br/>取 SHORT_SHA + Build&push]
+    DETECT -->|否| SKIP[跳过构建<br/>复用 latest 镜像]
+    BUILD --> SCP
+    SKIP --> SCP
+    SCP[④ SCP 同步前端/配置到 /opt/mitta]
+    SCP --> SSH[⑤ SSH 部署：清残留+登录 ACR+pull+up -d]
+    SSH --> HEALTH{⑥ 健康检查<br/>curl /health × 8}
+    HEALTH -->|200| OK[✅ 部署成功<br/>清理悬空镜像]
+    HEALTH -->|全失败| FAIL[❌ docker logs --tail 50<br/>exit 1]
+```
+
+### 镜像构建跳过机制（提速核心）
+
+`git diff --name-only HEAD~1 HEAD` 检查本次提交变更范围：
+
+| 变更文件 | 是否重建镜像 | 耗时 |
+| ------- | ---------- | ---- |
+| 仅源码 / 前端 / 配置 | 否（复用 latest） | **~2-3 分钟** |
+| `Dockerfile` / `requirements.txt` / `.github/workflows/` | 是（全量构建） | 8-12 分钟 |
+
+构建产物同时打 `SHORT_SHA` 与 `latest` 两个 tag，跳过构建的部署直接从 ACR 拉取已有 `latest`。
+
+### 所需 Secrets
+
+在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置：
+
+| Secret | 说明 |
+| ------ | ---- |
+| `ACR_REGISTRY` | 阿里云 ACR 地址（如 `registry.cn-hangzhou.aliyuncs.com`） |
+| `ACR_USERNAME` | ACR 用户名 |
+| `ACR_PASSWORD` | ACR 密码 |
+| `ECS_HOST` | 服务器公网 IP |
+| `ECS_USER` | SSH 用户名（如 root） |
+| `ECS_SSH_KEY` | SSH 私钥 |
+
+### 部署脚本要点
+
+- **[0] 清理配置残留**：`rm -f resources/config/.mcp_config_path .vector_config_path`，防止容器内把本地 Windows 路径残留解析成 `/app/E:\...` 导致全局配置读不到
+- **SCP 同步目录**：`resources/frontend`（前端即时生效）、`docker-compose.yml`、`resources/config`、`resources/system_prompt`
+- **只拉镜像不本地 build**：`docker compose pull api && docker compose up -d --no-build api`
+- **健康检查**：`sleep 10` + `curl localhost:8000/health` 最多 8 次（5 秒间隔），8 次全失败则贴日志并 `exit 1`
+
+> 完整流程图见 [docs/ci-flow.html](docs/ci-flow.html)。
+
 ## 贡献指南
 
 欢迎提交 Issue 和 Pull Request！开发环境搭建、代码规范、提交规范、PR 流程详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
@@ -657,7 +731,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 ### 切换向量库
 
-修改 `resources/config/vector_db.json` 的 `type` 字段（`milvus` 或 `chroma`），业务代码零改动。
+修改 `resources/config/vector_db.json` 的 `type` 字段（`chroma` 或 `milvus`），业务代码零改动。默认使用 ChromaDB（免部署）；低配服务器勿用 Milvus。
 
 ### 添加新的 API 路由
 
@@ -665,14 +739,14 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 2. 在 `src/main.py` 中 `app.include_router()` 注册
 3. 注意 `system_router` 必须最后注册（SPA 兜底路由）
 
-***<u>后续可持续性内容优化</u>*：**
+### 后续规划
 
-    1.完善向量存储多模态功能
-    2.完善mcp_server/自定义MCP模块,原生支持某些工具而非外部依赖
-    3.引入skills相关功能
-    4.引入interrupt功能，在涉及敏感操作时，由用户确认是否继续
-    5.目前只在源码层面支持自定义模型，后续需在设置界面添加接口
-    6.引入token消耗检测
+1. 完善向量存储多模态功能
+2. 完善 mcp_server / 自定义 MCP 模块，原生支持某些工具而非外部依赖
+3. 引入 skills 相关功能
+4. 引入 interrupt 功能，在涉及敏感操作时由用户确认是否继续
+5. 目前只在源码层面支持自定义模型，后续需在设置界面添加接口
+6. 引入 token 消耗检测
 
 ## 许可证
 
