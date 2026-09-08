@@ -1,6 +1,5 @@
 # Mitta MCP Server 连接失败排查与修复开发日志
 
-> 日期：2026-09-06 ~ 2026-09-08
 > 涉及模块：MCP 客户端（`src/mcp_client/client.py`）、配置服务（`src/service/mcp_config_service.py`）、聊天服务（`src/service/chat_service.py`）、`Dockerfile`、`resources/config/mcp_servers.json`
 > 关联提交：`7f23d28`、`020eb0c`、`9a991b2`
 

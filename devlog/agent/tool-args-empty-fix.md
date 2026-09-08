@@ -1,6 +1,5 @@
 # Mitta 工具调用内容为空 排查与修复开发日志
 
-> 日期：2026-09-08
 > 涉及模块：后端 SSE 事件处理（`src/service/chat_service.py`）、前端流式消费（`resources/frontend/assets/js/app.js`）、LLM 生成节点（`src/graphs/nodes/llm_node.py`）
 > 关联提交：`b12e0bc`（fix: 工具调用参数为空与深度思考碎片化堆积）
 
