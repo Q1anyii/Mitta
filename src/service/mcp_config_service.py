@@ -35,6 +35,8 @@ SAFE_MCP_PACKAGES = {
     "@modelcontextprotocol/server-memory",
     "@modelcontextprotocol/server-sqlite",
     "@modelcontextprotocol/server-puppeteer",
+    "@modelcontextprotocol/server-time",
+    "mcp-server-time",
     "mcp-server-fetch",
     "mcp-server-git",
     "mcp-server-sqlite",

@@ -91,3 +91,8 @@ src/ragas_eval/
 /database.db-shm
 /fix_reasoning_debug.py
 /database.db-wal
+
+# 本地路径残留（容器内会解析错误，禁止提交）
+resources/config/.mcp_config_path
+resources/config/.vector_config_path
+

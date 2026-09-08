@@ -6,20 +6,9 @@
     "args": [
       "-y",
       "@modelcontextprotocol/server-filesystem",
-      "E:/工作文件/AgentProject"
+      "/app/user_files/user_01/AgentProject"
     ],
-    "cwd": "E:/工作文件/AgentProject"
-  },
-  {
-    "name": "git",
-    "type": "stdio",
-    "command": "uvx",
-    "args": [
-      "mcp-server-git",
-      "--repository",
-      "E:/工作文件/AgentProject"
-    ],
-    "cwd": "E:/工作文件/AgentProject"
+    "cwd": "/app/user_files/user_01/AgentProject"
   },
   {
     "name": "fetch",
@@ -32,14 +21,13 @@
   {
     "name": "sqlite",
     "type": "stdio",
-    "command": "npx",
+    "command": "uvx",
     "args": [
-      "-y",
       "mcp-server-sqlite",
       "--db",
-      "E:/工作文件/AgentProject/resources/local_data.db"
+      "/app/user_files/user_01/AgentProject/resources/local_data.db"
     ],
-    "cwd": "E:/工作文件/AgentProject"
+    "cwd": "/app/user_files/user_01/AgentProject"
   },
   {
     "name": "sequential-thinking",
@@ -58,6 +46,15 @@
       "-y",
       "@modelcontextprotocol/server-memory"
     ],
-    "cwd": "E:/工作文件/AgentProject/resources/mcp_memory"
+    "cwd": "/app/user_files/user_01/AgentProject"
+  },
+  {
+    "name": "time",
+    "type": "stdio",
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-time"
+    ]
   }
 ]
