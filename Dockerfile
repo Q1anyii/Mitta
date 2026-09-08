@@ -22,7 +22,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPATH=/app/src
+    PYTHONPATH=/app/src \
+    # 运行时 uvx 启动 Python 版 MCP server 默认连 pypi.org，国内 ECS 慢，配阿里云源
+    # （构建期 PIP_INDEX 只管 pip，管不到运行期 uvx）
+    UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple \
+    UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 
 # 系统依赖：
 # - gcc/libpq-dev：psycopg[binary] 编译兜底
@@ -45,8 +49,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @modelcontextprotocol/server-github \
         @modelcontextprotocol/server-sequential-thinking \
         @modelcontextprotocol/server-memory \
-        @modelcontextprotocol/server-fetch \
-    || echo "WARN: some MCP packages pre-install failed, npx fallback at runtime" 
+        @modelcontextprotocol/server-time \
+    && npm ls -g --depth=0 \
+    && echo "NPM_MCP_PACKAGES_INSTALLED_OK" 
 
 # 先复制依赖文件，利用 Docker 缓存层（代码变更不触发重装）
 COPY requirements.txt .
@@ -57,6 +62,14 @@ RUN pip install --no-cache-dir -r requirements.txt -i ${PIP_INDEX}
 # 安装 uv（提供 uvx 命令）：Python 生态 MCP 服务器（如 mcp-server-fetch）
 # 通过 `uvx 包名` 启动，缺 uvx 会报 No such file: 'uvx'
 RUN pip install --no-cache-dir uv -i ${PIP_INDEX}
+
+# 预热 uvx 缓存：构建期就把 Python 版 MCP server 及其依赖下载进 uv 全局缓存，
+# 运行时 uvx 直接命中缓存、零联网，避免容器冷启动首次下载慢导致 MCP 连接超时
+# （曾出现：冷启动下载 html5lib 等依赖超过连接超时 -> 拿到 0 工具 -> 空图被缓存）
+RUN for pkg in mcp-server-fetch mcp-server-sqlite; do \
+        echo "prewarm uvx: $pkg" && timeout 180 uvx $pkg --help >/dev/null 2>&1 || \
+        echo "WARN: prewarm $pkg failed, will download at runtime"; \
+    done
 
 # 复制项目代码
 COPY . .

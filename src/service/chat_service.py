@@ -134,6 +134,11 @@ class ChatService:
         self._user_graph_cache: dict[str, tuple[str, object, list]] = {}
         # 正在后台重建用户图的 user_id 集合，避免重复构建
         self._rebuilding_users: set[str] = set()
+        # 后台构建拿到 0 工具的失败时间戳：user_id -> monotonic 时间。
+        # 零工具不写缓存，用它做失败退避，冷却期内不重复触发后台连接
+        self._mcp_build_fail_at: dict[str, float] = {}
+        # 零工具失败后的重试冷却时间（秒）
+        self._mcp_retry_cooldown = 60.0
         # 全局 MCP 工具（启动时加载的默认服务器），与用户工具合并
         self._global_mcp_tools: list = []
         # 工具常驻事件循环（MCP session 创建与调用必须同循环）
@@ -233,6 +238,12 @@ class ChatService:
         if cached:
             self._rebuild_user_graph_async(user_id, user_servers, config_hash)
             return cached[1]
+        # 失败退避：上次后台构建拿到 0 工具且仍在冷却期内，直接返回全局图，
+        # 避免坏 server / 冷启动期间每个请求都重复触发后台连接
+        import time as _time
+        fail_at = self._mcp_build_fail_at.get(user_id)
+        if fail_at is not None and (_time.monotonic() - fail_at) < self._mcp_retry_cooldown:
+            return self.main_graph
         self._rebuild_user_graph_async(user_id, user_servers, config_hash)
         return self.main_graph
 
@@ -270,6 +281,28 @@ class ChatService:
                         server_names = [s.get('name', '?') for s in user_servers]
                         logger.warning(f"用户 [{user_id}] 后台 MCP 加载失败（服务器={server_names}），降级全局工具: {type(e).__name__}: {e}")
 
+                # 防御：配置了 MCP server 却一个工具都没拿到（多为冷启动下载慢/
+                # 临时连接失败）。此时【绝不写缓存】——否则空工具图会被永久命中，
+                # 之后配置 hash 不变就再也不会重连，表现为"配了 MCP 却读不到"。
+                # 记录失败时间用于退避，关闭本次连接，下次请求（冷却后）重试。
+                if user_servers and not user_tools:
+                    import time as _time
+                    self._mcp_build_fail_at[user_id] = _time.monotonic()
+                    if connections and self._tool_loop:
+                        try:
+                            _asyncio.run_coroutine_threadsafe(
+                                self._close_connections(connections), self._tool_loop
+                            ).result(timeout=5)
+                        except Exception:
+                            pass
+                    logger.warning(
+                        f"用户 [{user_id}] 配置了 {len(user_servers)} 个 MCP server 但拿到 0 工具，"
+                        f"本次不缓存，{self._mcp_retry_cooldown:.0f}s 后自动重试"
+                    )
+                    return
+
+                # 成功拿到工具：清除失败标记
+                self._mcp_build_fail_at.pop(user_id, None)
                 all_tools = self._global_mcp_tools + user_tools
                 user_graph = build_main_graph(
                     retrieve_graph=self.retrieve_graph,
@@ -289,7 +322,7 @@ class ChatService:
                     except Exception:
                         pass
                 self._user_graph_cache[user_id] = (config_hash, user_graph, connections)
-                logger.info(f"用户 [{user_id}] 专属图后台构建完成")
+                logger.info(f"用户 [{user_id}] 专属图后台构建完成（{len(user_tools)} 个用户工具）")
             except Exception as e:
                 logger.exception(f"用户 [{user_id}] 后台图构建失败: {e}")
             finally:
