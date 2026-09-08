@@ -27,20 +27,21 @@ ALLOWED_TYPES = {"stdio", "sse"}
 
 # 已知安全的 MCP 包名白名单（npx/uvx 后第一个非 - 参数）
 # 不在白名单中的包会被拒绝，防止执行恶意包
+# 注意：仅收录实际存在于对应 registry 的包名（npm 上不存在 server-fetch/
+# server-sqlite/server-time/server-git 的 npm 版，它们均为 Python 生态走 uvx）
 SAFE_MCP_PACKAGES = {
+    # npm 生态（npx 启动，已验证存在）
     "@modelcontextprotocol/server-filesystem",
-    "@modelcontextprotocol/server-git",
-    "@modelcontextprotocol/server-fetch",
+    "@modelcontextprotocol/server-github",
     "@modelcontextprotocol/server-sequential-thinking",
     "@modelcontextprotocol/server-memory",
-    "@modelcontextprotocol/server-sqlite",
     "@modelcontextprotocol/server-puppeteer",
-    "@modelcontextprotocol/server-time",
-    "mcp-server-time",
+    # Python 生态（uvx 启动）
     "mcp-server-fetch",
     "mcp-server-git",
     "mcp-server-sqlite",
     "mcp-server-memory",
+    "mcp-server-time",
 }
 
 # 用户文件系统根目录（filesystem MCP 只能访问此目录下的文件）

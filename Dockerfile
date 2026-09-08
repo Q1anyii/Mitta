@@ -49,7 +49,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @modelcontextprotocol/server-github \
         @modelcontextprotocol/server-sequential-thinking \
         @modelcontextprotocol/server-memory \
-        @modelcontextprotocol/server-time \
     && npm ls -g --depth=0 \
     && echo "NPM_MCP_PACKAGES_INSTALLED_OK" 
 
@@ -66,7 +65,7 @@ RUN pip install --no-cache-dir uv -i ${PIP_INDEX}
 # 预热 uvx 缓存：构建期就把 Python 版 MCP server 及其依赖下载进 uv 全局缓存，
 # 运行时 uvx 直接命中缓存、零联网，避免容器冷启动首次下载慢导致 MCP 连接超时
 # （曾出现：冷启动下载 html5lib 等依赖超过连接超时 -> 拿到 0 工具 -> 空图被缓存）
-RUN for pkg in mcp-server-fetch mcp-server-sqlite; do \
+RUN for pkg in mcp-server-fetch mcp-server-sqlite mcp-server-time; do \
         echo "prewarm uvx: $pkg" && timeout 180 uvx $pkg --help >/dev/null 2>&1 || \
         echo "WARN: prewarm $pkg failed, will download at runtime"; \
     done

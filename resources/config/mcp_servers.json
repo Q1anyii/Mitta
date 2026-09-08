@@ -51,10 +51,9 @@
   {
     "name": "time",
     "type": "stdio",
-    "command": "npx",
+    "command": "uvx",
     "args": [
-      "-y",
-      "@modelcontextprotocol/server-time"
+      "mcp-server-time"
     ]
   }
 ]
