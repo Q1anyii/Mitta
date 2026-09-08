@@ -11,7 +11,7 @@ from loguru import logger
 
 from routers.deps import require_self_or_admin
 from schemas.request_schemas.user_schema import (
-    ProfileUpdateRequest, PasswordUpdateRequest, SystemPromptUpdateRequest,
+    ProfileUpdateRequest, PasswordUpdateRequest,
     ThemeUpdateRequest, McpConfigUpdateRequest,
 )
 from service.cache_service import cache_service
@@ -31,9 +31,8 @@ router = APIRouter(tags=["用户"])
 
 @router.get("/api/users/{user_id}/profile")
 def get_user_profile(user_id: str, current_user: TokenData = Depends(require_self_or_admin)):
-    """获取用户个人信息（username, avatar, assistant_style, theme）。"""
+    """获取用户个人信息（username, avatar, theme, system_prompt）。"""
     profile = user_profile_service.get_profile(user_id)
-    # 不返回 system_prompt 和 mcp_config（有专门接口），避免大字段
     if profile:
         return {
             "ok": True,
@@ -41,8 +40,8 @@ def get_user_profile(user_id: str, current_user: TokenData = Depends(require_sel
                 "user_id": profile.get("user_id"),
                 "username": profile.get("username"),
                 "avatar": profile.get("avatar"),
-                "assistant_style": profile.get("assistant_style"),
                 "theme": profile.get("theme", "default"),
+                "system_prompt": profile.get("system_prompt") or "",
             }
         }
     return {"ok": True, "data": None}
@@ -51,16 +50,32 @@ def get_user_profile(user_id: str, current_user: TokenData = Depends(require_sel
 @router.put("/api/users/{user_id}/profile")
 def update_user_profile(user_id: str, request_body: ProfileUpdateRequest,
                         current_user: TokenData = Depends(require_self_or_admin)):
-    """更新用户个人信息（username, avatar, assistant_style）。"""
+    """更新用户个人信息（username, avatar, system_prompt）。"""
+    logger.info(f"[profile-debug] 收到请求体: system_prompt={request_body.system_prompt!r} username={request_body.username!r}")
+    # 字数限制：最多 500 字
+    if request_body.system_prompt is not None and len(request_body.system_prompt) > 500:
+        return Response.failed("自定义设定不能超过 3000 字")
     success = user_profile_service.update_basic_info(
         user_id=user_id,
         username=request_body.username,
         avatar=request_body.avatar,
-        assistant_style=request_body.assistant_style,
+        system_prompt=request_body.system_prompt,
     )
-    if success:
-        return Response.success("个人信息更新成功")
-    return Response.failed("没有需要更新的字段")
+    if not success:
+        return Response.failed("没有需要更新的字段")
+
+    # system_prompt 变更时失效该用户所有会话的检索缓存（不影响 JWT/登录态等其他缓存）
+    if request_body.system_prompt is not None:
+        try:
+            sessions = chat_service.get_user_sessions(user_id)
+            thread_ids = [s["thread_id"] for s in sessions if s.get("thread_id")]
+            if thread_ids:
+                cache_service.clear_user_thread_caches(user_id, thread_ids)
+        except Exception as e:
+            # 缓存清除失败不影响主流程：已保存成功，缓存会在 TTL 后自然过期
+            logger.warning(f"更新 system_prompt 后清除检索缓存失败 user_id={user_id}: {e}")
+
+    return Response.success("个人信息更新成功")
 
 
 @router.put("/api/users/{user_id}/password")
@@ -76,44 +91,6 @@ def update_user_password(user_id: str, request_body: PasswordUpdateRequest,
     if result == 1:
         return Response.success("密码修改成功")
     return Response.failed(result or "密码修改失败")
-
-
-# ============================================================
-# system-prompt（用户自定义设定）
-# ============================================================
-
-@router.get("/api/users/{user_id}/system-prompt")
-def get_user_system_prompt_api(user_id: str, current_user: TokenData = Depends(require_self_or_admin)):
-    """获取用户自定义 system prompt。"""
-    content = user_profile_service.get_system_prompt(user_id)
-    return {"ok": True, "data": {"content": content or ""}}
-
-
-@router.put("/api/users/{user_id}/system-prompt")
-def update_user_system_prompt(user_id: str, request_body: SystemPromptUpdateRequest,
-                               current_user: TokenData = Depends(require_self_or_admin)):
-    """更新用户自定义 system prompt（空字符串表示清除）。
-
-    更新后自动失效该用户所有会话的检索缓存：
-    system_prompt 变更会影响 AI 对检索结果的使用方式，旧缓存的检索结果
-    可能与新 prompt 不匹配，需按 thread_id 清除 Redis 检索缓存。
-    """
-    # 字数限制：最多 3000 字
-    if len(request_body.content) > 3000:
-        return Response.failed("自定义设定不能超过 3000 字")
-    user_profile_service.update_system_prompt(user_id, request_body.content)
-
-    # 失效该用户所有会话的检索缓存（仅 thread_id 维度的检索缓存，不影响 JWT/登录态等其他缓存）
-    try:
-        sessions = chat_service.get_user_sessions(user_id)
-        thread_ids = [s["thread_id"] for s in sessions if s.get("thread_id")]
-        if thread_ids:
-            cache_service.clear_user_thread_caches(user_id, thread_ids)
-    except Exception as e:
-        # 缓存清除失败不影响主流程：system_prompt 已更新成功，缓存会在 TTL 后自然过期
-        logger.warning(f"更新 system_prompt 后清除检索缓存失败 user_id={user_id}: {e}")
-
-    return Response.success("自定义设定更新成功")
 
 
 # ============================================================

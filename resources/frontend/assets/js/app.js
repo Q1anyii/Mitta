@@ -355,7 +355,7 @@
             }
         }
 
-        // 获取用户个人信息（含 avatar、assistant_style、theme）
+        // 获取用户个人信息（含 avatar、theme）
         async function apiGetProfile(userId) {
             const response = await fetch(`${API_BASE}/api/users/${userId}/profile`, {
                 headers: authHeaders()
@@ -899,7 +899,7 @@
                                 <h2 class="current-session-title">{{ currentSessionTitle }}</h2>
                             </div>
                             <div class="header-actions">
-                                <button class="icon-btn" @click="clearCurrentChat" title="清空当前会话" aria-label="清空当前会话">
+                                <button class="icon-btn" @click="deleteSession(currentThreadId.value)" title="删除当前会话" aria-label="清空当前会话">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <polyline points="3 6 5 6 21 6"></polyline>
                                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1121,8 +1121,8 @@
                                 </div>
                                 <div class="form-group">
                                     <label>助手风格 / 自定义设定</label>
-                                    <textarea v-model="profileForm.assistant_style" placeholder="描述你希望 AI 助手具备的风格、角色设定或特殊要求（如：你是一个专业的编程助手，回答简洁，多用代码示例）" rows="3" maxlength="500"></textarea>
-                                    <div class="form-hint">此设定会作为 system prompt 的一部分，影响 AI 的回答风格（最多 500 字）</div>
+                                    <textarea v-model="profileForm.system_prompt" placeholder="描述你希望 AI 助手具备的风格、角色设定或特殊要求（如：你是一个专业的编程助手，回答简洁，多用代码示例）" rows="4" maxlength="3000"></textarea>
+                                    <div class="form-hint">此设定会作为全局 system prompt 注入每次对话，影响 AI 的回答风格（最多 3000 字）</div>
                                 </div>
                                 <hr style="border: none; border-top: 2px dashed var(--line-soft); margin: 20px 0;">
                                 <div class="form-group">
@@ -1358,7 +1358,7 @@
                 const profileForm = ref({
                     username: '',
                     avatar: '',
-                    assistant_style: '',
+                    system_prompt: '',
                     old_password: '',
                     new_password: '',
                     confirm_password: '',
@@ -1699,17 +1699,6 @@
                     }
                 };
 
-                const clearCurrentChat = () => {
-                    messages.value = [];
-                    const session = sessions.value.find(s => s.id === currentThreadId.value);
-                    if (session) {
-                        session.messages = [];
-                        session.title = '新会话';
-                        session.isBlank = true;
-                    }
-                    saveMessages();
-                    saveSessions();
-                };
 
                 const sendQuick = (text) => {
                     inputText.value = text;
@@ -1981,16 +1970,22 @@
                     if (userMenuOpen.value) uploadMenuOpen.value = false;
                 }
 
-                function openProfileModal() {
+                async function openProfileModal() {
                     userMenuOpen.value = false;
                     // 加载当前用户信息
                     profileForm.value.username = user.value?.name || '';
                     profileForm.value.avatar = user.value?.avatar || '';
-                    profileForm.value.assistant_style = user.value?.assistant_style || '';
                     profileForm.value.old_password = '';
                     profileForm.value.new_password = '';
                     profileForm.value.confirm_password = '';
                     profileModalOpen.value = true;
+                    // 从 profile 接口回显全局 system prompt（合并后统一走 /profile）
+                    try {
+                        const p = await apiGetProfile(user.value.userId);
+                        profileForm.value.system_prompt = (p && p.system_prompt) || '';
+                    } catch (e) {
+                        profileForm.value.system_prompt = '';
+                    }
                 }
 
                 function closeProfileModal() {
@@ -2037,14 +2032,14 @@
                 async function saveProfile() {
                     profileSaving.value = true;
                     try {
-                        // 更新基本信息
+                        // 统一更新个人信息 + 全局 system prompt（一个接口）
                         const res = await fetch(`${API_BASE}/api/users/${user.value.userId}/profile`, {
                             method: 'PUT',
                             headers: authHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({
                                 username: profileForm.value.username,
                                 avatar: profileForm.value.avatar,
-                                assistant_style: profileForm.value.assistant_style,
+                                system_prompt: profileForm.value.system_prompt || '',
                             }),
                         });
                         syncTokenFromHeaders(res.headers);
@@ -2052,9 +2047,13 @@
                             // 更新本地用户信息
                             user.value.name = profileForm.value.username;
                             user.value.avatar = profileForm.value.avatar;
-                            user.value.assistant_style = profileForm.value.assistant_style;
+                            // 同步刷新 AI 称呼缓存（greetingName 优先读它，否则主页仍显示旧名字）
+                            cache.set(STORAGE_KEY.AI_CALL_NAME, profileForm.value.username.trim());
                             cache.set(STORAGE_KEY.USER, user.value);
                             showToast('个人信息已更新', 'success');
+                        } else {
+                            const pd = await res.json().catch(() => ({}));
+                            showToast(pd.detail || '保存失败', 'error');
                         }
 
                         // 修改密码（如果填写了）
@@ -2325,7 +2324,7 @@
                     messagesContainer, textarea, fileInput, randomQuestions, refreshQuestions,
                     currentSessionTitle, userAvatar, greetingName, canSend,
                     createNewSession, switchSession, deleteSession,
-                    clearCurrentChat, sendMessage, sendQuick,
+                    sendMessage, sendQuick,
                     handleKeydown, autoResize, openSidebar, closeSidebar,
                     logout, escapeHtml, renderMarkdown, toolSummary, toolIcon, copyCodeBlock,
                     // 新增

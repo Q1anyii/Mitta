@@ -171,14 +171,14 @@ class UserProfileService:
 
     def update_basic_info(self, user_id: str, username: Optional[str] = None,
                            avatar: Optional[str] = None,
-                           assistant_style: Optional[str] = None) -> bool:
-        """更新用户基本信息（用户名、头像、助手风格）。
+                           system_prompt: Optional[str] = None) -> bool:
+        """更新用户基本信息（用户名、头像、全局 system prompt）。
 
         Args:
             user_id: 用户 ID
             username: 显示用户名（None 表示不更新）
             avatar: 头像（base64 data URL，None 表示不更新）
-            assistant_style: 助手风格设定（None 表示不更新）
+            system_prompt: 全局 system prompt（None 表示不更新，空字符串表示清除）
 
         Returns:
             bool: 是否成功
@@ -188,8 +188,9 @@ class UserProfileService:
             fields["username"] = username
         if avatar is not None:
             fields["avatar"] = avatar
-        if assistant_style is not None:
-            fields["assistant_style"] = assistant_style
+        if system_prompt is not None:
+            logger.info(f"{system_prompt}")
+            fields["system_prompt"] = system_prompt
         if not fields:
             return False
         self._upsert_profile(user_id, fields)

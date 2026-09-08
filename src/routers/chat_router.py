@@ -38,7 +38,7 @@ def chat(request_body: ChatRequest, current_user: TokenData = Depends(get_curren
             uid=user_row["id"],
             user_id=user_row["user_id"],
             password=None,  # 敏感字段不注入，工具无法访问
-            username=current_user.username,  # 直接取 JWT 解析出的 username（token → 解析 → 上下文）
+            username=user_row.get("username") or current_user.username,  # 优先取数据库最新 username（改名后 AI 记忆同步更新）
             create_time=user_row["create_time"],
             update_time=user_row["update_time"],
         )

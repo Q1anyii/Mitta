@@ -56,8 +56,15 @@ def _ensure_username_profile(store: BaseStore, user_id: str, username: str | Non
     item = store.get(namespace, "user_profile")
     profile = item.value["profile"] if item else "（暂无档案）"
     base_profile = f"用户名：{username}" if username else ""
-    if base_profile and base_profile not in profile:
-        profile = f"{profile}\n{base_profile}" if profile != "（暂无档案）" else base_profile
-        store.put(namespace, "user_profile", {"profile": profile})
-        logger.info(f"用户名基础档案已落库（user_id={user_id}）")
+    if base_profile:
+        # 用户名变更时替换旧行（正则匹配"用户名：xxx"），避免新旧名字并存导致 AI 混淆
+        profile_new = re.sub(r"^用户名：[^\n]*$", base_profile, profile, flags=re.MULTILINE)
+        if profile_new != profile:
+            profile = profile_new
+            store.put(namespace, "user_profile", {"profile": profile})
+            logger.info(f"用户名档案已更新（user_id={user_id}）")
+        elif base_profile not in profile:
+            profile = f"{profile}\n{base_profile}" if profile != "（暂无档案）" else base_profile
+            store.put(namespace, "user_profile", {"profile": profile})
+            logger.info(f"用户名基础档案已落库（user_id={user_id}）")
     return profile

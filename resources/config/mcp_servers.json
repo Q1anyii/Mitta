@@ -23,6 +23,8 @@
     "type": "stdio",
     "command": "uvx",
     "args": [
+      "--from", "mcp-server-sqlite==2025.4.25",
+      "--with", "mcp[cli]<2",
       "mcp-server-sqlite",
       "--db",
       "/app/user_files/user_01/AgentProject/resources/local_data.db"

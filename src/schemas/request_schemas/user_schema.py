@@ -8,16 +8,12 @@ from typing import Optional, List, Dict, Any
 class ProfileUpdateRequest(BaseModel):
     username: Optional[str] = None
     avatar: Optional[str] = None
-    assistant_style: Optional[str] = None
+    system_prompt: Optional[str] = None  # 全局 system prompt（自定义设定），空字符串表示清除
 
 
 class PasswordUpdateRequest(BaseModel):
     old_password: str
     new_password: str
-
-
-class SystemPromptUpdateRequest(BaseModel):
-    content: str
 
 
 class ThemeUpdateRequest(BaseModel):

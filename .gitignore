@@ -50,6 +50,7 @@ venv.bak/
 # ---- 本地数据（向量库，需重建，不入库）----
 resources/chroma_db/
 recourses/chroma_db/
+src/resources/chroma_db/
 
 # ---- 缓存目录 ----
 .pytest_cache/
