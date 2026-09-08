@@ -6,7 +6,7 @@ import chromadb
 from pathlib import Path
 from langgraph.store.postgres import PostgresStore
 from psycopg_pool import ConnectionPool
-from langchain_core.messages import BaseMessage, AIMessageChunk, ToolMessage
+from langchain_core.messages import BaseMessage, AIMessage, AIMessageChunk, ToolMessage
 from loguru import logger
 from langgraph.cache.redis import RedisCache  # 可能需要 langgraph-checkpoint-redis 扩展
 
@@ -63,20 +63,6 @@ def _process_graph_chunk(chunk, meta) -> str | None:
         )
         if reasoning:
             events.append(_format_sse({"reasoning": reasoning}))
-        # 检测工具调用开始：AIMessageChunk 含 tool_calls 字段
-        # 注意：LangChain 流式输出中 tool_calls 分块传输——首块含 name+空 args，
-        # 后续块 name 为空、args 为增量。只在首块（有 name）时发 start，
-        # 否则每个工具会产生多张重复卡片（空调用问题的根因）
-        if chunk.tool_calls:
-            for tc in chunk.tool_calls:
-                tool_name = tc.get("name", "")
-                if tool_name:  # 仅首块有 name，过滤掉 args 增量块
-                    events.append(_format_sse({
-                        "tool_call_start": {
-                            "name": tool_name,
-                            "args": tc.get("args", {}),
-                        }
-                    }))
         # 输出文本内容（content 可能是 str 或 list[dict]，多模态模型返回 list）
         if chunk.content:
             content = chunk.content
@@ -88,6 +74,26 @@ def _process_graph_chunk(chunk, meta) -> str | None:
             if content:
                 events.append(_format_sse({"content": content}))
         return "".join(events) if events else None
+
+    # llm_node 完整消息（非 chunk）：LangGraph stream_mode="messages" 在节点结束时
+    # 会输出节点返回的完整 AIMessage，此时 tool_calls 已由 llm_node 内部合并完整
+    # （含全部参数）。流式 chunk 阶段只发 reasoning/content（见上），工具调用参数
+    # 必须在这里发送，否则前端只能拿到首块的空 args（"工具调用内容为空"的根因）
+    if node == "llm_node" and isinstance(chunk, AIMessage) and not isinstance(chunk, AIMessageChunk):
+        if chunk.tool_calls:
+            events = []
+            for tc in chunk.tool_calls:
+                tool_name = tc.get("name", "")
+                if tool_name:
+                    events.append(_format_sse({
+                        "tool_call_start": {
+                            "name": tool_name,
+                            "args": tc.get("args") or {},
+                        }
+                    }))
+            if events:
+                return "".join(events)
+        return None
 
     # tool_node：工具执行结果，发送工具调用结束事件（供前端关闭加载动画）
     if node == "tool_node" and isinstance(chunk, ToolMessage):

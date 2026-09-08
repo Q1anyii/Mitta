@@ -3,6 +3,7 @@
 拆分自原 main_graph.py 的 _get_username 和 _ensure_username_profile 闭包函数。
 依赖：cache_service（Redis 全局单例），通过延迟导入避免循环依赖。
 """
+import re
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
