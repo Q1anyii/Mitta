@@ -54,7 +54,7 @@ def update_user_profile(user_id: str, request_body: ProfileUpdateRequest,
     logger.info(f"[profile-debug] 收到请求体: system_prompt={request_body.system_prompt!r} username={request_body.username!r}")
     # 字数限制：最多 500 字
     if request_body.system_prompt is not None and len(request_body.system_prompt) > 500:
-        return Response.failed("自定义设定不能超过 3000 字")
+        return Response.failed("自定义设定不能超过 500 字")
     success = user_profile_service.update_basic_info(
         user_id=user_id,
         username=request_body.username,

@@ -189,7 +189,6 @@ class UserProfileService:
         if avatar is not None:
             fields["avatar"] = avatar
         if system_prompt is not None:
-            logger.info(f"{system_prompt}")
             fields["system_prompt"] = system_prompt
         if not fields:
             return False
