@@ -1,5 +1,5 @@
 {
-  "type": "milvus",
-  "uri": "http://localhost:19530",
+  "type": "chroma",
+  "persist_path": "resources/chroma_db",
   "collection": "FAQ_KNOWLEDGE_BASE"
 }

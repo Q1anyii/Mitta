@@ -8,6 +8,9 @@ name: CI/CD
 # 解决问题：
 #   1. 服务器无法访问 GitHub（不 git pull）
 #   2. 服务器本地 build 时 apt-get 从 deb.debian.org 下载超时（不 build）
+# 优化：
+#   - Dockerfile/requirements 未变化时跳过镜像构建（复用 latest），
+#     普通代码改动 CI 从 ~10 分钟压到 ~2 分钟
 # ============================================================
 
 on:
@@ -28,12 +31,31 @@ jobs:
       # ========== 阶段 1：拉取代码 ==========
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # 需要 HEAD~1 来对比本次是否改了 Dockerfile
 
-      # ========== 阶段 2：GitHub Actions 构建后端镜像（国外网络快） ==========
+      # ========== 阶段 1.5：判断是否需要重建镜像 ==========
+      - name: Check if image build is required
+        id: check
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD || true)
+          echo "changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements.txt|\.github/workflows/)'; then
+            echo "build_required=true" >> $GITHUB_OUTPUT
+            echo "→ 需要重建镜像（Dockerfile/依赖/workflow 有变更）"
+          else
+            echo "build_required=false" >> $GITHUB_OUTPUT
+            echo "→ 跳过构建，复用 latest 镜像"
+          fi
+
+      # ========== 阶段 2：构建后端镜像（仅 Dockerfile 等变化时执行） ==========
       - name: Set up Docker Buildx
+        if: steps.check.outputs.build_required == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login ACR
+        if: steps.check.outputs.build_required == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.ACR_REGISTRY }}
@@ -41,10 +63,12 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Get commit hash
+        if: steps.check.outputs.build_required == 'true'
         id: sha
         run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build & push api image to ACR
+        if: steps.check.outputs.build_required == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -76,11 +100,13 @@ jobs:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
-          # 不 build，部署只需拉镜像+重启，10 分钟足够
           command_timeout: 10m
           script: |
             set -e
             cd /opt/mitta
+
+            echo "=== [0/4] 清理配置路径残留（防容器内解析成 Windows 路径）==="
+            rm -f resources/config/.mcp_config_path resources/config/.vector_config_path
 
             echo "=== [1/4] 登录 ACR ==="
             docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
@@ -93,7 +119,7 @@ jobs:
 
             echo "=== [4/4] 健康检查 ==="
             sleep 10
-            for i in 1 2 3 4 5 6; do
+            for i in 1 2 3 4 5 6 7 8; do
               HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
               echo "  第 ${i} 次: HTTP $HEALTH"
               if [ "$HEALTH" = "200" ]; then
@@ -101,9 +127,9 @@ jobs:
                 docker ps --format "table {{.Names}}\t{{.Status}}" | grep mitta
                 break
               fi
-              if [ "$i" = "6" ]; then
+              if [ "$i" = "8" ]; then
                 echo "❌ 健康检查失败，查看日志："
-                docker logs mitta-api --tail 30 2>&1
+                docker logs mitta-api --tail 50 2>&1
                 exit 1
               fi
               sleep 5

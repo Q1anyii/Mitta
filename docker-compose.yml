@@ -179,6 +179,8 @@ services:
       # 挂载 MCP 配置和 System Prompt（修改后重启容器生效）
       - ./resources/config:/app/resources/config
       - ./resources/system_prompt:/app/resources/system_prompt
+      # 挂载 ChromaDB 持久化数据（.dockerignore 排除了 chroma_db，必须挂载否则重建丢数据）
+      - ./resources/chroma_db:/app/resources/chroma_db
       # 挂载日志目录
       - ./logs:/app/logs
 
