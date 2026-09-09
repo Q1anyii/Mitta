@@ -142,5 +142,11 @@ app.include_router(system_router)  # 必须最后注册
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run("main:app", host="localhost", port=8000, reload=True)
+    # 端口默认 8000，可通过环境变量 MITTA_API_PORT 覆盖。
+    # Windows 上 WSL2/Hyper-V 的 winnat 会动态保留一段端口（如 7449-8248），落在
+    # 保留段内的端口绑定会报 WinError 10013；本地开发时在 .env 设 MITTA_API_PORT=18000
+    # 即可避开（服务器容器内无此限制，保持默认 8000）。
+    port = int(os.getenv("MITTA_API_PORT", "8000"))
+    uvicorn.run("main:app", host="localhost", port=port, reload=True)
