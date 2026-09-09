@@ -383,6 +383,26 @@ docker-compose up -d etcd minio milvus
 
 不配置 MCP 不影响核心对话功能。安全校验：命令白名单（npx/uvx/node/python/python3/pipx）、Windows 路径自动转换为 Linux 容器路径、filesystem 限制在 `/app/user_files/{user_id}/` 下。
 
+#### 系统默认 MCP 服务器
+
+项目内置 11 台开箱即用的 MCP 服务器（`resources/config/mcp_servers.json`，启动时加载、所有用户共享），覆盖内容获取、数据存储、记忆推理与基础工具四类能力：
+
+| 服务器 | 启动方式 | 作用 |
+|---|---|---|
+| filesystem | `npx @modelcontextprotocol/server-filesystem` | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录 |
+| fetch | `uvx mcp-server-fetch` | 网页抓取：按 URL 拉取网页内容并转 Markdown，供 RAG 引用实时网页信息 |
+| sqlite | `uvx mcp-server-sqlite` | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db` |
+| markitdown | `uvx markitdown-mcp` | 文档转 Markdown：PDF / Word / Excel / 图片等转纯文本，供知识库切分 |
+| context7 | `npx @upstash/context7-mcp` | 最新技术文档检索：拉取 API / SDK 官方文档（含版本、参数） |
+| dbhub | `npx @bytebase/dbhub --demo` | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构 |
+| chroma | `uvx chroma-mcp` | Chroma 向量数据库：持久化知识库（`chroma_data`），语义相似度检索，RAG 核心存储 |
+| memory | `npx @modelcontextprotocol/server-memory` | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好 |
+| basic-memory | `uvx basic-memory mcp` | 个人知识库：管理 Markdown 笔记与实体关系，为 Agent 提供可检索长期记忆 |
+| sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析 |
+| time | `uvx mcp-server-time` | 时间服务：获取当前时间、时区换算、日期计算 |
+
+能力分工：**filesystem / markitdown / fetch / context7** 负责获取内容，**chroma / sqlite / dbhub** 负责存储与查询，**memory / basic-memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。
+
 ### 6. 知识库入库（可选）
 
 ```bash
