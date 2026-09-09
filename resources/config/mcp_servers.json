@@ -23,8 +23,10 @@
     "type": "stdio",
     "command": "uvx",
     "args": [
-      "--from", "mcp-server-sqlite==2025.4.25",
-      "--with", "mcp[cli]<2",
+      "--from",
+      "mcp-server-sqlite==2025.4.25",
+      "--with",
+      "mcp[cli]<2",
       "mcp-server-sqlite",
       "--db",
       "/app/user_files/user_01/AgentProject/resources/local_data.db"
@@ -91,6 +93,28 @@
     "args": [
       "-y",
       "@bytebase/dbhub"
+    ]
+  },
+  {
+    "name": "chroma",
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "chroma-mcp",
+      "--client-type",
+      "persistent",
+      "--data-dir",
+      "/app/user_files/user_01/AgentProject/resources/chroma_data"
+    ]
+  },
+  {
+    "name": "basic-memory",
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "--prerelease=allow",
+      "basic-memory",
+      "mcp"
     ]
   }
 ]

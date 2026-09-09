@@ -70,7 +70,7 @@ RUN pip install --no-cache-dir uv -i ${PIP_INDEX}
 # （曾出现：冷启动下载 html5lib 等依赖超过连接超时 -> 拿到 0 工具 -> 空图被缓存）
 # 注意：CI 在 GitHub Actions 境外构建，这里显式用官方源（境外快）；运行时
 # ENV 已配 UV_INDEX_URL=阿里云源（国内快），且预热后缓存命中无需再联网
-RUN for pkg in mcp-server-fetch mcp-server-sqlite mcp-server-time markitdown-mcp; do \
+RUN for pkg in mcp-server-fetch mcp-server-sqlite mcp-server-time markitdown-mcp chroma-mcp basic-memory; do \
         echo "prewarm uvx: $pkg" && timeout 180 env UV_DEFAULT_INDEX=https://pypi.org/simple UV_INDEX_URL=https://pypi.org/simple uvx $pkg --help >/dev/null 2>&1 || \
         echo "WARN: prewarm $pkg failed, will download at runtime"; \
     done

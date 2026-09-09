@@ -30,24 +30,121 @@ ALLOWED_TYPES = {"stdio", "sse"}
 # 注意：仅收录实际存在于对应 registry 的包名（npm 上不存在 server-fetch/
 # server-sqlite/server-time/server-git 的 npm 版，它们均为 Python 生态走 uvx）
 SAFE_MCP_PACKAGES = {
-    # npm 生态（npx 启动，已验证存在）
+    # ---- npm 生态（npx 启动，已核验 registry 存在）----
     "@modelcontextprotocol/server-filesystem",
     "@modelcontextprotocol/server-github",
     "@modelcontextprotocol/server-sequential-thinking",
     "@modelcontextprotocol/server-memory",
     "@modelcontextprotocol/server-puppeteer",
-    # npm 生态（新增，2026-09 核验存在）
-    "@upstash/context7-mcp",   # Context7 实时文档（upstash）
-    "@playwright/mcp",         # Playwright 浏览器自动化（microsoft）
-    "@bytebase/dbhub",         # DBHub 多数据库统一查询（bytebase）
-    # Python 生态（uvx 启动）
+    "@upstash/context7-mcp",
+    "@animaapp/cli",
+    "@anthropic-ai/mcpb",
+    "@apify/actors-mcp-server",
+    "@azure-devops/mcp",
+    "@black-duck/mcp-server",
+    "@brightdata/mcp",
+    "@bytebase/dbhub",
+    "@codacy/codacy-mcp",
+    "@doist/todoist-mcp",
+    "@dynatrace-oss/dynatrace-managed-mcp-server",
+    "@dynatrace-oss/dynatrace-mcp-server",
+    "@fkadev/prompts.chat-mcp",
+    "@frihet/mcp-server",
+    "@goreleaser/mcp",
+    "@hostinger/mcp",
+    "@launchdarkly/mcp-server",
+    "@llmindset/hf-mcp-server",
+    "@mailkite/mcp",
+    "@microsoft/devbox-mcp",
+    "@modelcontextprotocol/inspector",
+    "@mondaydotcomorg/monday-api-mcp",
+    "@nitrosend/mcp",
+    "@octopusdeploy/mcp-server",
+    "@opusclip/mcp",
+    "@palisadeemail/mcp",
+    "@playwright/mcp",
+    "@plori/cli",
+    "@postman/postman-mcp-server",
+    "@pubnub/mcp",
+    "@reputemap/mcp",
+    "@rigour-labs/cli",
+    "@rigour-labs/mcp",
+    "@scavio/mcp-server",
+    "@screenshotscout/mcp",
+    "@sendmux/cli",
+    "@sentry/dotagents",
+    "@sentry/mcp-server",
+    "@shipstatic/mcp",
+    "@shipstatic/ship",
+    "@speedofme/mcp",
+    "@stackql/mcp-server",
+    "@ui5/webcomponents-mcp-server",
+    "@wix/mcp-remote",
+    "@wonderwhy-er/desktop-commander",
+    "@wuniq/mcp",
+    "@zereight/mcp-gitlab",
+    "agent-ready-mcp",
+    "alterlab-mcp-server",
+    "citewire",
+    "ctx7",
+    "dialmcp-connector",
+    "drawing-converter-mcp",
+    "faf-mcp",
+    "gitnexus",
+    "govtoolspro-mcp-server",
+    "motionspec",
+    "next-devtools-mcp",
+    "optionsahoy-mcp",
+    "rigour-scan",
+    "seo-tools-mcp-aparser",
+    "seo-tools-mcp-ga4",
+    "seo-tools-mcp-gsc",
+    "seo-tools-mcp-metrika",
+    "seo-tools-mcp-wordstat",
+    "seo-tools-mcp-xmlriver",
+    "seo-tools-mcp-xmlstock",
+    "seo-tools-mcp-ywm",
+    "tariff-resolver",
+    "tempguru-mcp",
+    "x402-bounty-hunter",
+    "ghostlight",
+    # ---- Python 生态（uvx 启动，已核验 PyPI 存在）----
     "mcp-server-fetch",
     "mcp-server-git",
     "mcp-server-sqlite",
     "mcp-server-memory",
     "mcp-server-time",
-    # Python 生态（新增，2026-09 核验存在）
-    "markitdown-mcp",          # MarkItDown 文件转 Markdown（microsoft）
+    "markitdown-mcp",
+    "alphafold-sovereign-mcp",
+    "argus-testing",
+    "basic-memory",
+    "chroma-mcp",
+    "ememdev",
+    "falcon-mcp",
+    "fittok",
+    "hvtracker-mcp",
+    "ifc-mcp",
+    "imagesorcery-mcp",
+    "mcp-clickhouse",
+    "mcp-outlook-personal",
+    "mcp-searxng",
+    "microsoft-fabric-rti-mcp",
+    "neon",
+    "openaccountants-mcp",
+    "opusclip-mcp",
+    "pagerduty-mcp",
+    "pmb-ai",
+    "robosystems-client",
+    "s2-mcp-server",
+    "sendmux-mcp",
+    "stackhawk-mcp",
+    "stackql-mcp-server",
+    "tavily-mcp",
+    "topos-mcp",
+    "uniprot-mcp",
+    "uniprot-mcp-server",
+    "mlx-memo",
+
 }
 
 # 用户文件系统根目录（filesystem MCP 只能访问此目录下的文件）
@@ -214,6 +311,15 @@ def validate_mcp_server_config(cfg: dict, user_id: str) -> dict:
             if not arg.startswith("-"):
                 package_name = arg
                 break
+        # 剥离版本号锁定后缀（如 mcp-server-sqlite==2025.4.25 → mcp-server-sqlite、
+        # @scope/pkg@1.2.3 → @scope/pkg），避免精确匹配误拒
+        if package_name:
+            if package_name.startswith("@"):
+                _m = re.match(r"^(@[^/]+/[^@]+)", package_name)
+            else:
+                _m = re.match(r"^([^@=]+)", package_name)
+            if _m:
+                package_name = _m.group(1)
         if package_name and package_name not in SAFE_MCP_PACKAGES:
             raise ValueError(
                 f"MCP 服务器 [{name}] 的包 '{package_name}' 不在安全白名单内。"

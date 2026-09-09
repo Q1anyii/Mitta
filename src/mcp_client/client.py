@@ -52,6 +52,8 @@ SERVER_TAGS = {
     "playwright": ["浏览器", "网页", "点击", "自动化", "测试", "截图", "playwright", "browser", "爬取"],
     "dbhub": ["数据库", "sql", "查询", "postgres", "mysql", "dbhub", "表", "数据"],
     "crawl4ai": ["爬虫", "网页", "pdf", "抓取", "crawl", "爬取"],
+    "chroma": ["向量", "知识库", "检索", "chroma", "相似", "embedding", "集合"],
+    "basic-memory": ["记忆", "笔记", "知识", "实体", "markdown", "关系", "memory"],
 }
 
 

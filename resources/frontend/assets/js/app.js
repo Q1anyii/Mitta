@@ -221,7 +221,16 @@
                 .replace(/\n{3,}/g, '\n\n');
             // 自定义代码块渲染：包裹成带语言标题栏+复制按钮的窗口
             const renderer = new marked.Renderer();
-            renderer.code = function({ text, lang }) {
+            renderer.code = function(codeOrObj, langOrUndef) {
+                // 兼容 marked v12 旧式三参数 (code, infostring, escaped) 与新版对象形态
+                let text, lang;
+                if (codeOrObj !== null && typeof codeOrObj === 'object') {
+                    text = codeOrObj.text || '';
+                    lang = codeOrObj.lang;
+                } else {
+                    text = codeOrObj || '';
+                    lang = langOrUndef;
+                }
                 const language = lang || 'code';
                 const escaped = escapeHtml(text);
                 return '<div class=\"code-block-wrapper\">' +
