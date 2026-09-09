@@ -364,7 +364,8 @@
             handleAuthError(response);
             if (!response.ok) return null;
             const { ok, data } = await parseApiResponse(response);
-            return ok ? data : null;
+            // parseApiResponse 的 data 是整个响应体 {ok, data:{...}}，profile 字段在 data.data 里
+            return ok ? (data.data ?? null) : null;
         }
 
         async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort) {
