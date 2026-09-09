@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import threading as _threading
 import chromadb
 
 from pathlib import Path
@@ -149,6 +150,11 @@ class ChatService:
         self._global_mcp_tools: list = []
         # 工具常驻事件循环（MCP session 创建与调用必须同循环）
         self._tool_loop = None
+        # 进行中的生成任务注册表：thread_id -> {"user_id", "started_at"}
+        # 前端刷新后据此判断"该会话回复是否仍在后台生成"，从而自动轮询续接
+        # （刷新不中断生成：客户端断连只停推送，worker 线程继续跑完图提交 checkpoint）
+        self._active_generations: dict[str, dict] = {}
+        self._active_generations_lock = _threading.Lock()
 
     def open(self, mcp_tools: list | None = None, tool_loop=None, deps=None):
         self._global_mcp_tools = mcp_tools or []
@@ -541,6 +547,17 @@ class ChatService:
                 logger.exception(f"对话流生成异常（thread_id={thread_id}）：{e}")
                 event_queue.put(_format_sse({"error": str(e), "error_type": type(e).__name__}))
                 event_queue.put(_SENTINEL)
+            finally:
+                # 无论成功/异常/断连，worker 结束都从注册表移除——
+                # 前端刷新后若查不到该会话的进行中任务，即认为回复已落库/已失败
+                with self._active_generations_lock:
+                    self._active_generations.pop(thread_id, None)
+                    logger.debug(f"[gen-registry] worker 结束注销 thread_id={thread_id} 剩余={list(self._active_generations.keys())}")
+
+        # 注册进行中任务：前端可查询"该会话是否仍在后台生成"，决定是否轮询续接
+        with self._active_generations_lock:
+            self._active_generations[thread_id] = {"user_id": user_id, "started_at": _threading.get_ident()}
+            logger.debug(f"[gen-registry] 注册 thread_id={thread_id} 当前={list(self._active_generations.keys())}")
 
         worker = _threading.Thread(target=_run_graph, daemon=True, name=f"mcp-stream-{thread_id[-12:]}")
         worker.start()
@@ -601,6 +618,22 @@ class ChatService:
             if owner:
                 return str(owner)
         return None
+
+    def is_generation_active(self, thread_id: str) -> bool:
+        """该会话是否仍有生成任务在后台运行。
+
+        前端刷新后调用：若返回 True，说明 AI 回复仍在后台生成（客户端断连不中断
+        生成），应轮询 history 直到拿到完整回复；返回 False 则回复已落库或已失败，
+        直接读 history 即可。
+
+        Args:
+            thread_id: 会话 ID
+
+        Returns:
+            bool: 是否正在后台生成
+        """
+        with self._active_generations_lock:
+            return thread_id in self._active_generations
 
     def get_memory(self, user_id: str):
         store = self.store

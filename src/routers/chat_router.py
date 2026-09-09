@@ -66,6 +66,25 @@ def get_history_session(thread_id: str, current_user: TokenData = Depends(get_cu
     return history_session
 
 
+@router.get("/api/chat/{thread_id}/generation-status")
+def get_generation_status(thread_id: str, current_user: TokenData = Depends(get_current_user)):
+    """查询该会话是否仍在后台生成回复。
+
+    前端刷新后调用：若生成未完成，页面自动轮询 history 续接完整回复，
+    无需手动再次刷新（配合后端"断连不中断生成"的后台线程机制）。
+
+    Returns:
+        {"ok": true, "data": {"generating": bool}}
+    """
+    # 会话归属校验（与 history 一致）
+    owner = chat_service.get_thread_user_id(thread_id)
+    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="无权访问该会话")
+    generating = chat_service.is_generation_active(thread_id)
+    logger.info(f"查询会话生成状态 thread_id={thread_id} generating={generating}")
+    return {"ok": True, "data": {"generating": generating}}
+
+
 @router.delete("/api/chat/{thread_id}")
 def delete_session_by_id(thread_id: str, current_user: TokenData = Depends(get_current_user)):
     """删除会话及其历史消息。"""

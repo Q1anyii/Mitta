@@ -471,6 +471,24 @@
             return response.json();
         }
 
+        // 查询会话是否仍在后台生成回复（刷新后用于自动续接未完成的 AI 回复）
+        async function apiGetGenerationStatus(threadId) {
+            const response = await fetch(`${API_BASE}/api/chat/${threadId}/generation-status`, {
+                headers: authHeaders()
+            });
+            syncTokenFromHeaders(response.headers);
+            handleAuthError(response);
+            if (response.status === 403) {
+                const data = await response.json().catch(() => ({}));
+                const err = new Error(data.detail || '无权访问该会话');
+                err.status = 403;
+                throw err;
+            }
+            if (!response.ok) throw new Error(`查询生成状态失败: ${response.status}`);
+            const json = await response.json();
+            return json && json.data ? json.data.generating : false;
+        }
+
         async function apiDeleteSession(threadId) {
             const response = await fetch(`${API_BASE}/api/chat/${threadId}`, {
                 method: 'DELETE',
@@ -1495,6 +1513,17 @@
                             // 本地无缓存或缓存末尾是未完成 AI 占位：用后端历史兜底（同样需要归一化）
                             messages.value = parseHistory(history).map(normalizeMessage);
                         }
+                        // 【自动续接】刷新/强刷后若该会话回复尚未完成（后端仍在后台生成），
+                        // 自动轮询 history 直到完整 AI 回复落库并渲染，无需手动再次刷新。
+                        // 触发条件：本地缓存末尾是未完成占位（说明上次流被刷新中断），
+                        // 且当前 messages 最后一条仍是未完成的 AI 占位（后端尚未补全）。
+                        const lastMsg = messages.value.length > 0 ? messages.value[messages.value.length - 1] : null;
+                        const replyStillIncomplete = lastMsg && lastMsg.role === 'assistant'
+                            && !lastMsg.content
+                            && (!lastMsg.blocks || lastMsg.blocks.length === 0);
+                        if (lastIncomplete && replyStillIncomplete) {
+                            startGenerationResume(currentThreadId.value);
+                        }
                     } catch (err) {
                         if (err && err.status === 403) {
                             // 会话属于其他账号：从列表移除并提示，避免残留
@@ -1529,6 +1558,74 @@
                         }
                     }
                     return msg;
+                };
+
+                // 【自动续接】刷新/强刷后自动轮询补全未完成的 AI 回复。
+                // 后端"断连不中断生成"：客户端刷新只停 SSE 推送，后台线程继续跑完图并
+                // 提交 checkpoint。前端刷新后若发现该会话回复仍未完成（本地缓存末尾是
+                // 未完成 AI 占位且 history 尚未补全），每隔 RESUME_POLL_INTERVAL 轮询一次
+                // history + 生成状态：生成结束后若已拿到完整回复则自动渲染，无需手动再刷。
+                let _resumeTimer = null;
+                let _resumeStopped = false;
+                const startGenerationResume = (threadId) => {
+                    // 幂等：已有轮询在跑或已被标记停止时不再重复启动
+                    if (_resumeTimer || _resumeStopped) return;
+                    // 轮询间隔 2s，最长等 5 分钟（后台生成可能含深度思考/多轮工具调用）
+                    const RESUME_POLL_INTERVAL = 2000;
+                    const RESUME_MAX_WAIT = 5 * 60 * 1000;
+                    const deadline = Date.now() + RESUME_MAX_WAIT;
+                    // 记录当前续接的会话：用户中途切换会话则停止旧轮询
+                    const targetThreadId = threadId;
+                    showToast('回复仍在生成中，正在自动续接…', 'info');
+                    _resumeTimer = setInterval(async () => {
+                        try {
+                            // 用户已切到其他会话：停止续接（保留当前会话内容）
+                            if (currentThreadId.value !== targetThreadId) {
+                                stopGenerationResume();
+                                return;
+                            }
+                            const [history, generating] = await Promise.all([
+                                apiGetHistory(targetThreadId),
+                                apiGetGenerationStatus(targetThreadId),
+                            ]);
+                            const msgs = parseHistory(history).map(normalizeMessage);
+                            const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+                            const replyComplete = lastMsg && lastMsg.role === 'assistant'
+                                && (lastMsg.content || (lastMsg.blocks && lastMsg.blocks.length > 0));
+                            if (replyComplete) {
+                                // 后端已完成并落库：渲染完整回复并更新本地缓存，停止轮询
+                                messages.value = msgs;
+                                saveMessages();
+                                scrollToBottom();
+                                stopGenerationResume();
+                                showToast('回复已续接完成', 'success');
+                                return;
+                            }
+                            if (!generating) {
+                                // 后台生成已结束但 history 仍无完整回复（生成异常/被中止）：
+                                // 保留当前未完成占位，停止轮询
+                                stopGenerationResume();
+                                return;
+                            }
+                            if (Date.now() > deadline) {
+                                stopGenerationResume();
+                                showToast('等待回复超时，请稍后重新加载', 'warning');
+                            }
+                        } catch (e) {
+                            // 轮询期间网络抖动/接口异常：继续下一次轮询（不中断续接）
+                            if (Date.now() > deadline) {
+                                stopGenerationResume();
+                            }
+                        }
+                    }, RESUME_POLL_INTERVAL);
+                };
+
+                // 停止自动续接轮询（切换会话/续接完成/超时时调用）
+                const stopGenerationResume = () => {
+                    if (_resumeTimer) {
+                        clearInterval(_resumeTimer);
+                        _resumeTimer = null;
+                    }
                 };
 
                 // 同步文本块：保证 blocks 中文本块与流式全文一致
@@ -1685,6 +1782,9 @@
                     // 有文件时允许空消息（纯文件发送），无文件时必须输入文字
                     const hasFiles = uploadedFiles.value.length > 0;
                     if ((!content && !hasFiles) || isLoading.value) return;
+
+                    // 用户发起新消息：停止可能存在的"刷新后自动续接"轮询，避免与新生成冲突
+                    stopGenerationResume();
 
                     if (!currentThreadId.value) {
                         createNewSession();
