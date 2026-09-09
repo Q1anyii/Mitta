@@ -531,6 +531,60 @@
             return response.json();
         }
 
+        // ===== 知识库管理 API（仅管理员可执行写操作）=====
+        // 文档列表：登录用户可读，用于前端展示知识库内容
+        async function apiListKnowledge() {
+            const response = await fetch(`${API_BASE}/api/knowledge/documents`, {
+                headers: authHeaders()
+            });
+            syncTokenFromHeaders(response.headers);
+            handleAuthError(response);
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.detail || data.message || `获取知识库列表失败: ${response.status}`);
+            }
+            const { ok, data } = await parseApiResponse(response);
+            // parseApiResponse 的 data 是整个响应体 {ok, data:{...}}，实际数据在 data.data 里
+            return ok ? (data.data ?? { documents: [], total_chunks: 0 }) : { documents: [], total_chunks: 0 };
+        }
+
+        // 上传文档入库（仅管理员）：multipart/form-data
+        async function apiUploadKnowledge(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await fetch(`${API_BASE}/api/knowledge/upload`, {
+                method: 'POST',
+                headers: authHeaders(), // 不手动设 Content-Type，浏览器自动带 multipart boundary
+                body: formData
+            });
+            syncTokenFromHeaders(response.headers);
+            handleAuthError(response);
+            const { ok, data, message } = await parseApiResponse(response);
+            if (!response.ok || !ok) {
+                const err = new Error(message || data?.detail || `上传失败: ${response.status}`);
+                err.status = response.status;
+                throw err;
+            }
+            return data.data ?? data;
+        }
+
+        // 删除文档来源（仅管理员）：删除该 source 的全部 chunk
+        async function apiDeleteKnowledgeSource(source) {
+            const response = await fetch(`${API_BASE}/api/knowledge/source/${encodeURIComponent(source)}`, {
+                method: 'DELETE',
+                headers: authHeaders()
+            });
+            syncTokenFromHeaders(response.headers);
+            handleAuthError(response);
+            const { ok, data, message } = await parseApiResponse(response);
+            if (!response.ok || !ok) {
+                const err = new Error(message || data?.detail || `删除失败: ${response.status}`);
+                err.status = response.status;
+                throw err;
+            }
+            return data.data ?? data;
+        }
+
         async function apiHealthCheck() {
             try {
                 const response = await fetch(`${API_BASE}/health`, { method: 'GET' });
@@ -1245,6 +1299,39 @@
                                     </div>
                                     <div v-if="mcpJsonError" class="form-error" style="margin-top: 6px;">{{ mcpJsonError }}</div>
                                 </div>
+
+                                <!-- 知识库管理（仅管理员可见） -->
+                                <template v-if="isAdmin">
+                                    <hr style="border: none; border-top: 2px dashed var(--line-soft); margin: 20px 0;">
+                                    <div class="form-group">
+                                        <label>知识库管理</label>
+                                        <div class="form-hint" style="margin-bottom: 10px;">向知识库增量添加文档（RAG 检索 + BM25 全文双通道），支持 .md/.txt/.pdf，单文件 ≤ 10MB，同内容重复上传自动覆盖。</div>
+                                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                            <input
+                                                ref="kbUploadInput"
+                                                type="file"
+                                                accept=".md,.txt,.pdf"
+                                                class="mcp-path-input"
+                                                style="flex: 1;"
+                                            >
+                                            <button type="button" class="btn btn-primary" @click="uploadKnowledgeFile" :disabled="kbUploading" style="white-space: nowrap;">
+                                                {{ kbUploading ? '上传中...' : '上传入库' }}
+                                            </button>
+                                        </div>
+                                        <div v-if="kbLoading" class="form-hint">加载知识库列表...</div>
+                                        <div v-else-if="kbDocs.length === 0" class="form-hint">知识库暂无文档，上传一个 .md/.txt/.pdf 开始构建。</div>
+                                        <div v-else style="max-height: 220px; overflow-y: auto; border: 1px solid var(--line-soft); border-radius: 8px;">
+                                            <div v-for="doc in kbDocs" :key="doc.source" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); gap: 8px;">
+                                                <div style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">
+                                                    <div style="font-size: 13px;">{{ doc.source }}</div>
+                                                    <div class="form-hint" style="font-size: 12px;">{{ doc.chunks }} 个分块</div>
+                                                </div>
+                                                <button type="button" class="btn-ghost" style="flex-shrink: 0; font-size: 12px; padding: 4px 10px;" @click="deleteKnowledgeSource(doc.source)">删除</button>
+                                            </div>
+                                        </div>
+                                        <div class="form-hint" style="margin-top: 8px;">共 {{ kbTotalChunks }} 个分块</div>
+                                    </div>
+                                </template>
                             </div>
                             <div class="modal-footer">
                                 <button class="btn-ghost" @click="closeSettingsModal">取消</button>
@@ -1439,6 +1526,65 @@
                     theme: 'default',
                     mcp_servers: [],
                 });
+
+                // ===== 知识库管理（仅管理员可见/可操作）=====
+                const kbDocs = ref([]);
+                const kbTotalChunks = ref(0);
+                const kbLoading = ref(false);
+                const kbUploading = ref(false);
+                const kbUploadInput = ref(null);
+                const isAdmin = computed(() => user.value?.role === 'admin');
+                async function loadKnowledgeDocs() {
+                    if (!isAdmin.value) return;
+                    kbLoading.value = true;
+                    try {
+                        const data = await apiListKnowledge();
+                        kbDocs.value = data.documents || [];
+                        kbTotalChunks.value = data.total_chunks || 0;
+                    } catch (e) {
+                        showToast(e.message || '获取知识库列表失败', 'error');
+                    } finally {
+                        kbLoading.value = false;
+                    }
+                }
+                async function uploadKnowledgeFile() {
+                    const input = kbUploadInput.value;
+                    if (!input || !input.files || !input.files.length) {
+                        showToast('请先选择要上传的文档', 'warning');
+                        return;
+                    }
+                    const file = input.files[0];
+                    if (!/\.(md|txt|pdf)$/i.test(file.name)) {
+                        showToast('仅支持 .md / .txt / .pdf 格式', 'warning');
+                        return;
+                    }
+                    if (file.size > 10 * 1024 * 1024) {
+                        showToast('文件大小不能超过 10MB', 'warning');
+                        return;
+                    }
+                    kbUploading.value = true;
+                    try {
+                        const result = await apiUploadKnowledge(file);
+                        const written = result?.written ?? 0;
+                        showToast(`入库成功：${file.name}（${written} 个分块）`, 'success');
+                        input.value = '';
+                        await loadKnowledgeDocs();
+                    } catch (e) {
+                        showToast(e.message || '上传失败', 'error');
+                    } finally {
+                        kbUploading.value = false;
+                    }
+                }
+                async function deleteKnowledgeSource(source) {
+                    if (!confirm(`确认删除知识库文档「${source}」的全部分块？\n删除后不可恢复。`)) return;
+                    try {
+                        const result = await apiDeleteKnowledgeSource(source);
+                        showToast(`已删除 ${source}（${result?.deleted ?? 0} 个分块）`, 'success');
+                        await loadKnowledgeDocs();
+                    } catch (e) {
+                        showToast(e.message || '删除失败', 'error');
+                    }
+                }
 
                 const themes = [
                     { value: 'default', name: '默认', preview: 'linear-gradient(135deg, #00CFFD, #F4F7FE)' },
@@ -2156,6 +2302,11 @@
                         mcpJsonText.value = JSON.stringify(settingsForm.value.mcp_servers, null, 2);
                         console.warn('加载 MCP 配置失败，使用本地缓存:', err);
                     }
+
+                    // 管理员打开设置时加载知识库文档列表
+                    if (user.value?.role === 'admin') {
+                        loadKnowledgeDocs();
+                    }
                 }
 
                 function closeSettingsModal() {
@@ -2477,6 +2628,9 @@
                     toggleThinkingMode, setEffort, toggleEffortPanel,
                     // 消息操作
                     copyMessage, shareMessage, regenerateMessage,
+                    // 知识库管理（仅管理员）
+                    isAdmin, kbDocs, kbTotalChunks, kbLoading, kbUploading, kbUploadInput,
+                    loadKnowledgeDocs, uploadKnowledgeFile, deleteKnowledgeSource,
                 };
             }
         };

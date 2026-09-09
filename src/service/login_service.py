@@ -55,10 +55,13 @@ class LoginService:
                     user_id VARCHAR(64) NOT NULL UNIQUE,
                     password VARCHAR(255) NOT NULL,
                     username VARCHAR(64) DEFAULT NULL,
+                    role VARCHAR(32) DEFAULT '学员',
                     create_time TIMESTAMPTZ DEFAULT now(),
                     update_time TIMESTAMPTZ DEFAULT now()
                 )
             """)
+            # 迁移：旧表无 role 列时补充（ALTER ADD COLUMN IF NOT EXISTS 幂等，重复启动安全）
+            conn.execute("ALTER TABLE userinfo ADD COLUMN IF NOT EXISTS role VARCHAR(32) DEFAULT '学员'")
             conn.commit()
         logger.info("userinfo 表已就绪（PostgreSQL）")
 

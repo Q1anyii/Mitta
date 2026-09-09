@@ -6,6 +6,7 @@
 
 认证：所有接口需要 JWT（与聊天接口一致）。
 上传文件大小限制 10MB，支持 .md/.txt/.pdf。
+权限：入库/删除为写操作，仅管理员（role=admin）可执行；文档列表登录用户可读。
 """
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -15,13 +16,14 @@ from service.knowledge_service import knowledge_service
 from service.file_upload_service import MAX_FILE_SIZE, FileUploadService
 from utils.jwt_utils import get_current_user, TokenData
 from utils.response_util import Response
+from routers.deps import require_admin
 
 router = APIRouter(tags=["知识库"])
 
 
 @router.post("/api/knowledge/upload")
 async def upload_knowledge(file: UploadFile = File(...),
-                           current_user: TokenData = Depends(get_current_user)):
+                           current_user: TokenData = Depends(require_admin)):
     """上传文档到知识库（增量入库）。
 
     支持格式：.md / .txt / .pdf
@@ -69,7 +71,7 @@ def list_knowledge_documents(current_user: TokenData = Depends(get_current_user)
 
 
 @router.delete("/api/knowledge/source/{source}")
-def delete_knowledge_source(source: str, current_user: TokenData = Depends(get_current_user)):
+def delete_knowledge_source(source: str, current_user: TokenData = Depends(require_admin)):
     """删除指定来源（文件名）的全部文档 chunk。
 
     Args:
@@ -83,7 +85,7 @@ def delete_knowledge_source(source: str, current_user: TokenData = Depends(get_c
 
 
 @router.delete("/api/knowledge/documents/{doc_id}")
-def delete_knowledge_document(doc_id: str, current_user: TokenData = Depends(get_current_user)):
+def delete_knowledge_document(doc_id: str, current_user: TokenData = Depends(require_admin)):
     """删除单个文档 chunk（按 doc_id）。
 
     Args:
