@@ -1701,31 +1701,53 @@
                         // 不含前端扩展字段（blocks 穿插、reasoning 深度思考、tool_calls），
                         // 直接用后端历史会导致刷新后工具调用记录和深度思考全部丢失
                         const cached = cache.getMessages(currentThreadId.value);
-                        // 但若本地缓存最后一条是"未完成的 AI 占位"（流式中刷新/断连留下的
-                        // 空消息，或 catch 标记的 interrupted 中断消息），说明上次回复可能已由
-                        // 后端后台线程补全写库——此时用后端 history 兜底，避免刷新后只剩用户消息。
                         const lastCached = cached && cached.length > 0 ? cached[cached.length - 1] : null;
-                        // 未完成 AI 判定：识别三种形态——① catch 打断标记 interrupted；
-                        // ② 占位文本（旧缓存无标记）；③ content 为空且无 blocks（流中断时的空消息）
-                        const isIncompleteAiMsg = (m) => m && m.role === 'assistant'
-                            && (m.interrupted
-                                || m.content === '（回复中断，请重新生成）'
-                                || (!m.content && (!m.blocks || m.blocks.length === 0)));
+                        // 未完成 AI（在途回复）判定，覆盖生成中刷新的四种形态：
+                        // ① catch 打断标记 interrupted；② 占位文本（旧缓存无标记）；
+                        // ③ 无正文且无 block（刚发送、模型尚未吐字）；
+                        // ④ 只有 reasoning/tool block、尚无任何非空 text 块（思考/工具阶段，正文未产出）
+                        const isIncompleteAiMsg = (m) => {
+                            if (!m || m.role !== 'assistant') return false;
+                            if (m.interrupted || m.content === '（回复中断，请重新生成）') return true;
+                            if (m.content && m.content.trim()) return false; // 已有正文，本地视为展示完整
+                            if (!m.blocks || m.blocks.length === 0) return true;
+                            const hasText = m.blocks.some(b => b.type === 'text' && b.content && b.content.trim());
+                            return !hasText; // 无正文文本块 = 仍在思考/工具阶段
+                        };
                         const lastIncomplete = isIncompleteAiMsg(lastCached);
-                        if (cached && cached.length > 0 && !lastIncomplete) {
+                        const remoteMsgs = parseHistory(history).map(normalizeMessage);
+                        const lastRemote = remoteMsgs.length > 0 ? remoteMsgs[remoteMsgs.length - 1] : null;
+                        // 后端最后一条是否为"已落库的完整 assistant 回复"（有正文）
+                        const remoteReplyComplete = !!lastRemote && lastRemote.role === 'assistant'
+                            && !!(lastRemote.content && lastRemote.content.trim());
+                        if (lastIncomplete && remoteReplyComplete) {
+                            // 本地在途，但后端"断连不中断"后台线程已补全落库 → 用后端完整回复
+                            messages.value = remoteMsgs;
+                        } else if (lastIncomplete) {
+                            // 本地在途、后端尚未补全（生成刚开始 checkpoint 未提交，history 可能为 []）：
+                            // 【关键】必须保留本地缓存（至少有用户消息 + AI 占位），
+                            // 绝不能用空 history 把界面清成"新会话"
+                            messages.value = cached && cached.length > 0 ? cached.map(normalizeMessage) : remoteMsgs;
+                        } else if (cached && cached.length > 0) {
                             messages.value = cached.map(normalizeMessage);
                         } else {
-                            // 本地无缓存或缓存末尾是未完成 AI 占位：用后端历史兜底（同样需要归一化）
-                            messages.value = parseHistory(history).map(normalizeMessage);
+                            messages.value = remoteMsgs;
                         }
-                        // 【自动续接】刷新/强刷后若该会话回复尚未完成（后端仍在后台生成），
-                        // 自动轮询 history 直到完整 AI 回复落库并渲染，无需手动再次刷新。
-                        // 触发条件：本地缓存末尾是未完成占位（说明上次流被刷新中断），
-                        // 且当前 messages 最后一条仍是未完成的 AI 占位（后端尚未补全）。
+                        // 【自动续接】本地末尾是在途 AI、且当前展示最后一条仍未拿到完整正文 →
+                        // 轮询 history 直到完整回复落库。保留本地占位时 lastMsg 正是在途 AI，
+                        // 不能因 messages 被清空（旧 bug）而让启动条件失效。
                         const lastMsg = messages.value.length > 0 ? messages.value[messages.value.length - 1] : null;
-                        const replyStillIncomplete = isIncompleteAiMsg(lastMsg);
-                        if (lastIncomplete && replyStillIncomplete) {
+                        if (lastIncomplete && isIncompleteAiMsg(lastMsg)) {
                             startGenerationResume(currentThreadId.value);
+                        } else if (lastCached && lastCached.role === 'assistant') {
+                            // 兜底：本地末尾 assistant 已有部分正文（流式中途刷新），仅凭内容
+                            // 无法判断是否完成，向后端确认生成状态，仍在生成则同样启动续接
+                            const tid = currentThreadId.value;
+                            apiGetGenerationStatus(tid).then(generating => {
+                                if (generating && currentThreadId.value === tid) {
+                                    startGenerationResume(tid);
+                                }
+                            }).catch(() => {});
                         }
                     } catch (err) {
                         if (err && err.status === 403) {
@@ -1747,6 +1769,17 @@
                         // 网络/服务异常：回退本地缓存兜底，保证弱网下仍可阅读
                         const cached = cache.getMessages(currentThreadId.value);
                         messages.value = cached && cached.length > 0 ? cached.map(normalizeMessage) : [];
+                        // 弱网下 history 拉取失败也不能丢续接：本地末尾是 assistant（在途回复）时，
+                        // 仍启动轮询，网络恢复、后端落库后自动补全
+                        const lastCachedOnErr = cached && cached.length > 0 ? cached[cached.length - 1] : null;
+                        if (lastCachedOnErr && lastCachedOnErr.role === 'assistant') {
+                            const tid = currentThreadId.value;
+                            apiGetGenerationStatus(tid).then(generating => {
+                                if (generating && currentThreadId.value === tid) {
+                                    startGenerationResume(tid);
+                                }
+                            }).catch(() => {});
+                        }
                     }
                 };
 
