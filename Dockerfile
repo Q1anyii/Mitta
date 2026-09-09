@@ -11,7 +11,7 @@ FROM python:3.12-slim
 # 构建参数：CI境外环境默认官方源，国内ECS构建可传入阿里云源
 ARG APT_MIRROR=deb.debian.org
 ARG PIP_INDEX=https://pypi.org/simple
-
+#
 # 动态替换 apt 源（Debian 12 bookworm 使用 .sources 格式）
 RUN sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list.d/debian.sources && \
     sed -i "s/security.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list.d/debian.sources
@@ -73,6 +73,9 @@ RUN for pkg in mcp-server-fetch mcp-server-sqlite mcp-server-time; do \
     done
 
 # 复制项目代码
+# 2026-09-09 强制重建：此前连续 6 个提交一次性推送，CI 仅对比最后一次提交
+# （196b078 未含 Dockerfile/requirements）→ build_required=false 跳过镜像构建，
+# 服务器拉到旧镜像，GET /profile 不含 system_prompt 字段导致前端回显空值。
 COPY . .
 
 EXPOSE 8000
