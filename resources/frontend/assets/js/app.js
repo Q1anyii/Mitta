@@ -454,6 +454,18 @@
             return answer;
         }
 
+        // 从后端恢复当前用户的会话列表（刷新/换浏览器/清缓存后 localStorage 为空时的兜底）
+        async function apiListSessions() {
+            const response = await fetch(`${API_BASE}/api/chat/sessions`, {
+                headers: authHeaders()
+            });
+            syncTokenFromHeaders(response.headers);
+            handleAuthError(response);
+            if (!response.ok) throw new Error(`获取会话列表失败: ${response.status}`);
+            const json = await response.json();
+            return json && json.data ? json.data : [];
+        }
+
         async function apiGetHistory(threadId) {
             const response = await fetch(`${API_BASE}/api/chat/${threadId}/history`, {
                 headers: authHeaders()
@@ -2227,6 +2239,27 @@
                 onMounted(async () => {
                     updateLastActive();
                     refreshQuestions();
+                    // 【会话后端恢复】localStorage 会话列表为空时（刷新/换浏览器/清缓存/
+                    // 7 天 TTL 过期），从后端 checkpoint 按 user_id 恢复，避免误判为
+                    // "会话丢失"而直接新建对话
+                    if ((!sessions.value || sessions.value.length === 0) && user.value && user.value.userId) {
+                        try {
+                            const remote = await apiListSessions();
+                            if (remote && remote.length > 0) {
+                                sessions.value = remote.map(s => ({
+                                    id: s.thread_id,
+                                    title: s.title || '新会话',
+                                    messages: [],
+                                    isBlank: false,
+                                    createdAt: s.last_updated ? new Date(s.last_updated).getTime() : Date.now()
+                                }));
+                                saveSessions();
+                            }
+                        } catch (e) {
+                            // 网络异常/401 已由 handleAuthError 处理，这里静默降级到本地缓存逻辑
+                            console.warn('从后端恢复会话列表失败:', e.message);
+                        }
+                    }
                     if (!currentThreadId.value || !sessions.value.find(s => s.id === currentThreadId.value)) {
                         if (sessions.value.length > 0) {
                             currentThreadId.value = sessions.value[0].id;

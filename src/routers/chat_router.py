@@ -66,6 +66,22 @@ def get_history_session(thread_id: str, current_user: TokenData = Depends(get_cu
     return history_session
 
 
+@router.get("/api/chat/sessions")
+def list_sessions(current_user: TokenData = Depends(get_current_user)):
+    """获取当前用户的会话列表（按最后更新倒序）。
+
+    前端会话缓存只存 localStorage（7 天 TTL），刷新/换浏览器/清缓存后本地
+    列表为空会误判为"会话丢失"而新建会话。此接口从后端 checkpoint 按
+    user_id 恢复会话列表，供前端挂载时兜底重建。
+
+    Returns:
+        {"ok": true, "data": [{"thread_id", "title", "last_updated"}, ...]}
+    """
+    sessions = chat_service.get_user_sessions(str(current_user.user_id))
+    logger.info(f"用户 [{current_user.user_id}] 会话列表：{len(sessions)} 个")
+    return {"ok": True, "data": sessions}
+
+
 @router.get("/api/chat/{thread_id}/generation-status")
 def get_generation_status(thread_id: str, current_user: TokenData = Depends(get_current_user)):
     """查询该会话是否仍在后台生成回复。
