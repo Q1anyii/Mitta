@@ -1500,13 +1500,17 @@
                         // 不含前端扩展字段（blocks 穿插、reasoning 深度思考、tool_calls），
                         // 直接用后端历史会导致刷新后工具调用记录和深度思考全部丢失
                         const cached = cache.getMessages(currentThreadId.value);
-                        // 但若本地缓存最后一条是"未完成的 AI 占位"（content 为空且无 blocks，
-                        // 如流式中刷新/断连留下的空消息），说明上次回复可能已由后端后台线程
-                        // 补全写库——此时用后端 history 兜底，避免刷新后只剩用户消息。
+                        // 但若本地缓存最后一条是"未完成的 AI 占位"（流式中刷新/断连留下的
+                        // 空消息，或 catch 标记的 interrupted 中断消息），说明上次回复可能已由
+                        // 后端后台线程补全写库——此时用后端 history 兜底，避免刷新后只剩用户消息。
                         const lastCached = cached && cached.length > 0 ? cached[cached.length - 1] : null;
-                        const lastIncomplete = lastCached && lastCached.role === 'assistant'
-                            && !lastCached.content
-                            && (!lastCached.blocks || lastCached.blocks.length === 0);
+                        // 未完成 AI 判定：识别三种形态——① catch 打断标记 interrupted；
+                        // ② 占位文本（旧缓存无标记）；③ content 为空且无 blocks（流中断时的空消息）
+                        const isIncompleteAiMsg = (m) => m && m.role === 'assistant'
+                            && (m.interrupted
+                                || m.content === '（回复中断，请重新生成）'
+                                || (!m.content && (!m.blocks || m.blocks.length === 0)));
+                        const lastIncomplete = isIncompleteAiMsg(lastCached);
                         if (cached && cached.length > 0 && !lastIncomplete) {
                             messages.value = cached.map(normalizeMessage);
                         } else {
@@ -1518,9 +1522,7 @@
                         // 触发条件：本地缓存末尾是未完成占位（说明上次流被刷新中断），
                         // 且当前 messages 最后一条仍是未完成的 AI 占位（后端尚未补全）。
                         const lastMsg = messages.value.length > 0 ? messages.value[messages.value.length - 1] : null;
-                        const replyStillIncomplete = lastMsg && lastMsg.role === 'assistant'
-                            && !lastMsg.content
-                            && (!lastMsg.blocks || lastMsg.blocks.length === 0);
+                        const replyStillIncomplete = isIncompleteAiMsg(lastMsg);
                         if (lastIncomplete && replyStillIncomplete) {
                             startGenerationResume(currentThreadId.value);
                         }
@@ -1949,6 +1951,10 @@
                         // 刷新后 loadCurrentMessages 会用后端 history 兜底补全完整回复。
                         if (aiMsg) {
                             aiMsg.content = aiMsg.content || '（回复中断，请重新生成）';
+                            // 【续接标记】标记该消息为"未完成的中断回复"：content 会被写成占位
+                            // 文本（非空），自动续接的检测条件必须识别该标记而不是只看 content 是否
+                            // 为空——否则刷新后占位文本会被当作"已完成"，续接轮询永不启动。
+                            aiMsg.interrupted = true;
                             _syncTextBlock(aiMsg, aiMsg.content);
                             _syncReasoningBlock(aiMsg, aiMsg.reasoning || '');
                         }
