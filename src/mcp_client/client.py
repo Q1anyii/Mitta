@@ -248,7 +248,7 @@ class McpServerConnection:
             pass
 
 
-async def init_mcp_holders(servers: list[dict[str, Any]], timeout: int = 15) -> list[McpServerConnection]:
+async def init_mcp_holders(servers: list[dict[str, Any]], timeout: int = 120) -> list[McpServerConnection]:
     """按配置连接全部 MCP 服务器，返回连接列表。
 
     - connections[i].tools：LangChain 工具列表（供图使用）
@@ -260,7 +260,9 @@ async def init_mcp_holders(servers: list[dict[str, Any]], timeout: int = 15) -> 
 
     Args:
         servers: MCP 服务器配置列表
-        timeout: 单个服务器连接超时时间（秒），默认 15 秒。
+        timeout: 单个服务器连接超时时间（秒），默认 120 秒。
+                 冷启动时 uvx/npx 首次运行需下载依赖（数十 MB），15 秒极易超时
+                 导致全部服务器被跳过，故调大默认值。
                  防止 MCP 服务器启动后 stdio 通信无响应时阻塞整个后端启动。
     """
     async def _connect_one(cfg: dict[str, Any]) -> McpServerConnection | None:

@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=tool_loop.run_forever, daemon=True, name="mcp-tool-loop").start()
     mcp_holders = asyncio.run_coroutine_threadsafe(
         init_mcp_holders(load_mcp_server_configs()), tool_loop
-    ).result(timeout=35)
+    ).result(timeout=130)
     mcp_tools = [t for h in mcp_holders for t in h.tools]
     filtered_tools = []
     if mcp_tools:

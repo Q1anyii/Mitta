@@ -92,7 +92,8 @@
     "command": "npx",
     "args": [
       "-y",
-      "@bytebase/dbhub"
+      "@bytebase/dbhub",
+      "--demo"
     ]
   },
   {

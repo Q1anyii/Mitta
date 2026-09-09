@@ -274,7 +274,7 @@ class ChatService:
                 if self._tool_loop:
                     try:
                         connections = _asyncio.run_coroutine_threadsafe(
-                            init_mcp_holders(user_servers, timeout=20), self._tool_loop
+                            init_mcp_holders(user_servers, timeout=120), self._tool_loop
                         ).result(timeout=30)
                         user_tools = [t for conn in connections for t in conn.tools]
                         if user_tools:
