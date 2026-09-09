@@ -49,7 +49,6 @@ SERVER_TAGS = {
     "memory": ["记忆", "知识图谱", "实体", "关系", "memory", "记录"],
     "context7": ["文档", "api", "库", "版本", "参数", "context7", "最新文档", "docs"],
     "markitdown": ["转换", "markdown", "pdf", "word", "excel", "图片", "文件转", "markitdown", "转成"],
-    "playwright": ["浏览器", "网页", "点击", "自动化", "测试", "截图", "playwright", "browser", "爬取"],
     "dbhub": ["数据库", "sql", "查询", "postgres", "mysql", "dbhub", "表", "数据"],
     "crawl4ai": ["爬虫", "网页", "pdf", "抓取", "crawl", "爬取"],
     "chroma": ["向量", "知识库", "检索", "chroma", "相似", "embedding", "集合"],

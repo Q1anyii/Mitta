@@ -50,7 +50,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @modelcontextprotocol/server-sequential-thinking \
         @modelcontextprotocol/server-memory \
         @upstash/context7-mcp \
-        @playwright/mcp \
         @bytebase/dbhub \
     && npm ls -g --depth=0 \
     && echo "NPM_MCP_PACKAGES_INSTALLED_OK" 

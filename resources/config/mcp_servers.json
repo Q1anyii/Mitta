@@ -78,15 +78,6 @@
     ]
   },
   {
-    "name": "playwright",
-    "type": "stdio",
-    "command": "npx",
-    "args": [
-      "-y",
-      "@playwright/mcp"
-    ]
-  },
-  {
     "name": "dbhub",
     "type": "stdio",
     "command": "npx",

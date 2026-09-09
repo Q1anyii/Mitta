@@ -62,7 +62,6 @@ SAFE_MCP_PACKAGES = {
     "@octopusdeploy/mcp-server",
     "@opusclip/mcp",
     "@palisadeemail/mcp",
-    "@playwright/mcp",
     "@plori/cli",
     "@postman/postman-mcp-server",
     "@pubnub/mcp",
