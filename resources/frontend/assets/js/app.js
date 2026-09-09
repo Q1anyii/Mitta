@@ -1482,10 +1482,17 @@
                         // 不含前端扩展字段（blocks 穿插、reasoning 深度思考、tool_calls），
                         // 直接用后端历史会导致刷新后工具调用记录和深度思考全部丢失
                         const cached = cache.getMessages(currentThreadId.value);
-                        if (cached && cached.length > 0) {
+                        // 但若本地缓存最后一条是"未完成的 AI 占位"（content 为空且无 blocks，
+                        // 如流式中刷新/断连留下的空消息），说明上次回复可能已由后端后台线程
+                        // 补全写库——此时用后端 history 兜底，避免刷新后只剩用户消息。
+                        const lastCached = cached && cached.length > 0 ? cached[cached.length - 1] : null;
+                        const lastIncomplete = lastCached && lastCached.role === 'assistant'
+                            && !lastCached.content
+                            && (!lastCached.blocks || lastCached.blocks.length === 0);
+                        if (cached && cached.length > 0 && !lastIncomplete) {
                             messages.value = cached.map(normalizeMessage);
                         } else {
-                            // 本地无缓存时才用后端历史兜底（同样需要归一化，补 blocks/reasoning）
+                            // 本地无缓存或缓存末尾是未完成 AI 占位：用后端历史兜底（同样需要归一化）
                             messages.value = parseHistory(history).map(normalizeMessage);
                         }
                     } catch (err) {
@@ -1835,7 +1842,16 @@
                             scrollToBottom();
                             return;
                         }
-                        messages.value.pop();
+                        // 非主动停止（网络中断/页面刷新/服务端异常）：不再 pop 掉 AI 消息。
+                        // 此前 pop + saveMessages 会把本地缓存里的 AI 回复删掉，刷新后只剩
+                        // 用户消息——"刷新后会话内容清空"的根因之一。现在保留 AI 占位消息，
+                        // 后端已改为断连不中断生成（后台线程跑完图提交 checkpoint），
+                        // 刷新后 loadCurrentMessages 会用后端 history 兜底补全完整回复。
+                        if (aiMsg) {
+                            aiMsg.content = aiMsg.content || '（回复中断，请重新生成）';
+                            _syncTextBlock(aiMsg, aiMsg.content);
+                            _syncReasoningBlock(aiMsg, aiMsg.reasoning || '');
+                        }
                         saveMessages();
                         // 发送失败：恢复附件列表，让用户可以重试
                         if (pendingFileIds.length > 0) {

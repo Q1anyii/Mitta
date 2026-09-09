@@ -483,8 +483,13 @@ class ChatService:
     def stream(self, user_id, thread_id, input_str, user_info=None, file_ids: list[int] = None, thinking_mode: bool = False, reasoning_effort: str = "low"):
         """流式对话生成（SSE）。
 
-        编排逻辑：拼接文件内容 → 构建 config → 遍历图输出 → 过滤节点 → 格式化 SSE 事件。
+        编排逻辑：拼接文件内容 → 构建 config → 后台线程遍历图 → 队列转发 → 过滤节点 → 格式化 SSE 事件。
         节点过滤和 SSE 格式化由模块级 _process_graph_chunk / _format_sse 处理。
+
+        【断连不中断生成】图执行放在独立守护线程，SSE 生成器只消费队列。
+        客户端刷新/断开（GeneratorExit）时只停止推送，后台线程继续跑完图并
+        提交 checkpoint——否则 AI 回复（含工具调用链）会随连接断开被 LangGraph
+        取消执行，刷新后历史里只剩用户消息（"刷新后会话内容清空"的根因）。
 
         Args:
             user_id: 用户 ID
@@ -498,6 +503,9 @@ class ChatService:
         Yields:
             SSE 事件字符串（"data: ...\n\n" 格式）
         """
+        import queue as _queue
+        import threading as _threading
+
         # 1. 拼接用户输入与上传文件解析内容（文件内容作为上下文传入 LLM）
         if file_ids:
             input_str = self._build_input_with_files(input_str, file_ids, user_id)
@@ -508,29 +516,48 @@ class ChatService:
 
         config = self._build_stream_config(user_id, thread_id, user_info, thinking_mode, reasoning_effort)
 
-        # 2. 流式输出：遍历用户专属图（含用户自定义 MCP 工具），无配置时自动降级全局图
-        # 必须走 _get_user_graph，不能直接用 self.main_graph，否则数据库中的用户
-        # MCP 配置不会被加载（invoke 非流式路径已正确使用，stream 此前漏掉导致工具=0）
+        # 2. 后台线程跑图：chunk → SSE 事件字符串 → 队列
+        #    图必须走 _get_user_graph（用户专属图，含自定义 MCP 工具），
+        #    不能直接用 self.main_graph，否则数据库中的用户 MCP 配置不会被加载
+        #    （invoke 非流式路径已正确使用，stream 此前漏掉导致工具=0）
+        event_queue: _queue.Queue = _queue.Queue()
+        _SENTINEL = object()
+
+        def _run_graph():
+            try:
+                graph = self._get_user_graph(user_id)
+                for chunk, meta in graph.stream(
+                    {"input_str": input_str},
+                    config=config,
+                    stream_mode="messages",
+                ):
+                    event = _process_graph_chunk(chunk, meta)
+                    if event:  # None 表示该 chunk 被过滤（classify/memory 节点）
+                        event_queue.put(event)
+                event_queue.put(_SENTINEL)
+            except Exception as e:
+                # 图执行异常：记录完整堆栈并推送错误事件，
+                # 避免 SSE 静默断流导致前端报"发送消息失败"而日志无迹
+                logger.exception(f"对话流生成异常（thread_id={thread_id}）：{e}")
+                event_queue.put(_format_sse({"error": str(e), "error_type": type(e).__name__}))
+                event_queue.put(_SENTINEL)
+
+        worker = _threading.Thread(target=_run_graph, daemon=True, name=f"mcp-stream-{thread_id[-12:]}")
+        worker.start()
+
+        # 3. 主生成器：消费队列转发 SSE。客户端断开时只退出推送，
+        #    不 stop 后台线程——图继续执行并提交 checkpoint，刷新后历史完整。
         try:
-            graph = self._get_user_graph(user_id)
-            for chunk, meta in graph.stream(
-                {"input_str": input_str},
-                config=config,
-                stream_mode="messages",
-            ):
-                event = _process_graph_chunk(chunk, meta)
-                if event:  # None 表示该 chunk 被过滤（classify/memory 节点）
-                    yield event
+            while True:
+                item = event_queue.get()
+                if item is _SENTINEL:
+                    break
+                yield item
             yield _format_sse("[DONE]")
         except GeneratorExit:
-            # 客户端断开连接时 StreamingResponse 会关闭生成器，这里静默退出即可
+            # 客户端断开连接时 StreamingResponse 会关闭生成器：静默退出，
+            # 后台 worker 线程继续跑完图（daemon 线程，进程退出时自动终止）
             raise
-        except Exception as e:
-            # 图执行异常：记录完整堆栈并向前端推送错误事件，
-            # 避免 SSE 静默断流导致前端报"发送消息失败"而日志无迹
-            logger.exception(f"对话流生成异常（thread_id={thread_id}）：{e}")
-            yield _format_sse({"error": str(e), "error_type": type(e).__name__})
-            yield _format_sse("[DONE]")
 
     def get_history_session(self, thread_id: str):
         config = {
