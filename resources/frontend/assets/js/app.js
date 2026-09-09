@@ -1928,12 +1928,27 @@
 
                 const parseHistory = (history) => {
                     if (!Array.isArray(history)) return [];
-                    return history.map(item => normalizeMessage({
-                        id: generateId(), // 唯一 key，避免数组变更时 DOM 错乱
-                        role: item.role === 'human' ? 'user' : 'assistant',
-                        content: extractContentText(item.content),
-                        time: formatTime()
-                    }));
+                    const result = [];
+                    for (const item of history) {
+                        // 后端 history 只存 {role, content}，不含 tool_calls 结构。
+                        // LangGraph 一次工具调用的消息序列为：
+                        //   human → ai(空正文, 仅发起 tool_call) → tool(结果JSON) ×N → ai(最终正文)
+                        // 这里必须过滤两类，否则刷新/续接后会把工具原始 JSON 和空中转消息
+                        // 渲染成一条条独立"AI 助手"气泡：
+                        // ① ToolMessage（role='tool'，工具结果）与 SystemMessage（系统提示词）不展示
+                        if (item.role === 'tool' || item.role === 'system') continue;
+                        const role = item.role === 'human' ? 'user' : 'assistant';
+                        const content = extractContentText(item.content) || '';
+                        // ② 无正文的中转 AIMessage（仅挂载 tool_calls、content 为空）没有可展示内容
+                        if (role === 'assistant' && !content.trim()) continue;
+                        result.push(normalizeMessage({
+                            id: generateId(), // 唯一 key，避免数组变更时 DOM 错乱
+                            role,
+                            content,
+                            time: formatTime()
+                        }));
+                    }
+                    return result;
                 };
 
                 const saveSessions = () => {
