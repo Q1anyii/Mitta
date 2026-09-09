@@ -57,5 +57,40 @@
     "args": [
       "mcp-server-time"
     ]
+  },
+  {
+    "name": "markitdown",
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "markitdown-mcp"
+    ]
+  },
+  {
+    "name": "context7",
+    "type": "stdio",
+    "command": "npx",
+    "args": [
+      "-y",
+      "@upstash/context7-mcp"
+    ]
+  },
+  {
+    "name": "playwright",
+    "type": "stdio",
+    "command": "npx",
+    "args": [
+      "-y",
+      "@playwright/mcp"
+    ]
+  },
+  {
+    "name": "dbhub",
+    "type": "stdio",
+    "command": "npx",
+    "args": [
+      "-y",
+      "@bytebase/dbhub"
+    ]
   }
 ]

@@ -36,12 +36,18 @@ SAFE_MCP_PACKAGES = {
     "@modelcontextprotocol/server-sequential-thinking",
     "@modelcontextprotocol/server-memory",
     "@modelcontextprotocol/server-puppeteer",
+    # npm 生态（新增，2026-09 核验存在）
+    "@upstash/context7-mcp",   # Context7 实时文档（upstash）
+    "@playwright/mcp",         # Playwright 浏览器自动化（microsoft）
+    "@bytebase/dbhub",         # DBHub 多数据库统一查询（bytebase）
     # Python 生态（uvx 启动）
     "mcp-server-fetch",
     "mcp-server-git",
     "mcp-server-sqlite",
     "mcp-server-memory",
     "mcp-server-time",
+    # Python 生态（新增，2026-09 核验存在）
+    "markitdown-mcp",          # MarkItDown 文件转 Markdown（microsoft）
 }
 
 # 用户文件系统根目录（filesystem MCP 只能访问此目录下的文件）
