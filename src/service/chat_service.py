@@ -601,6 +601,50 @@ class ChatService:
             )
         return history_session
 
+    def rollback_session(self, thread_id: str, query: str):
+        """回滚会话到指定轮次：删除该轮用户消息及其后的全部消息（旧 AI 回复、工具链）。
+
+        供前端"重新生成"调用：重新生成前先删除后端 checkpoint 中该轮的旧回复，
+        避免旧回复残留在历史中导致新回复叠加、token 重复累积。
+
+        Args:
+            thread_id: 会话 ID
+            query: 该轮用户消息文本（定位锚点，取最后一个匹配项）
+
+        Returns:
+            (flag: bool, message: str)
+        """
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            snapshot = self.main_graph.get_state(config)
+            if not snapshot or len(snapshot) == 0:
+                return False, f"会话:{thread_id}记录不存在"
+            messages = snapshot.values.get("messages", [])
+            if not messages:
+                return False, "会话无消息可回滚"
+
+            # 从后往前找最后一个 content 等于 query 的 HumanMessage（该轮起点）
+            target_idx = None
+            for i in range(len(messages) - 1, -1, -1):
+                m = messages[i]
+                if m.type == "human" and str(m.content) == query:
+                    target_idx = i
+                    break
+            if target_idx is None:
+                return False, f"未找到该轮用户消息（query 前 20 字：{query[:20]}）"
+
+            # 删除该轮起点及其后的所有消息（AI 回复、ToolMessage 工具链）
+            from langgraph.graph.message import RemoveMessage
+            remove = [RemoveMessage(id=m.id) for m in messages[target_idx:]]
+            # update_state 触发 add_messages reducer：RemoveMessage 删除指定 id 的消息，
+            # 其他消息保留——不能直接传裁剪后列表（add_messages 是追加语义，不会覆盖）
+            self.main_graph.update_state(config, {"messages": remove})
+            logger.info(f"会话:{thread_id} 回滚成功：删除 {len(remove)} 条消息（第 {target_idx} 条起）")
+            return True, f"已回滚该轮回复，删除 {len(remove)} 条消息"
+        except Exception as e:
+            logger.error(f"回滚会话{thread_id}异常：{e}", exc_info=True)
+            return False, f"回滚失败：{str(e)}"
+
 
 
     def get_thread_user_id(self, thread_id: str):

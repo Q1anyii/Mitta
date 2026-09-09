@@ -15,8 +15,13 @@ from loguru import logger
 
 from graphs.state import OverAllState
 from graphs.tool_filter import ToolFilter
-from graphs.utils.history_repair import _repair_history
+from graphs.utils.history_repair import _repair_history, _trim_history
 from graphs.utils.user_profile import _ensure_username_profile, _get_username
+
+# 检索资料最大文档数：超出丢弃（优先保留最相关的排前文档）
+MAX_RETRIEVAL_DOCS = 5
+# 单篇检索文档最大字符数：超出截断，防止超长文档撑爆单次请求 token
+MAX_DOC_CHARS = 2000
 
 
 def llm_node(
@@ -66,7 +71,10 @@ def llm_node(
             for doc in raw_docs
         ]
         if docs:
-            context = "\n\n".join(f"[文档 {i + 1}] {doc}" for i, doc in enumerate(docs[:5]))
+            # 防 token 膨胀：最多取前 5 篇、每篇截断到 2000 字符（保留头部与关键词），
+            # 检索结果本身已按相关性降序，截断不会丢失最相关部分
+            docs = [d[:MAX_DOC_CHARS] for d in docs[:MAX_RETRIEVAL_DOCS]]
+            context = "\n\n".join(f"[文档 {i + 1}] {doc}" for i, doc in enumerate(docs))
         else:
             context = "（知识库中未检索到相关内容）"
         user_content = (
@@ -85,7 +93,10 @@ def llm_node(
     long_term = _ensure_username_profile(store, user_id, username)
 
     # ── 3. 短期记忆：checkpointer 按 thread_id 恢复的历史对话 ──
-    history = state.get("messages", [])
+    # 滑动窗口裁剪：历史随轮数线性增长，若全量传入 LLM，每轮 token 消耗随消息数
+    # 平方级膨胀（N 轮 × 每轮全量 N 条）。只保留最近窗口内消息（默认 30 条 ≈ 6 轮），
+    # 且保证 tool_calls/ToolMessage 配对完整，早期消息直接丢弃。
+    history = _trim_history(list(state.get("messages", [])))
 
     # ── 4. 组装 system prompt：基础默认 + 用户自定义 + 长期记忆 ──
     # get_user_system_prompt 内部从 MySQL user_profile 表按 user_id 读取用户自定义内容

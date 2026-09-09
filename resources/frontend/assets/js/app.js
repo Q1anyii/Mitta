@@ -507,6 +507,30 @@
             return response.json();
         }
 
+        // 回滚会话到指定轮次：删除该轮用户消息及其后的旧 AI 回复/工具链（重新生成前置步骤）。
+        // 后端以 query 文本为锚点定位该轮起点（最后一个匹配的 HumanMessage），
+        // 删除后 checkpoint 不再残留旧回复，重新生成时上下文干净、token 不重复累积。
+        async function apiRollbackSession(threadId, query) {
+            const response = await fetch(`${API_BASE}/api/chat/${threadId}/rollback`, {
+                method: 'POST',
+                headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query, thread_id: threadId })
+            });
+            syncTokenFromHeaders(response.headers);
+            handleAuthError(response);
+            if (response.status === 403) {
+                const data = await response.json().catch(() => ({}));
+                const err = new Error(data.detail || '无权操作该会话（会话可能属于其他账号）');
+                err.status = 403;
+                throw err;
+            }
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || data.detail || `回滚失败: ${response.status}`);
+            }
+            return response.json();
+        }
+
         async function apiHealthCheck() {
             try {
                 const response = await fetch(`${API_BASE}/health`, { method: 'GET' });
@@ -1369,12 +1393,31 @@
                     }
                 }
 
-                function regenerateMessage(msg) {
+                async function regenerateMessage(msg) {
                     // 找到这条 AI 消息对应的上一条用户消息
                     const idx = messages.value.findIndex(m => m.id === msg.id);
                     if (idx <= 0) return;
                     const userMsg = messages.value[idx - 1];
                     if (!userMsg || userMsg.role !== 'user') return;
+                    if (isLoading.value) {
+                        showToast('请等待当前回复完成后再重新生成', 'warning');
+                        return;
+                    }
+                    // 【后端回滚】先删除 checkpoint 中该轮的旧 AI 回复与工具链，
+                    // 否则旧回复残留历史，新生成会与旧回复叠加、token 重复累积。
+                    // 以用户消息文本为锚点定位轮次（前端消息 id 与后端 checkpoint id 不对应）。
+                    try {
+                        await apiRollbackSession(currentThreadId.value, userMsg.content);
+                    } catch (e) {
+                        if (e && e.status === 403) {
+                            showToast(e.message, 'error');
+                            return;
+                        }
+                        // 回滚失败不阻塞本地重新生成（本地 splice 仍生效），
+                        // 但提示用户后端历史可能残留旧回复
+                        console.warn('回滚失败，继续本地重新生成:', e);
+                        showToast('后端历史回滚失败，新回复可能与旧回复叠加', 'warning');
+                    }
                     // 删除 AI 回复和用户消息，重新发送
                     messages.value.splice(idx - 1, 2);
                     saveMessages();

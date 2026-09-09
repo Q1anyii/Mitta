@@ -99,6 +99,27 @@ def delete_session_by_id(thread_id: str, current_user: TokenData = Depends(get_c
         return Response.failed(response)
 
 
+@router.post("/api/chat/{thread_id}/rollback")
+def rollback_chat_session(thread_id: str, request_body: ChatRequest,
+                          current_user: TokenData = Depends(get_current_user)):
+    """回滚会话到指定轮次（供前端"重新生成"按钮使用）。
+
+    删除该轮用户消息及其后的全部消息（旧 AI 回复、工具调用链），
+    之后重新生成时 checkpoint 历史中不再残留旧回复，避免 token 重复累积与回复叠加。
+    """
+    # 会话归属校验（与 history/delete 一致）
+    owner = chat_service.get_thread_user_id(thread_id)
+    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="无权操作该会话")
+    query = request_body.query
+    if not query:
+        return Response.failed("query 不能为空")
+    flag, message = chat_service.rollback_session(thread_id, query)
+    if flag:
+        return Response.success(message)
+    return Response.failed(message)
+
+
 @router.post("/api/chat/{thread_id}/stop")
 def stop_chat_response(thread_id: str, current_user: TokenData = Depends(get_current_user)):
     """标记停止当前会话的回复生成。
