@@ -25,8 +25,7 @@ REQUIRED_ENV_VARS = [
     ("DEEPSEEK_API_KEY", "DeepSeek 平台 API 密钥"),
     ("SILICONFLOW_API_KEY", "SiliconFlow 平台 API 密钥（Embedding + 重排）"),
     ("SILICONFLOW_BASE_URL", "SiliconFlow 接口地址"),
-    ("POSTGRESQL_DB_URL", "PostgreSQL 连接串（LangGraph Checkpointer/Store）"),
-    ("MYSQL_DB_URL", "MySQL 连接串（用户表 userInfo）"),
+    ("POSTGRESQL_DB_URL", "PostgreSQL 连接串（LangGraph Checkpointer/Store + 用户表）"),
     ("REDIS_DB_URL", "Redis 连接串（检索缓存 + JWT 登录态）"),
     ("JWT_SECRET_KEY", "JWT 签名密钥"),
 ]

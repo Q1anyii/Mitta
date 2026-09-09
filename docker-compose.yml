@@ -1,7 +1,7 @@
 # ============================================================
 # docker-compose.yml — Mitta AI 智能助理一键部署
 # 启动全部服务：docker-compose up -d
-# 仅启动基础设施：docker-compose up -d postgres mysql redis etcd minio milvus
+# 仅启动基础设施：docker-compose up -d postgres redis etcd minio milvus
 # 停止：docker-compose down
 # 查看日志：docker-compose logs -f api
 # ============================================================
@@ -25,26 +25,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-root}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ==================== MySQL ====================
-  # 用户表 userInfo（登录/注册）+ user_profile（扩展信息）+ user_files（上传文件）
-  mysql:
-    image: mysql:8.0
-    container_name: mitta-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-1234}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-mitta}
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-1234}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -150,7 +130,6 @@ services:
     environment:
       # 数据库连接串（容器内使用服务名作为主机名）
       POSTGRESQL_DB_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-1234}@postgres:5432/${POSTGRES_DB:-agentproject}?sslmode=disable
-      MYSQL_DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-1234}@mysql:3306/${MYSQL_DATABASE:-mitta}
       REDIS_DB_URL: redis://redis:6379/0
       # 大模型配置（从 .env 读取，不在此处硬编码）
       HUNYUAN_API_KEY: ${HUNYUAN_API_KEY}
@@ -169,8 +148,6 @@ services:
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-AgentProject}
     depends_on:
       postgres:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -209,8 +186,6 @@ services:
 # ==================== 数据卷 ====================
 volumes:
   postgres_data:
-    driver: local
-  mysql_data:
     driver: local
   redis_data:
     driver: local

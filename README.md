@@ -13,6 +13,7 @@
   - 长期记忆：PostgresStore 按 `user_id` 保存用户档案（跨会话生效）
 - **用户自定义 System Prompt**：支持用户在个人信息界面上传自定义设定文件，与默认 Prompt 合并后作用于全局
 - **文件上传与解析**：支持上传多种格式文件，上传后立即解析文本内容，发送消息时与用户输入一并送入 LLM
+- **知识库增量更新 API**：通过 HTTP 接口向知识库增量上传文档（Chroma 向量 + RedisSearch BM25 双通道自动入库），支持文档列表查询、按来源/按文档删除，无需登录服务器跑脚本
 - **流式输出**：`stream_mode="messages"` 逐 token 输出，前端打字机效果；工具调用时实时显示加载状态
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
@@ -31,7 +32,7 @@
 | Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                                |
 | 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                                       |
 | 向量库       | ChromaDB（默认，免部署）/ Milvus（可插拔，Protocol 抽象，零业务改动切换）                                          |
-| 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store）+ MySQL 8.0（用户表 userInfo / user_profile / user_files） |
+| 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store + 用户表 userinfo / user_profile / user_files） |
 | 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                               |
 | MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                   |
 | Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                                      |
@@ -238,6 +239,7 @@ AgentProject/
 │   │   ├── auth_router.py                # 登录/注册/密码找回/登出（Redis 即时失效）
 │   │   ├── chat_router.py                # 对话(SSE)/历史/删除/停止/文件上传
 │   │   ├── user_router.py                # 个人资料/密码/Prompt/主题/记忆/文件
+│   │   ├── knowledge_router.py           # 知识库增量 API（upload/documents/delete）
 │   │   ├── mcp_router.py                 # 用户级 MCP 配置读写 + 热重载（/api/mcp/reload）
 │   │   └── system_router.py              # 健康检查/认证页面/SPA 兜底（必须最后注册）
 │   ├── schemas/                          # Pydantic 请求/响应模型
@@ -249,10 +251,11 @@ AgentProject/
 │   │       └── login_schema.py
 │   ├── service/                          # 业务服务层
 │   │   ├── chat_service.py               # 对话编排：用户级图缓存(hash热重载)/流式输出/文件解析缓存
-│   │   ├── login_service.py              # 用户登录/注册（MySQL 连接池）
-│   │   ├── user_profile_service.py       # 用户扩展信息（头像/风格/Prompt/主题）
+│   │   ├── login_service.py              # 用户登录/注册（PostgreSQL 连接池）
+│   │   ├── user_profile_service.py       # 用户扩展信息（头像/风格/Prompt/主题/MCP 配置）
 │   │   ├── mcp_config_service.py         # 用户级 MCP 配置（PostgreSQL 存储，按用户隔离，安全校验+路径转换）
-│   │   ├── file_upload_service.py        # 文件上传（base64 存 MySQL）/文本解析
+│   │   ├── file_upload_service.py        # 文件上传（base64 存 PostgreSQL）/文本解析
+│   │   ├── knowledge_service.py          # 知识库增量服务（文档入库/列表/删除，向量+BM25 双通道）
 │   │   └── cache_service.py              # Redis 缓存/LSH 向量检索/重排验证
 │   ├── utils/                            # 工具函数
 │   │   ├── jwt_utils.py                  # JWT 签发/验证/自动续签/登出失效/密码哈希
@@ -286,10 +289,12 @@ AgentProject/
 │   └── chroma_db/                        # ChromaDB 持久化目录（Milvus 模式下不用）
 ├── tests/                                # 单元测试
 ├── docs/                                 # 项目文档（API.md / devlog / ci-flow.html）
+├── scripts/                              # 运维脚本
+│   └── migrate_mysql_to_pg.py            # 一次性数据迁移脚本（MySQL → PostgreSQL 存量用户数据）
 ├── .env.example                          # 环境变量模板
 ├── requirements.txt                      # Python 依赖
 ├── Dockerfile                            # 后端容器镜像
-├── docker-compose.yml                    # 一键部署（PostgreSQL+MySQL+Redis+API+Nginx，ChromaDB 免 Milvus）
+├── docker-compose.yml                    # 一键部署（PostgreSQL+Redis+API+Nginx，ChromaDB 免 Milvus）
 └── README.md
 ```
 
@@ -299,7 +304,6 @@ AgentProject/
 
 - Python 3.13+
 - PostgreSQL 16+
-- MySQL 8.0+
 - Redis 7+
 - 向量库：默认 ChromaDB（免部署，api 服务不硬依赖 Milvus）；如需 Milvus 2.x 另行部署
 - Node.js（MCP stdio 服务器需要 npx/uvx）
@@ -324,21 +328,20 @@ cp .env.example .env
 | --------------------- | ---------------------------------- |
 | `DEEPSEEK_API_KEY`    | DeepSeek API 密钥（主模型 + RAGAS 评判）    |
 | `SILICONFLOW_API_KEY` | 硅基流动 API 密钥（Embedding + 重排）        |
-| `POSTGRESQL_DB_URL`   | PostgreSQL 连接串（Checkpointer/Store） |
-| `MYSQL_DB_URL`        | MySQL 连接串（用户表）                     |
+| `POSTGRESQL_DB_URL`   | PostgreSQL 连接串（Checkpointer/Store + 用户表） |
 | `REDIS_DB_URL`        | Redis 连接串                          |
 | `JWT_SECRET_KEY`      | JWT 签名密钥（随机强密钥）                    |
 
 ### 3. 启动基础设施
 
 ```bash
-# api 核心依赖：PostgreSQL + MySQL + Redis
-docker-compose up -d postgres mysql redis
+# api 核心依赖：PostgreSQL + Redis
+docker-compose up -d postgres redis
 # 如需 Milvus 向量库（可选）：
 docker-compose up -d etcd minio milvus
 ```
 
-或手动启动各服务。MySQL 需创建数据库 `mitta`，PostgreSQL 需创建数据库 `mitta`（表由服务启动时自动创建）。**低配服务器（<2GB 内存）推荐使用 ChromaDB 免 Milvus 部署**，见下方向量库配置。
+或手动启动各服务。PostgreSQL 需创建数据库 `agentproject`（表由服务启动时自动创建，用户表 userinfo / user_profile / user_files 亦由各服务自动建表）。**低配服务器（<2GB 内存）推荐使用 ChromaDB 免 Milvus 部署**，见下方向量库配置。
 
 ### 4. 配置向量库
 
@@ -405,12 +408,32 @@ docker-compose up -d etcd minio milvus
 
 ### 6. 知识库入库（可选）
 
+入库脚本同时写入向量库（向量索引）和 RedisSearch（BM25 全文索引），两者用相同 doc_id 对齐，RRF 融合时靠 id 匹配。
+
+**方式一：脚本全量入库**（初次建库推荐）
+
 ```bash
 cd src
 python ../resources/knowledge-base/ingest_knowledge.py
 ```
 
-入库脚本同时写入向量库（向量索引）和 RedisSearch（BM25 全文索引），两者用相同 doc_id 对齐，RRF 融合时靠 id 匹配。
+**方式二：HTTP 接口增量入库**（日常维护推荐，无需登录服务器）
+
+| 方法     | 路径                                  | 说明                                  |
+| ------ | ----------------------------------- | ----------------------------------- |
+| POST   | `/api/knowledge/upload`             | 上传文档入库（.md/.txt/.pdf，≤10MB，双通道自动写入） |
+| GET    | `/api/knowledge/documents`          | 列出知识库全部文档（按来源聚合，含 chunk 数）          |
+| DELETE | `/api/knowledge/source/{source}`    | 删除指定来源文件的全部 chunk                 |
+| DELETE | `/api/knowledge/documents/{doc_id}` | 删除单个文档 chunk                       |
+
+```bash
+# 示例：增量上传一篇文档（需 JWT）
+curl -X POST http://localhost:8000/api/knowledge/upload \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@docs/new-article.md"
+```
+
+重复上传同一文档时基于内容哈希生成 doc_id 自动覆盖更新，不产生重复；BM25 索引自动覆盖新写入的 `kb:doc:*` 哈希，无需重建。
 
 ### 7. 启动后端
 
@@ -478,6 +501,15 @@ nginx
 | GET     | `/health`         | 健康检查                  |
 | GET     | `/mcp`            | 内置 MCP 服务器端点（FastMCP） |
 
+### 知识库
+
+| 方法     | 路径                                  | 说明                                  |
+| ------ | ----------------------------------- | ----------------------------------- |
+| POST   | `/api/knowledge/upload`             | 上传文档增量入库（.md/.txt/.pdf，双通道写入）      |
+| GET    | `/api/knowledge/documents`          | 知识库文档列表（按来源聚合，含总 chunk 数）          |
+| DELETE | `/api/knowledge/source/{source}`    | 按来源删除全部 chunk                     |
+| DELETE | `/api/knowledge/documents/{doc_id}` | 按 doc_id 删除单个 chunk                |
+
 ## 核心设计说明
 
 ### MCP 工具常驻事件循环
@@ -486,7 +518,7 @@ MCP 工具通过 `langchain_mcp_adapters` 加载为 async 工具，闭包捕获�
 
 - 启动时创建专用守护线程运行独立事件循环（`mcp-tool-loop`），MCP 连接建立与工具调用全部提交到该循环（`asyncio.run_coroutine_threadsafe`）
 - `make_sync_tool` 将 async 工具包装为同步 StructuredTool，含 30 秒调用超时，超时由 ToolNode 转错误消息，不中断对话链路
-- 单个 MCP 服务器连接失败不影响其他服务器（15 秒连接超时 + 故障降级跳过）
+- 单个 MCP 服务器连接失败不影响其他服务器（120 秒连接超时 + 故障降级跳过；冷启动时 uvx/npx 首次需下载依赖，超时过短易导致全部服务器被跳过，故取较大值）
 - MCP 工具按服务器名注入 tags（`SERVER_TAGS` 映射），供工具筛选规则层命中
 - 关闭时按序在工具循环内释放 MCP 子进程连接，避免资源泄漏
 
@@ -531,7 +563,7 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 
 ### 文件上传与解析
 
-1. 前端上传文件 → `POST /api/chat/upload` → 保存到 MySQL `user_files` 表（base64 编码，单文件上限 10MB）
+1. 前端上传文件 → `POST /api/chat/upload` → 保存到 PostgreSQL `user_files` 表（base64 编码，单文件上限 10MB）
 2. 保存后立即调用 `chat_service.parse_and_cache_file()` 解析文本（阻塞执行，接口返回即解析完成）
 3. 解析结果缓存到内存 `_file_content_cache`（key=`{user_id}:{file_id}`），避免重复解析
 4. 发送消息时前端传 `file_ids` → 后端从缓存读取文件内容 → 以"【文件名】+内容"格式拼接到 `input_str` → 传入 LLM
@@ -605,7 +637,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | -------- | -------- | ------ |
 | `tests/test_config.py` | 环境变量加载/校验/布尔解析 | 18 |
 | `tests/test_jwt_utils.py` | JWT 签发/验证/过期/密码哈希(bcrypt) | 14 |
-| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/MySQL int 范围 | 11 |
+| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/int 范围 | 11 |
 
 **运行方式**：
 
@@ -641,14 +673,13 @@ docker-compose up -d
 | ---------- | --------- | ------------------ |
 | Nginx      | 80/443    | 前端 + API 统一入口（HTTPS） |
 | FastAPI    | 8000      | 后端 API（直接访问）       |
-| PostgreSQL | 5432      | Checkpointer/Store/MCP配置 |
-| MySQL      | 3306      | 用户数据               |
+| PostgreSQL | 5432      | Checkpointer/Store/MCP配置/用户表 |
 | Redis      | 6379/8001 | 缓存 + RedisSearch BM25  |
 | Milvus     | 19530     | 向量库（可选，api 不硬依赖）  |
 | etcd       | 2379      | Milvus 依赖（可选）       |
 | MinIO      | 9000/9001 | Milvus 依赖（可选）       |
 
-> **低配服务器方案**：1核2GB 以下服务器建议停用 Milvus/etcd/MinIO，将 `resources/config/vector_db.json` 改为 `chroma` 类型，仅运行 api+nginx+postgres+mysql+redis 五个容器。
+> **低配服务器方案**：1核2GB 以下服务器建议停用 Milvus/etcd/MinIO，将 `resources/config/vector_db.json` 改为 `chroma` 类型，仅运行 api+nginx+postgres+redis 四个容器。
 
 ### 仅启动后端
 

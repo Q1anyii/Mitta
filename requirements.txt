@@ -38,15 +38,11 @@ bcrypt==4.2.1
 #   redis(6文件) — 缓存 + BM25(RedisSearch) + JWT + 限流
 #   pymilvus(3文件) — 默认向量库
 #   chromadb(4文件) — 备选向量库（init.py顶层导入，必须保留）
-#   pymysql(5文件) — MySQL 用户库
-#   DBUtils(3文件) — MySQL 连接池
-#   psycopg(2文件) + psycopg-pool(5文件) — PostgreSQL Checkpointer/Store
+#   psycopg(2文件) + psycopg-pool(5文件) — PostgreSQL Checkpointer/Store/用户表
 # =========================================================
 redis==8.1.0
 pymilvus==2.6.12
 chromadb==1.5.9
-pymysql==1.2.0
-DBUtils==3.1.2
 psycopg[binary]==3.3.3
 psycopg-pool==3.3.0
 

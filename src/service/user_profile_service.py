@@ -1,18 +1,18 @@
 # ============================================================
 # 用户扩展信息服务层
 # 作用：管理用户个人信息（头像、助手风格、自定义 system prompt、主题、MCP 配置）
-# 存储：MySQL user_profile 表（与 userInfo 表通过 user_id 关联）
+# 存储：PostgreSQL user_profile 表（与 userinfo 表通过 user_id 关联）
+# 说明：已从 MySQL 迁移到 PostgreSQL，连接池与 chat_service / login_service 一致
 # ============================================================
 
 import json
-from datetime import datetime
 from typing import Optional, Dict, Any
 
-import pymysql
-from dbutils.pooled_db import PooledDB
 from loguru import logger
 from dotenv import load_dotenv
 import os
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 load_dotenv()
 
@@ -20,117 +20,82 @@ load_dotenv()
 class UserProfileService:
     """用户扩展信息服务。
 
-    与 LoginService 共用 MySQL 连接池思路，但独立管理 user_profile 表。
+    与 LoginService 共用 PostgreSQL 连接池思路，但独立管理 user_profile 表。
     所有方法均为同步实现，FastAPI 路由层用普通 def 自动放入线程池。
     """
 
     def __init__(self):
-        self._pool: Optional[PooledDB] = None
+        self._pool: Optional[ConnectionPool] = None
 
     def open(self):
         """初始化连接池（与 ChatService.open() 同期调用）。"""
         if self._pool:
             return
-        db_url = os.getenv("MYSQL_DB_URL")
-        # 解析 mysql+pymysql://user:pass@host:port/dbname
-        # 格式：mysql+pymysql://root:1234@127.0.0.1:3306/Mitta
-        rest = db_url.split("://", 1)[1]
-        user_pass, host_port_db = rest.split("@", 1)
-        user, password = user_pass.split(":", 1)
-        host_port, dbname = host_port_db.split("/", 1)
-        host, port = host_port.split(":", 1)
+        db_url = os.getenv("POSTGRESQL_DB_URL")
+        if not db_url:
+            raise ValueError("数据库配置缺失，请设置环境变量 POSTGRESQL_DB_URL")
 
-        self._pool = PooledDB(
-            creator=pymysql,
-            maxconnections=10,
-            mincached=1,
-            maxcached=5,
-            blocking=True,
-            maxusage=None,
-            ping=1,
-            host=host,
-            port=int(port),
-            user=user,
-            password=password,
-            database=dbname,
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
+        self._pool = ConnectionPool(
+            conninfo=db_url,
+            kwargs={"autocommit": False},  # 需要事务控制（INSERT 失败回滚）
+            min_size=1,
+            max_size=10,
+            timeout=5,
+            open=True,
         )
+        try:
+            self._pool.check()
+        except Exception as e:
+            logger.error(f"PostgreSQL数据库连接失败（UserProfileService）：{e}")
+            raise
         self._ensure_table()
-        logger.info("UserProfileService 连接池已初始化")
+        logger.info("UserProfileService 连接池已初始化（PostgreSQL）")
 
     def close(self, timeout: int = 5):
         """关闭连接池。"""
         if self._pool:
-            self._pool.close()
+            self._pool.close(timeout=timeout)
             self._pool = None
             logger.info("UserProfileService 连接池已关闭")
 
-    def _get_conn(self):
-        if not self._pool:
-            raise RuntimeError("UserProfileService 未初始化，请先调用 open()")
-        return self._pool.connection()
-
     def _ensure_table(self):
-        """确保 user_profile 表存在，不存在则创建。"""
-        conn = self._get_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute("""
+        """确保 user_profile 表存在，不存在则创建（PG 语法）。"""
+        with self._pool.connection() as conn:
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_profile (
-                    user_id VARCHAR(64) PRIMARY KEY COMMENT '用户ID，关联 userInfo.user_id',
-                    username VARCHAR(64) DEFAULT NULL COMMENT '显示用户名',
-                    avatar MEDIUMTEXT DEFAULT NULL COMMENT '头像（base64 data URL，最大16MB）',
-                    assistant_style TEXT DEFAULT NULL COMMENT '助手风格设定（用户自定义）',
-                    system_prompt MEDIUMTEXT DEFAULT NULL COMMENT '用户自定义 system prompt（全局）',
-                    theme VARCHAR(32) DEFAULT 'default' COMMENT '前端主题名称',
-                    mcp_config JSON DEFAULT NULL COMMENT 'MCP 服务器配置（JSON 数组）',
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    INDEX idx_theme (theme)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户扩展信息表';
+                    user_id VARCHAR(64) PRIMARY KEY,
+                    username VARCHAR(64) DEFAULT NULL,
+                    avatar TEXT DEFAULT NULL,
+                    assistant_style TEXT DEFAULT NULL,
+                    system_prompt TEXT DEFAULT NULL,
+                    theme VARCHAR(32) DEFAULT 'default',
+                    mcp_config JSONB DEFAULT NULL,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                )
             """)
-            # 迁移：旧表 avatar/system_prompt 为 TEXT（64KB），base64 头像会被截断导致登出后失效
-            # 检查列类型并升级为 MEDIUMTEXT（16MB）
-            cur.execute("""
-                SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_profile'
-                AND COLUMN_NAME IN ('avatar', 'system_prompt')
-            """)
-            for row in cur.fetchall():
-                col_name, data_type = row["COLUMN_NAME"], row["DATA_TYPE"]
-                if data_type.lower() == "text":
-                    cur.execute(f"ALTER TABLE user_profile MODIFY COLUMN {col_name} MEDIUMTEXT")
-                    logger.info(f"user_profile.{col_name} 已从 TEXT 迁移为 MEDIUMTEXT")
+            # PG TEXT 无 64KB 上限，无需 MySQL 的 TEXT→MEDIUMTEXT 迁移逻辑
             conn.commit()
-        except pymysql.MySQLError as e:
-            logger.error(f"创建 user_profile 表失败: {e}")
-            raise
-        finally:
-            conn.close()
 
     # ==================== 基础 CRUD ====================
 
     def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         """获取用户扩展信息，不存在返回 None。"""
-        conn = self._get_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM user_profile WHERE user_id = %s", (user_id,))
+        with self._pool.connection() as conn:
+            conn.row_factory = dict_row
+            cur = conn.execute("SELECT * FROM user_profile WHERE user_id = %s", (user_id,))
             row = cur.fetchone()
             if row and row.get("mcp_config"):
-                # mcp_config 是 JSON 字符串，解析为 dict
-                if isinstance(row["mcp_config"], str):
+                # mcp_config 是 JSONB（dict）或字符串，统一归一为 list
+                cfg = row["mcp_config"]
+                if isinstance(cfg, str):
                     try:
-                        row["mcp_config"] = json.loads(row["mcp_config"])
+                        row["mcp_config"] = json.loads(cfg)
                     except json.JSONDecodeError:
                         row["mcp_config"] = []
+                elif isinstance(cfg, dict):
+                    row["mcp_config"] = [cfg]
             return row
-        except pymysql.MySQLError as e:
-            logger.error(f"获取用户扩展信息失败 user_id={user_id}: {e}")
-            raise
-        finally:
-            conn.close()
 
     def _upsert_profile(self, user_id: str, fields: Dict[str, Any]):
         """内部方法：插入或更新用户扩展信息。
@@ -141,31 +106,29 @@ class UserProfileService:
         """
         if not fields:
             return
-        conn = self._get_conn()
         try:
-            cur = conn.cursor()
-            # 先检查是否存在
-            cur.execute("SELECT user_id FROM user_profile WHERE user_id = %s", (user_id,))
-            exists = cur.fetchone()
+            with self._pool.connection() as conn:
+                # mcp_config 需序列化为 JSON 字符串存入 JSONB（psycopg 自动适配 dict，无需手动 dumps）
+                values = dict(fields)
+                if "mcp_config" in values and isinstance(values["mcp_config"], (dict, list)):
+                    values["mcp_config"] = json.dumps(values["mcp_config"], ensure_ascii=False)
 
-            if exists:
-                # UPDATE
-                set_clause = ", ".join([f"{k} = %s" for k in fields.keys()])
-                values = list(fields.values()) + [user_id]
-                cur.execute(f"UPDATE user_profile SET {set_clause} WHERE user_id = %s", values)
-            else:
-                # INSERT
-                columns = ", ".join(["user_id"] + list(fields.keys()))
-                placeholders = ", ".join(["%s"] * (len(fields) + 1))
-                values = [user_id] + list(fields.values())
-                cur.execute(f"INSERT INTO user_profile ({columns}) VALUES ({placeholders})", values)
-            conn.commit()
-        except pymysql.MySQLError as e:
-            conn.rollback()
+                # PG upsert：ON CONFLICT (user_id) DO UPDATE
+                columns = list(values.keys())
+                set_clause = ", ".join([f"{k} = EXCLUDED.{k}" for k in columns])
+                placeholders = ", ".join([f"%({k})s" for k in columns])
+                conn.execute(
+                    f"""INSERT INTO user_profile (user_id, {', '.join(columns)})
+                        VALUES (%(user_id)s, {placeholders})
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            {set_clause},
+                            updated_at = now()""",
+                    {"user_id": user_id, **values},
+                )
+                conn.commit()
+        except Exception as e:
             logger.error(f"更新用户扩展信息失败 user_id={user_id}: {e}")
             raise
-        finally:
-            conn.close()
 
     # ==================== 个人信息 ====================
 
@@ -257,9 +220,7 @@ class UserProfileService:
         """
         if not isinstance(mcp_servers, list):
             raise ValueError("mcp_servers 必须是列表")
-        # 序列化为 JSON 字符串存储
-        mcp_json = json.dumps(mcp_servers, ensure_ascii=False)
-        self._upsert_profile(user_id, {"mcp_config": mcp_json})
+        self._upsert_profile(user_id, {"mcp_config": mcp_servers})
         return True
 
 

@@ -17,6 +17,7 @@ from mcp_client.client import init_mcp_holders
 from mcp_client.mcp_server.agent_server import mcp
 from routers.auth_router import router as auth_router
 from routers.chat_router import router as chat_router
+from routers.knowledge_router import router as knowledge_router
 from routers.mcp_router import router as mcp_router
 from routers.system_router import router as system_router
 from routers.user_router import router as user_router
@@ -136,6 +137,7 @@ app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(user_router)
 app.include_router(mcp_router)
+app.include_router(knowledge_router)
 app.include_router(system_router)  # 必须最后注册
 
 

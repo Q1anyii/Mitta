@@ -1,6 +1,5 @@
 import os
 
-import pymysql
 import requests
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 from langchain.chat_models.base import init_chat_model
@@ -9,7 +8,6 @@ from langchain_core.runnables.config import RunnableConfig
 from langchain_openai import OpenAIEmbeddings
 from langgraph.checkpoint.postgres import PostgresSaver
 from dotenv import load_dotenv
-from pymysql.cursors import DictCursor
 from constant.embedding_constants import COLLECTION_NAME
 
 load_dotenv(override=True)
