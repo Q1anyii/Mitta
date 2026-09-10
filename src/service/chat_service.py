@@ -709,6 +709,15 @@ class ChatService:
             # 其他消息保留——不能直接传裁剪后列表（add_messages 是追加语义，不会覆盖）
             self.main_graph.update_state(config, {"messages": remove})
             logger.info(f"会话:{thread_id} 回滚成功：删除 {len(remove)} 条消息（第 {target_idx} 条起）")
+            # 【关键】回滚后清空该会话的 Redis 事件流（chat:events:{thread_id}）：
+            # 旧一轮的思考/工具/正文事件与重新生成的新事件共用同一列表，若不清空，
+            # 前端"刷新续接/切回会话重放"会从 seq=-1 把旧事件整体重放到新的 AI 占位，
+            # 表现为"重新生成后旧回复仍出现在界面"（实测复现：rollback 只删 PG
+            # checkpoint，Redis 事件流残留导致旧回复被续接重放"复活"）。
+            try:
+                cache_service.redis.delete(f"chat:events:{thread_id}")
+            except Exception as e:
+                logger.debug(f"清理会话事件流失败（不影响回滚主链路）thread_id={thread_id}: {e}")
             return True, f"已回滚该轮回复，删除 {len(remove)} 条消息"
         except Exception as e:
             logger.error(f"回滚会话{thread_id}异常：{e}", exc_info=True)
