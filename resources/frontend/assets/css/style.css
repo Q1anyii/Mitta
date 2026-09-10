@@ -223,7 +223,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .new-chat-btn:hover { transform: rotate(90deg) scale(1.08); background: var(--yellow); }
 .new-chat-btn:active { transform: rotate(90deg) scale(.95); }
 
-.session-list { flex: 1; overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.session-list { flex: 1; overflow-y: auto; scroll-behavior: smooth; padding: 12px 10px; display: flex; flex-direction: column; gap: 6px; }
 .empty-state { text-align: center; color: rgba(255,255,255,.4); font-size: 13px; padding: 30px 10px; }
 .session-item {
     position: relative; display: flex; align-items: center; gap: 9px; width: 100%;

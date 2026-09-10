@@ -405,7 +405,7 @@
                 err.status = 403;
                 throw err;
             }
-            if (!response.ok) throw new Error(`请求失败: ${response.status}`);
+            if (!response.ok) throw new Error('请求失败，请稍后再试');
 
             const contentType = response.headers.get('content-type') || '';
             if (!contentType.includes('text/event-stream')) {
@@ -474,7 +474,7 @@
             });
             syncTokenFromHeaders(response.headers);
             handleAuthError(response);
-            if (!response.ok) throw new Error(`获取会话列表失败: ${response.status}`);
+            if (!response.ok) throw new Error('获取会话列表失败，请稍后再试');
             const json = await response.json();
             return json && json.data ? json.data : [];
         }
@@ -492,7 +492,7 @@
                 err.status = 403;
                 throw err;
             }
-            if (!response.ok) throw new Error(`获取历史失败: ${response.status}`);
+            if (!response.ok) throw new Error('获取历史消息失败，请稍后再试');
             return response.json();
         }
 
@@ -509,7 +509,7 @@
                 err.status = 403;
                 throw err;
             }
-            if (!response.ok) throw new Error(`查询生成状态失败: ${response.status}`);
+            if (!response.ok) throw new Error('查询生成状态失败，请稍后再试');
             const json = await response.json();
             return json && json.data ? json.data.generating : false;
         }
@@ -528,7 +528,7 @@
                 err.status = 403;
                 throw err;
             }
-            if (!response.ok) throw new Error(`读取事件流失败: ${response.status}`);
+            if (!response.ok) throw new Error('读取事件流失败，请稍后再试');
             const json = await response.json();
             return json && json.data && Array.isArray(json.data.events) ? json.data.events : [];
         }
@@ -547,7 +547,7 @@
                 err.status = 403;
                 throw err;
             }
-            if (!response.ok) throw new Error(`删除失败: ${response.status}`);
+            if (!response.ok) throw new Error('删除会话失败，请稍后再试');
             return response.json();
         }
 
@@ -570,7 +570,7 @@
             }
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
-                throw new Error(data.message || data.detail || `回滚失败: ${response.status}`);
+                throw new Error(data.message || data.detail || '回滚失败，请稍后再试');
             }
             return response.json();
         }
@@ -585,7 +585,7 @@
             handleAuthError(response);
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
-                throw new Error(data.detail || data.message || `获取知识库列表失败: ${response.status}`);
+                throw new Error(data.detail || data.message || '获取知识库列表失败，请稍后再试');
             }
             const { ok, data } = await parseApiResponse(response);
             // parseApiResponse 的 data 是整个响应体 {ok, data:{...}}，实际数据在 data.data 里
@@ -605,7 +605,7 @@
             handleAuthError(response);
             const { ok, data, message } = await parseApiResponse(response);
             if (!response.ok || !ok) {
-                const err = new Error(message || data?.detail || `上传失败: ${response.status}`);
+                const err = new Error(message || data?.detail || '上传失败，请稍后再试');
                 err.status = response.status;
                 throw err;
             }
@@ -622,7 +622,7 @@
             handleAuthError(response);
             const { ok, data, message } = await parseApiResponse(response);
             if (!response.ok || !ok) {
-                const err = new Error(message || data?.detail || `删除失败: ${response.status}`);
+                const err = new Error(message || data?.detail || '删除失败，请稍后再试');
                 err.status = response.status;
                 throw err;
             }
@@ -652,7 +652,7 @@
             if (!message && Array.isArray(data.detail)) {
                 message = data.detail.map(d => d.msg || '').filter(Boolean).join('；');
             }
-            return { ok: false, message: message || `请求失败(${res.status})` };
+            return { ok: false, message: message || '请求失败，请稍后再试' };
         }
 
         // ============================================================
@@ -2099,11 +2099,32 @@
                     }
                 };
 
-                const scrollToBottom = async () => {
+                // 滚动合并标记：一次动画帧只执行一次滚动，避免流式高频调用
+                // 让浏览器 smooth 动画排队堆积（表现为抽搐/永远追不上/卡顿）
+                let _scrollRafPending = false;
+                // 接近底部阈值（px）：用户正在上方翻看时，自动跟随不抢滚
+                const SCROLL_FOLLOW_THRESHOLD = 120;
+                const scrollToBottom = async (opts = {}) => {
                     await nextTick();
-                    if (messagesContainer.value) {
-                        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+                    const el = messagesContainer.value;
+                    if (!el) return;
+                    const { force = false } = opts;
+                    if (!force) {
+                        // 智能跟随：仅当用户接近底部时才滚动，避免打断阅读
+                        const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+                        if (dist > SCROLL_FOLLOW_THRESHOLD) return;
                     }
+                    // rAF 合并：流式渲染 100ms 节流 + 思考/正文/工具多次触发时，
+                    // 同一帧只执行一次平滑滚动，目标始终是最新底部
+                    if (_scrollRafPending) return;
+                    _scrollRafPending = true;
+                    requestAnimationFrame(() => {
+                        _scrollRafPending = false;
+                        const c = messagesContainer.value;
+                        if (c) {
+                            c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' });
+                        }
+                    });
                 };
 
                 const autoResize = () => {
@@ -2134,7 +2155,7 @@
                     saveCurrentThread();
                     await loadCurrentMessages();
                     closeSidebar();
-                    scrollToBottom();
+                    scrollToBottom({ force: true });  // 切换会话：无条件滚到最新消息
                 };
 
                 const deleteSession = async (id) => {
@@ -2328,7 +2349,7 @@
                         streaming.value = false;
                         saveMessages();
                         saveSessions();
-                        scrollToBottom();
+                        scrollToBottom({ force: true });  // 回复完成：无条件滚到底展示完整回复
                     } catch (err) {
                         // 用户主动停止回复（AbortController.abort()）
                         if (err.name === 'AbortError') {

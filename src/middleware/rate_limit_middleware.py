@@ -1,31 +1,58 @@
 # ============================================================
 # 请求限流中间件
-# 作用：对 /api/chat/ 等消耗 LLM 配额的接口进行速率限制
-# 实现：基于 Redis 计数器（固定窗口），Redis 不可用时降级为内存限流
+# 作用：只对"用户发送聊天消息"（POST /api/chat/）做速率限制，
+#       保护 LLM 配额。AI 回复过程自身的请求（续接轮询 history/
+#       generation-status/events、删除、回滚、上传等）一律不计入限流。
+# 实现：基于 Redis ZSET 滑动窗口，Redis 不可用时降级为内存限流
 # 使用：在 main.py 中通过 app.add_middleware(RateLimitMiddleware) 注册
 # ============================================================
 
 import time
 from collections import defaultdict, deque
-from typing import Deque, Dict
+from typing import Deque, Dict, Optional
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from loguru import logger
 
-# 需要限流的路径前缀
-RATE_LIMITED_PATHS = ["/api/chat/"]
+# 需要限流的路径：精确匹配"发送消息"这一个路由（含尾斜杠）。
+# 注意不要用 startswith("/api/chat/")——那会把 GET /history、/generation-status、
+# /events（续接轮询每 2s 打两个）和 DELETE /{tid}、POST /rollback 全部计入，
+# AI 回复过程的请求会把用户发送配额吃光，导致真正发消息时被误限流。
+RATE_LIMITED_PATH = "/api/chat/"
 
-# 限流配置：每个用户/IP 在时间窗口内最多请求次数
+# 限流配置：每个用户（降级为 IP）在时间窗口内最多发送消息次数
 RATE_LIMIT_MAX_REQUESTS = 30  # 每窗口最多 30 次
 RATE_LIMIT_WINDOW_SECONDS = 60  # 时间窗口 60 秒
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    """基于 Redis 的固定窗口限流中间件。
+def _extract_user_id(request: Request) -> Optional[str]:
+    """从 Authorization Bearer JWT 中提取 user_id（限流按用户而非 IP）。
 
-    限流键：使用客户端 IP（完整实现可在鉴权后注入 user_id 到 request.state）。
-    Redis 可用时用 Redis 计数器（支持多 worker 共享）；不可用时降级为内存限流。
+    JWT 解析失败/无 token 时返回 None，调用方降级为 IP 键。
+    """
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    token = auth[7:].strip()
+    if not token:
+        return None
+    try:
+        import jwt as pyjwt
+        payload = pyjwt.decode(token, options={"verify_signature": False})
+        sub = payload.get("sub")
+        if sub and ":" in sub:
+            return sub.split(":", 1)[0]
+        return sub
+    except Exception:
+        return None
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """基于 Redis 滑动窗口的发送消息限流中间件。
+
+    限流键：优先 user_id（JWT sub 前缀），匿名请求降级为客户端 IP。
+    Redis 可用时用 Redis ZSET（支持多 worker 共享）；不可用时降级为内存限流。
     """
 
     def __init__(self, app):
@@ -34,26 +61,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._memory_store: Dict[str, Deque[float]] = defaultdict(deque)
 
     def _get_limit_key(self, request: Request) -> str:
-        """获取限流键：使用客户端 IP。"""
+        """获取限流键：优先用户 ID，匿名/解析失败降级为客户端 IP。"""
+        user_id = _extract_user_id(request)
+        if user_id:
+            return f"rate_limit:user:{user_id}"
         client_ip = request.client.host if request.client else "unknown"
-        return f"rate_limit:{client_ip}"
-
-    # def fixed_window_limit(self, key: str) -> bool:
-    #     """使用 Redis 进行限流检查。
-    #
-    #     Returns:
-    #         True 表示允许通过，False 表示被限流
-    #     """
-    #     try:
-    #         from service.cache_service import cache_service
-    #         r = cache_service.redis
-    #         res = r.execute_command("CL.THROTTLE", key, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS, 1)
-    #         # res [total, remain, wait_sec, reset_sec]
-    #         is_ok = res[1] >= 0
-    #         return is_ok
-    #     except Exception as e:
-    #         logger.warning(f"Redis 限流失败，降级为内存限流：{e}")
-    #         return self._check_memory(key)
+        return f"rate_limit:ip:{client_ip}"
 
     def _check_memory(self, key: str) -> bool:
         """内存限流（降级方案，单进程有效）。
@@ -103,22 +116,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             logger.warning(f"Redis 限流失败，降级为内存限流：{e}")
             return self._check_memory(key)
 
-
     async def dispatch(self, request: Request, call_next):
         """中间件主逻辑。"""
         path = request.url.path
 
-        # 只对指定路径限流
-        if not any(path.startswith(p) for p in RATE_LIMITED_PATHS):
+        # 只对"发送消息"这一个路由限流（POST /api/chat/）。
+        # 续接轮询、历史、状态、事件、删除、回滚、上传等一律放行——
+        # 它们是 AI 回复过程/会话管理的一部分，不应消耗用户发送配额。
+        if request.method != "POST" or path != RATE_LIMITED_PATH:
             return await call_next(request)
 
         key = self._get_limit_key(request)
         allowed = self.sliding_window_limit(key)
 
         if not allowed:
-            logger.warning(f"请求被限流 | path={path} | key={key}")
+            logger.warning(f"发送消息被限流 | path={path} | key={key}")
             return Response(
-                content='{"ok": false, "detail": "请求过于频繁，请稍后再试"}',
+                content='{"ok": false, "detail": "发送消息过于频繁，请稍后再试"}',
                 status_code=429,
                 media_type="application/json",
                 headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)},
