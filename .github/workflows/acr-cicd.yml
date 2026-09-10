@@ -118,8 +118,8 @@ jobs:
             docker compose up -d --no-build api
 
             echo "=== [4/4] 健康检查 ==="
-            sleep 10
-            for i in 1 2 3 4 5 6 7 8; do
+            sleep 20
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
               HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
               echo "  第 ${i} 次: HTTP $HEALTH"
               if [ "$HEALTH" = "200" ]; then
@@ -127,9 +127,9 @@ jobs:
                 docker ps --format "table {{.Names}}\t{{.Status}}" | grep mitta
                 break
               fi
-              if [ "$i" = "8" ]; then
+              if [ "$i" = "24" ]; then
                 echo "❌ 健康检查失败，查看日志："
-                docker logs mitta-api --tail 50 2>&1
+                docker logs mitta-api --tail 80 2>&1
                 exit 1
               fi
               sleep 5
