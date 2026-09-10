@@ -1838,9 +1838,26 @@
                                 return;
                             }
                             if (!generating) {
-                                // 后台生成已结束但 history 仍无完整回复（生成异常/被中止）：
-                                // 保留当前未完成占位，停止轮询
+                                // 后台生成已结束但 history 仍无完整回复（生成异常/被中止）。
+                                // 【关键】parseHistory 会过滤空正文的 ai（仅挂载 tool_calls 的中转
+                                // 消息），此时 msgs 最后一条是 human，replyComplete 恒为 false——
+                                // 若没有本分支，轮询会干等到 5 分钟超时，用户误以为"还没生成完"
+                                // 而反复发送同一问题（实测同一会话累积 6 条 human）。
+                                // 这里把本地未完成占位标记为失败并明确提示，让用户点重新生成。
+                                const cached = cache.getMessages(targetThreadId);
+                                const lastC = cached && cached.length > 0 ? cached[cached.length - 1] : null;
+                                if (lastC && lastC.role === 'assistant') {
+                                    lastC.interrupted = true;
+                                    if (!lastC.content || !lastC.content.trim()) {
+                                        lastC.content = '（回复生成失败，请点击重新生成）';
+                                        lastC.blocks = [];
+                                    }
+                                    cache.setMessages(targetThreadId, cached);
+                                    messages.value = cached.map(normalizeMessage);
+                                    saveMessages();
+                                }
                                 stopGenerationResume();
+                                showToast('回复生成未成功，请点击重新生成', 'warning');
                                 return;
                             }
                             if (Date.now() > deadline) {
@@ -2054,6 +2071,21 @@
                     const displayContent = content + (pendingFileNames.length > 0
                         ? '\n\n📎 ' + pendingFileNames.map(n => `[${n}]`).join(' ')
                         : '');
+
+                    // 【防重复发送】上一条回复尚未完成、且用户再次发送完全相同的问题时拦截。
+                    // 背景：流式生成中刷新/续接期间，AI 占位为空，用户误以为没发出去而反复
+                    // 按 Enter，导致后端同一会话累积 N 条相同 human（实测 6 连发、界面 6 个
+                    // 重复气泡）。相同内容应等待续接，而不是再追加一轮生成。
+                    const lastMsg = messages.value.length > 0 ? messages.value[messages.value.length - 1] : null;
+                    const prevUser = messages.value.length > 1 ? messages.value[messages.value.length - 2] : null;
+                    const lastAiIncomplete = lastMsg && lastMsg.role === 'assistant'
+                        && !(lastMsg.content && lastMsg.content.trim())
+                        && !(lastMsg.blocks && lastMsg.blocks.some(b => b.type === 'text' && b.content && b.content.trim()));
+                    if (lastAiIncomplete && prevUser && prevUser.role === 'user'
+                        && prevUser.content === displayContent) {
+                        showToast('该问题回复仍在生成中，请勿重复发送，稍后会自动续接', 'warning');
+                        return;
+                    }
                     const userMsg = { id: generateId(), role: 'user', content: displayContent, time: formatTime() };
                     messages.value.push(userMsg);
 
@@ -2199,13 +2231,25 @@
                         // 后端已改为断连不中断生成（后台线程跑完图提交 checkpoint），
                         // 刷新后 loadCurrentMessages 会用后端 history 兜底补全完整回复。
                         if (aiMsg) {
-                            aiMsg.content = aiMsg.content || '（回复中断，请重新生成）';
-                            // 【续接标记】标记该消息为"未完成的中断回复"：content 会被写成占位
-                            // 文本（非空），自动续接的检测条件必须识别该标记而不是只看 content 是否
-                            // 为空——否则刷新后占位文本会被当作"已完成"，续接轮询永不启动。
+                            // 【续接标记】标记该消息为"未完成的中断回复"，
+                            // 自动续接的检测条件识别 interrupted 标记（而非只看 content 是否为空）。
                             aiMsg.interrupted = true;
-                            _syncTextBlock(aiMsg, aiMsg.content);
-                            _syncReasoningBlock(aiMsg, aiMsg.reasoning || '');
+                            // 【关键修复】旧逻辑在 catch 里无条件执行：
+                            //   aiMsg.content = '（回复中断，请重新生成）'
+                            //   _syncTextBlock(...)   → 把流式中已生成的正文块覆盖成占位文本
+                            //   _syncReasoningBlock(...) → 若最后块不是 reasoning，会在占位块之后
+                            //      追加"后半段思考"，形成【深度思考块-占位文本-深度思考块】双块错乱。
+                            // 现在区分两种情况：
+                            // ① 已有正文：保留正文与 blocks（流式穿插状态本就正确），只标记中断；
+                            if (aiMsg.content && aiMsg.content.trim()) {
+                                // blocks 保持原样，不做任何覆盖/追加
+                            } else {
+                                // ② 完全没有正文：写占位文本并清空 blocks，
+                                //    让占位通过模板 v-else-if="msg.content" 单独渲染，
+                                //    不残留半截 reasoning 块造成困惑
+                                aiMsg.content = '（回复中断，请重新生成）';
+                                aiMsg.blocks = [];
+                            }
                         }
                         saveMessages();
                         // 发送失败：恢复附件列表，让用户可以重试
