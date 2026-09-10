@@ -1529,6 +1529,11 @@
                 }
 
                 async function regenerateMessage(msg) {
+                    // 记录本次重新生成所属会话：后端回滚是异步的，期间用户可能切换到
+                    // 其他会话，后续 splice/saveMessages/sendMessage 都必须校验"当前视图
+                    // 仍是该会话"，否则旧问题会发到新会话、污染新会话缓存（与 sendMessage
+                    // 的 sendThreadId 守卫同一模式，修复"重新生成时切走再切回旧回复仍在"）。
+                    const regThreadId = currentThreadId.value;
                     // 找到这条 AI 消息对应的上一条用户消息
                     const idx = messages.value.findIndex(m => m.id === msg.id);
                     if (idx <= 0) return;
@@ -1538,24 +1543,46 @@
                         showToast('请等待当前回复完成后再重新生成', 'warning');
                         return;
                     }
-                    // 【后端回滚】先删除 checkpoint 中该轮的旧 AI 回复与工具链，
-                    // 否则旧回复残留历史，新生成会与旧回复叠加、token 重复累积。
+                    // 【乐观删除】点击立即移除该轮消息并落缓存：即使后端回滚较慢，
+                    // 界面也立刻清空旧回复；用户切走再切回时本地缓存已无旧回复。
+                    const removed = messages.value.splice(idx - 1, 2);
+                    saveMessages();
+                    // 【后端回滚】并行删除 checkpoint 中该轮的旧 AI 回复与工具链（带超时），
                     // 以用户消息文本为锚点定位轮次（前端消息 id 与后端 checkpoint id 不对应）。
+                    let rollbackOk = false;
                     try {
-                        await apiRollbackSession(currentThreadId.value, userMsg.content);
+                        await Promise.race([
+                            (async () => {
+                                await apiRollbackSession(regThreadId, userMsg.content);
+                                rollbackOk = true;
+                            })(),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('回滚超时')), 5000))
+                        ]);
                     } catch (e) {
                         if (e && e.status === 403) {
                             showToast(e.message, 'error');
+                            // 无权回滚：恢复本地消息，避免前后端不一致
+                            if (currentThreadId.value === regThreadId) {
+                                messages.value.splice(idx - 1, 0, ...removed);
+                                saveMessages();
+                            }
                             return;
                         }
-                        // 回滚失败不阻塞本地重新生成（本地 splice 仍生效），
-                        // 但提示用户后端历史可能残留旧回复
-                        console.warn('回滚失败，继续本地重新生成:', e);
-                        showToast('后端历史回滚失败，新回复可能与旧回复叠加', 'warning');
+                        console.warn('重新生成后端回滚失败:', e);
                     }
-                    // 删除 AI 回复和用户消息，重新发送
-                    messages.value.splice(idx - 1, 2);
-                    saveMessages();
+                    if (!rollbackOk) {
+                        // 回滚失败/超时：后端 checkpoint 未删除，本地也不能删（否则刷新后
+                        // 旧回复从后端恢复、与本地不一致）。恢复该轮消息并取消本次重新生成。
+                        if (currentThreadId.value === regThreadId) {
+                            messages.value.splice(idx - 1, 0, ...removed);
+                            saveMessages();
+                        }
+                        showToast('后端历史回滚失败，已取消重新生成，请重试', 'warning');
+                        return;
+                    }
+                    // 【会话守卫】回滚期间用户已切到其他会话：中止本次重新生成，
+                    // 不把旧问题发送到新会话，也不污染新会话缓存。
+                    if (currentThreadId.value !== regThreadId) return;
                     // 用用户消息的内容重新发送
                     inputText.value = userMsg.content;
                     sendMessage();
