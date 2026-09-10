@@ -5,6 +5,7 @@
 内部调用：_get_username(config), _ensure_username_profile(store, ...), _repair_history(history)。
 """
 
+import json
 import re
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -23,8 +24,10 @@ MAX_RETRIEVAL_DOCS = 5
 # 单篇检索文档最大字符数：超出截断，防止超长文档撑爆单次请求 token
 MAX_DOC_CHARS = 2000
 # 单轮请求内工具执行轮次上限：超过后强制停止继续调用工具，避免
-# "随便调用一个工具" 等开放指令或模型行为异常导致的工具调用死循环
-MAX_TOOL_ROUNDS = 4
+# "随便调用一个工具" 等开放指令或模型行为异常导致的工具调用死循环。
+# 取 8 而非 4：正常复杂任务（多步查询/分析）可能需 5-7 次工具调用，
+# 上限只作兜底，真正的死循环由下方"连续重复调用检测"提前截停。
+MAX_TOOL_ROUNDS = 8
 
 
 def llm_node(
@@ -124,10 +127,25 @@ def llm_node(
         filter_query = input_str  # 话题切换/首轮：纯用户输入，检索信号纯净
 
     selected_tools = tool_filter.select_tools(filter_query, tools)
-    # 工具调用死循环防护：历史中 ToolMessage 数量即已执行工具轮次，
-    # 达到上限后本轮不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）。
+    # 工具调用死循环防护（两道防线）：
+    # (a) 轮次上限：历史中 ToolMessage 数量即已执行工具轮次，达到 MAX_TOOL_ROUNDS
+    #     后本轮不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）；
+    # (b) 连续重复调用检测：最近两次工具调用（name+args 完全相同）说明模型在同
+    #     一动作上空转（无新信息产生），立即判定死循环提前截停，不必等满 8 轮。
     tool_rounds = sum(1 for m in history if isinstance(m, ToolMessage))
-    force_stop = tool_rounds >= MAX_TOOL_ROUNDS
+
+    def _is_repeating() -> bool:
+        calls = []
+        for m in history:
+            if isinstance(m, AIMessage) and m.tool_calls:
+                for tc in m.tool_calls:
+                    calls.append((
+                        tc.get("name"),
+                        json.dumps(tc.get("args", {}), sort_keys=True, ensure_ascii=False),
+                    ))
+        return len(calls) >= 2 and calls[-1] == calls[-2]
+
+    force_stop = tool_rounds >= MAX_TOOL_ROUNDS or _is_repeating()
     if selected_tools and not force_stop:
         model_with_tools = model.bind_tools(selected_tools)
     else:

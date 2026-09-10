@@ -58,6 +58,36 @@
 - 线上旧镜像已复现该 bug，修复提交推送后需 CI 重建镜像再次验证
   （见 devlog/deploy 下 CI 部署链相关记录）。
 
+## 迭代：轮次上限 4 → 8 + 连续重复调用检测（v3）
+
+用户质疑"MAX_TOOL_ROUNDS=4 会不会太低"——顾虑成立：正常复杂任务（多步
+查询/分析，如"检索 → 查数据库 → 查文件 → 汇总"）可能需 5-7 次工具调用，
+固定 4 轮会误伤正常多工具任务。
+
+改进为"上限放宽 + 针对性死循环检测"双防线：
+
+1. **上限放宽**：`MAX_TOOL_ROUNDS = 4 → 8`。上限只作极端兜底，
+   正常任务几乎不可能触达。
+2. **新增连续重复调用检测**：统计历史中所有 AI 消息的 tool_calls，
+   若**最近两次工具调用（name + 序列化 args 完全相同）**→ 判定模型在同一
+   动作上空转（无新信息产生），立即 `force_stop`，不必等满 8 轮：
+   ```python
+   def _is_repeating() -> bool:
+       calls = []
+       for m in history:
+           if isinstance(m, AIMessage) and m.tool_calls:
+               for tc in m.tool_calls:
+                   calls.append((tc.get("name"),
+                                 json.dumps(tc.get("args", {}), sort_keys=True,
+                                            ensure_ascii=False)))
+       return len(calls) >= 2 and calls[-1] == calls[-2]
+   force_stop = tool_rounds >= MAX_TOOL_ROUNDS or _is_repeating()
+   ```
+3. **效果**：真正死循环（反复调同一工具同一参数）最快第 3 轮即被截停；
+   正常多工具任务（参数持续变化、有信息增量）可跑满 8 轮不受限。
+
+验证：`py_compile` 通过；两种判定独立生效（上限硬兜底 + 重复调用提前截停）。
+
 ## 附带收益
 
 - 工具循环轮不再累积重复用户消息，messages 增长减半，token 消耗下降；
