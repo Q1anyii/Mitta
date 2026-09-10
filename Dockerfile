@@ -64,16 +64,16 @@ RUN pip install --no-cache-dir -r requirements.txt -i ${PIP_INDEX}
 # 通过 `uvx 包名` 启动，缺 uvx 会报 No such file: 'uvx'
 RUN pip install --no-cache-dir uv -i ${PIP_INDEX}
 
-# 预热 uvx 缓存：构建期就把 Python 版 MCP server 及其全部依赖安装进 uv 缓存，
+# 预热 uvx 缓存：构建期就把 Python 版 MCP server 及其全部依赖下载进 uv 缓存，
 # 运行时 uvx 直接命中缓存、零联网，避免容器冷启动首次下载慢导致 MCP 连接超时
 # （曾出现：冷启动下载 html5lib/onnxruntime/chromadb 等懒加载依赖超过连接超时
 #   -> 拿到 0 工具 -> 空图被缓存；--help 不触发懒加载依赖下载，故改用 tool install）
-# 注意：CI 在 GitHub Actions 境外构建，这里显式用官方源（境外快）；运行时
-# ENV 已配 UV_INDEX_URL=阿里云源（国内快），且缓存命中后无需再联网
-RUN uv tool install mcp-server-fetch mcp-server-sqlite mcp-server-time markitdown-mcp chroma-mcp basic-memory \
-        --default-index https://pypi.org/simple \
-    && uv tool run mcp-server-fetch --help >/dev/null 2>&1 \
-    && echo "UVX_MCP_PACKAGES_PREWARMED_OK"
+# 注意：索引经环境变量传入（不用 --default-index 命令行参数，兼容旧版 uv）；
+# CI 在 GitHub Actions 境外构建用官方源（境外快）；运行时 ENV 已配阿里云源（国内快）
+RUN for pkg in mcp-server-fetch mcp-server-sqlite mcp-server-time markitdown-mcp chroma-mcp basic-memory; do \
+        echo "tool install: $pkg" && timeout 300 env UV_DEFAULT_INDEX=https://pypi.org/simple UV_INDEX_URL=https://pypi.org/simple uv tool install "$pkg" >/dev/null 2>&1 || \
+        echo "WARN: tool install $pkg failed, will download at runtime"; \
+    done && echo "UVX_MCP_PACKAGES_PREWARMED_DONE"
 
 # 复制项目代码
 # 2026-09-09 强制重建：此前连续 6 个提交一次性推送，CI 仅对比最后一次提交
