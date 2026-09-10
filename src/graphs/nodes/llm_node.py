@@ -22,6 +22,9 @@ from graphs.utils.user_profile import _ensure_username_profile, _get_username
 MAX_RETRIEVAL_DOCS = 5
 # 单篇检索文档最大字符数：超出截断，防止超长文档撑爆单次请求 token
 MAX_DOC_CHARS = 2000
+# 单轮请求内工具执行轮次上限：超过后强制停止继续调用工具，避免
+# "随便调用一个工具" 等开放指令或模型行为异常导致的工具调用死循环
+MAX_TOOL_ROUNDS = 4
 
 
 def llm_node(
@@ -121,15 +124,26 @@ def llm_node(
         filter_query = input_str  # 话题切换/首轮：纯用户输入，检索信号纯净
 
     selected_tools = tool_filter.select_tools(filter_query, tools)
-    if selected_tools:
+    # 工具调用死循环防护：历史中 ToolMessage 数量即已执行工具轮次，
+    # 达到上限后本轮不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）。
+    tool_rounds = sum(1 for m in history if isinstance(m, ToolMessage))
+    force_stop = tool_rounds >= MAX_TOOL_ROUNDS
+    if selected_tools and not force_stop:
         model_with_tools = model.bind_tools(selected_tools)
     else:
-        # 两路均未命中：不 bind 空列表（OpenAI 兼容 API 会 400），
-        # 改用裸模型并注入提示，让 AI 如实告知无法处理
-        messages.append(SystemMessage(
-            content="注意：当前没有可用的工具。若用户的请求依赖工具能力（如查文件、查数据库、"
-                    "操作外部服务），请如实告知暂时无法处理，不要编造结果或假装已执行。"
-        ))
+        # 两路均未命中（或已达工具轮次上限）：不 bind 空列表（OpenAI 兼容 API 会 400），
+        # 改用裸模型并注入对应提示
+        if force_stop:
+            logger.warning(f"工具调用轮次达上限（{tool_rounds}），本轮强制停止调用工具")
+            messages.append(SystemMessage(
+                content="注意：本轮请求中工具调用次数已达上限，请不要再调用任何工具，"
+                        "直接基于你已有的上下文信息回答用户的问题。"
+            ))
+        else:
+            messages.append(SystemMessage(
+                content="注意：当前没有可用的工具。若用户的请求依赖工具能力（如查文件、查数据库、"
+                        "操作外部服务），请如实告知暂时无法处理，不要编造结果或假装已执行。"
+            ))
         model_with_tools = model
 
     # ── 5.5 深度思考模式：根据用户在前端选择的开关动态 bind ──
@@ -197,4 +211,11 @@ def llm_node(
     elif not selected_tools:
         tool_status = "unavailable"
 
+    # ── 8. 工具循环轮次去重用户消息 ──
+    # 历史中已存在 ToolMessage（本轮处于工具循环中）时，用户问题已在上下文里，
+    # 本轮只追加 ai_reply，不再重复插入 HumanMessage——否则模型每轮都看到
+    # "用户让我调用工具"被重新强调一次，永远不收敛（工具死循环的直接催化剂）。
+    in_tool_loop = bool(history) and isinstance(history[-1], ToolMessage)
+    if in_tool_loop:
+        return {"messages": [ai_reply], "tool_status": tool_status}
     return {"messages": [HumanMessage(content=input_str), ai_reply], "tool_status": tool_status}
