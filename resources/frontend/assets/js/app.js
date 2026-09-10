@@ -1442,6 +1442,10 @@
                 const mcpConfigPath = ref('');
                 const uploadedFiles = ref([]);
                 const abortController = ref(null);
+                // 正在生成回复的会话集合（按 thread_id 跟踪）：支持"生成中切换会话"。
+                // isLoading 是"当前视图会话是否生成中"的快照，切会话时由 switchSession 重算，
+                // 避免 A 会话生成中切到 B 导致 B 的发送按钮被全局 isLoading 锁死。
+                const _generatingThreads = new Set();
                 // 会话重命名：editingSessionId 记录当前编辑的会话 ID，null 表示无编辑
                 const editingSessionId = ref(null);
                 const renameInput = ref(null);
@@ -2141,6 +2145,12 @@
                     sessions.value.unshift(session);
                     currentThreadId.value = id;
                     messages.value = [];
+                    // 新建会话必然未在生成中：解禁发送按钮（生成中新建会话的场景），
+                    // 并清除旧会话的工具调用状态残留
+                    isLoading.value = false;
+                    streaming.value = false;
+                    currentToolCall.value = null;
+                    stopGenerationResume();
                     saveSessions();
                     saveCurrentThread();
                     cache.setMessages(id, []);
@@ -2153,6 +2163,11 @@
                     if (id === currentThreadId.value) return;
                     currentThreadId.value = id;
                     saveCurrentThread();
+                    // 切换会话：停止旧会话的续接轮询，并按新会话是否在生成中重置
+                    // isLoading（否则 A 会话生成中切到 B，B 的发送按钮被锁死）
+                    stopGenerationResume();
+                    isLoading.value = _generatingThreads.has(id);
+                    currentToolCall.value = null;  // 旧会话的工具调用状态不带到新会话
                     await loadCurrentMessages();
                     closeSidebar();
                     scrollToBottom({ force: true });  // 切换会话：无条件滚到最新消息
@@ -2245,6 +2260,11 @@
                     isLoading.value = true;
                     streaming.value = false;
 
+                    // 记录本次发送所属会话：流式回调/结束/finally 都要校验"当前视图仍是该会话"，
+                    // 否则生成中切换到其他会话时，旧会话的流式内容会污染新会话界面/缓存（会话错乱）
+                    const sendThreadId = currentThreadId.value;
+                    _generatingThreads.add(sendThreadId);
+
                     // 变量必须声明在 try 之外（函数作用域），否则 catch 块访问不到
                     // try 内的 let 变量，导致停止回复时报 renderTimer is not defined
                     let aiMsg = null;
@@ -2272,6 +2292,9 @@
 
                         // file_ids 已在发送前提取（pendingFileIds），附件区已清空
                         const answer = await apiChat(content, currentThreadId.value, (text) => {
+                            // 生成中切换了会话：不再更新旧会话的 AI 占位（后台线程继续跑完落库，
+                            // 切回该会话时 loadCurrentMessages 从后端/缓存恢复完整回复）
+                            if (currentThreadId.value !== sendThreadId) return;
                             streaming.value = true;
                             latestText = text;
                             if (!renderTimer) {
@@ -2292,6 +2315,8 @@
                                 }, 500);
                             }
                         }, abortController.value.signal, (toolEvent) => {
+                            // 生成中切换了会话：工具事件只属于原会话，不更新当前视图
+                            if (currentThreadId.value !== sendThreadId) return;
                             // 工具调用事件：加载界面 + 写入 blocks 实现穿插
                             if (toolEvent.type === 'start') {
                                 currentToolCall.value = { name: toolEvent.name, args: toolEvent.args };
@@ -2320,6 +2345,8 @@
                                 scrollToBottom();  // 工具结果返回时滚底
                             }
                         }, pendingFileIds, (reasoningText) => {
+                            // 生成中切换了会话：深度思考内容只属于原会话
+                            if (currentThreadId.value !== sendThreadId) return;
                             // 深度思考内容：追加到 aiMsg.reasoning（全量保留），
                             // 节流时按增量插入 blocks，与 text 块交替形成穿插效果
                             aiMsg.reasoning += reasoningText;
@@ -2327,6 +2354,8 @@
                             if (!renderTimer) {
                                 renderTimer = setTimeout(() => {
                                     renderTimer = null;
+                                    // 生成中切换了会话：不再把旧会话的流式内容刷进当前视图
+                                    if (currentThreadId.value !== sendThreadId) return;
                                     const shouldScroll = dirtyReasoning;
                                     dirtyReasoning = false;
                                     aiMsg.content = latestText;
@@ -2337,33 +2366,39 @@
                             }
                         }, thinkingMode.value, reasoningEffort.value, clientMessageId);
 
-                        // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染
+                        // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染。
+                        // 若已切换到其他会话，跳过 UI 更新（后台 checkpoint 已提交，
+                        // 切回时 loadCurrentMessages 从后端恢复完整回复）
                         if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
                         if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-                        currentToolCall.value = null;  // 清除工具调用状态
-                        aiMsg.content = answer || '（无回复）';
-                        _syncReasoningBlock(aiMsg, aiMsg.reasoning);
-                        _syncTextBlock(aiMsg, answer || '（无回复）');
-                        // 流结束后按段落交替重排（DeepSeek 先全部思考再全部回答，需手动穿插）
-                        _interleaveReasoningAndContent(aiMsg);  // 内部已把思考块设为收起
-                        streaming.value = false;
-                        saveMessages();
-                        saveSessions();
-                        scrollToBottom({ force: true });  // 回复完成：无条件滚到底展示完整回复
+                        if (currentThreadId.value === sendThreadId) {
+                            currentToolCall.value = null;  // 清除工具调用状态
+                            aiMsg.content = answer || '（无回复）';
+                            _syncReasoningBlock(aiMsg, aiMsg.reasoning);
+                            _syncTextBlock(aiMsg, answer || '（无回复）');
+                            // 流结束后按段落交替重排（DeepSeek 先全部思考再全部回答，需手动穿插）
+                            _interleaveReasoningAndContent(aiMsg);  // 内部已把思考块设为收起
+                            streaming.value = false;
+                            saveMessages();
+                            saveSessions();
+                            scrollToBottom({ force: true });  // 回复完成：无条件滚到底展示完整回复
+                        }
                     } catch (err) {
                         // 用户主动停止回复（AbortController.abort()）
                         if (err.name === 'AbortError') {
                             // 保留已生成的部分内容，不删除 AI 消息
                             if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
                             if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-                            if (aiMsg) {
+                            if (aiMsg && currentThreadId.value === sendThreadId) {
                                 aiMsg.content = aiMsg.content || '（已停止）';
                             }
-                            streaming.value = false;
-                            isLoading.value = false;
-                            currentToolCall.value = null;
-                            saveMessages();
-                            scrollToBottom();
+                            if (currentThreadId.value === sendThreadId) {
+                                streaming.value = false;
+                                isLoading.value = false;
+                                currentToolCall.value = null;
+                                saveMessages();
+                                scrollToBottom();
+                            }
                             return;
                         }
                         // 幂等拦截：这条消息（client_message_id）后端已处理过
@@ -2371,7 +2406,9 @@
                         // 回滚本次本地 push 的 userMsg + AI 占位，避免界面叠加重复气泡，
                         // 然后触发事件重放/自动续接，把既有的回复渲染回来。
                         if (err && err.code === 'DUPLICATE') {
-                            // 回滚：删除刚 push 的用户消息和 AI 占位（都在消息列表末尾）
+                            // 回滚：删除刚 push 的用户消息和 AI 占位（都在消息列表末尾）。
+                            // 若已切换到其他会话，不操作当前视图（该会话消息由后端幂等保证）
+                            if (currentThreadId.value !== sendThreadId) return;
                             if (aiMsg) {
                                 const idx = messages.value.indexOf(aiMsg);
                                 if (idx > -1) messages.value.splice(idx, 1);
@@ -2392,13 +2429,12 @@
                             const tid = currentThreadId.value;
                             await loadCurrentMessages();
                             return;
-                        }
-                        // 非主动停止（网络中断/页面刷新/服务端异常）：不再 pop 掉 AI 消息。
+                        }                        // 非主动停止（网络中断/页面刷新/服务端异常）：不再 pop 掉 AI 消息。
                         // 此前 pop + saveMessages 会把本地缓存里的 AI 回复删掉，刷新后只剩
                         // 用户消息——"刷新后会话内容清空"的根因之一。现在保留 AI 占位消息，
                         // 后端已改为断连不中断生成（后台线程跑完图提交 checkpoint），
                         // 刷新后 loadCurrentMessages 会用后端 history 兜底补全完整回复。
-                        if (aiMsg) {
+                        if (aiMsg && currentThreadId.value === sendThreadId) {
                             // 【续接标记】标记该消息为"未完成的中断回复"，
                             // 自动续接的检测条件识别 interrupted 标记（而非只看 content 是否为空）。
                             aiMsg.interrupted = true;
@@ -2429,21 +2465,30 @@
                             }));
                         }
                         if (err && err.status === 403) {
-                            // 会话被判定为他人所有：从列表移除并新建会话，不再复用该 thread
-                            const removed = currentThreadId.value;
+                            // 会话被判定为他人所有：从列表移除并新建会话，不再复用该 thread。
+                            // 移除的是"发送时的会话"（可能已切换视图，不能误删当前会话）
+                            const removed = sendThreadId;
                             sessions.value = sessions.value.filter(s => s.id !== removed);
                             cache.removeMessages(removed);
                             saveSessions();
-                            createNewSession();
+                            if (currentThreadId.value === removed) {
+                                createNewSession();
+                            }
                             showToast('该会话不属于当前账号，已切换新会话', 'error');
                             return;
                         }
                         showToast('发送消息失败: ' + err.message, 'error');
                     } finally {
-                        isLoading.value = false;
-                        streaming.value = false;
-                        currentToolCall.value = null;  // 确保异常时也清除工具调用状态
-                        focusInput();
+                        // 生成结束（无论成功/失败/停止）：从生成集合移除该会话。
+                        // isLoading 只在当前视图仍是该会话时复位；若已切走，保持新会话
+                        // 自己的生成状态（switchSession 已按 _generatingThreads 重算）
+                        _generatingThreads.delete(sendThreadId);
+                        if (currentThreadId.value === sendThreadId) {
+                            isLoading.value = false;
+                            streaming.value = false;
+                            currentToolCall.value = null;  // 确保异常时也清除工具调用状态
+                            focusInput();
+                        }
                     }
                 };
 
