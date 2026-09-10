@@ -1,0 +1,91 @@
+<html style="margin:0;padding:0;">
+<div style="background-color:transparent;box-sizing:border-box;">
+  <div style="font-family:'Segoe UI','PingFang SC',Arial,sans-serif;color:#1A1B1C;padding:4px 0;">
+    <div style="font-size:15px;font-weight:600;margin-bottom:10px;">网页刷新后，Agent 如何"不断流"地继续显示思考与流式回复</div>
+    <div style="font-size:12px;color:#6B7280;margin-bottom:12px;">核心前提：刷新必然断开浏览器连接（TCP/SSE/WebSocket 都活不过页面重载）。行业方案是"任务与连接解耦 + 事件落库 + 断点重放 + 续订"，让界面重建到断点后继续接收。</div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+
+      <div style="flex:1 1 330px;min-width:0;border:1px solid rgba(26,27,28,0.12);border-radius:12px;padding:10px 12px;box-sizing:border-box;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">❌ 现状：连接即任务（刷新=丢过程）</div>
+        <svg viewBox="0 0 320 260" width="100%" style="max-width:340px;">
+          <g font-size="10" fill="#1A1B1C">
+            <text x="10" y="16" font-weight="600" fill="#6B7280">前端页面</text>
+            <line x1="30" y1="24" x2="30" y2="250" stroke="#E4E3DD" stroke-width="1"/>
+            <text x="120" y="16" font-weight="600" fill="#6B7280">后端 SSE 流</text>
+            <line x1="150" y1="24" x2="150" y2="250" stroke="#E4E3DD" stroke-width="1"/>
+            <text x="240" y="16" font-weight="600" fill="#6B7280">事件落库</text>
+            <line x1="270" y1="24" x2="270" y2="250" stroke="#E4E3DD" stroke-width="1"/>
+
+            <rect x="14" y="34" width="34" height="16" rx="4" fill="#9BBBF4"/><text x="20" y="45">发送</text>
+            <line x1="48" y1="42" x2="140" y2="42" stroke="#9EACEA" stroke-width="1.2" marker-end="url(#a_l)"/>
+            <line x1="150" y1="60" x2="66" y2="60" stroke="#9EACEA" stroke-width="1.2" marker-end="url(#a_r)"/>
+            <text x="60" y="55" fill="#6B7280">思考/正文 chunk</text>
+            <text x="160" y="78" fill="#EA6668" font-weight="600">✗ 事件不落库</text>
+            <rect x="14" y="100" width="34" height="16" rx="4" fill="#EA6668"/>
+            <text x="18" y="111" fill="#fff">刷新</text>
+            <line x1="48" y1="108" x2="150" y2="108" stroke="#EA6668" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a_l)"/>
+            <text x="90" y="126" fill="#EA6668">连接中断</text>
+            <rect x="14" y="150" width="34" height="16" rx="4" fill="#8BC8EA"/><text x="18" y="161">重载</text>
+            <line x1="48" y1="158" x2="140" y2="158" stroke="#8BC8EA" stroke-width="1.2" marker-end="url(#a_l)"/>
+            <text x="60" y="178" fill="#6B7280">? 只能查最终结果，过程全丢</text>
+            <rect x="14" y="200" width="34" height="16" rx="4" fill="#FAAD14"/><text x="18" y="211">误判</text>
+            <text x="60" y="214" fill="#6B7280">"没在回复?" → 重复发送</text>
+            <rect x="14" y="228" width="34" height="16" rx="4" fill="#FAAD14"/><text x="18" y="239">重发</text>
+            <line x1="48" y1="236" x2="140" y2="236" stroke="#FAAD14" stroke-width="1.2" marker-end="url(#a_l)"/>
+            <text x="160" y="240" fill="#EA6668">后端累积 N 条 human</text>
+          </g>
+          <defs>
+            <marker id="a_l" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#9EACEA"/></marker>
+            <marker id="a_r" viewBox="0 0 8 8" refX="2" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M8,0 L0,4 L8,8 z" fill="#9EACEA"/></marker>
+          </defs>
+        </svg>
+      </div>
+
+      <div style="flex:1 1 330px;min-width:0;border:1px solid rgba(82,196,26,0.35);border-radius:12px;padding:10px 12px;box-sizing:border-box;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">✅ 行业方案：任务独立 + 事件溯源 + 重放续订</div>
+        <svg viewBox="0 0 320 260" width="100%" style="max-width:340px;">
+          <g font-size="10" fill="#1A1B1C">
+            <text x="10" y="16" font-weight="600" fill="#6B7280">前端页面</text>
+            <line x1="30" y1="24" x2="30" y2="250" stroke="#E4E3DD" stroke-width="1"/>
+            <text x="120" y="16" font-weight="600" fill="#6B7280">后端任务(job)</text>
+            <line x1="150" y1="24" x2="150" y2="250" stroke="#E4E3DD" stroke-width="1"/>
+            <text x="240" y="16" font-weight="600" fill="#6B7280">事件流存储</text>
+            <line x1="270" y1="24" x2="270" y2="250" stroke="#E4E3DD" stroke-width="1"/>
+
+            <rect x="14" y="34" width="34" height="16" rx="4" fill="#9BBBF4"/><text x="20" y="45">发送</text>
+            <line x1="48" y1="42" x2="140" y2="42" stroke="#52C41A" stroke-width="1.2" marker-end="url(#b_l)"/>
+            <text x="160" y="38" fill="#52C41A">task#id 启动, 断连不中断</text>
+            <line x1="150" y1="62" x2="66" y2="62" stroke="#9EACEA" stroke-width="1.2" marker-end="url(#b_r)"/>
+            <text x="60" y="57" fill="#6B7280">思考/工具/正文 chunk</text>
+            <line x1="150" y1="82" x2="262" y2="82" stroke="#52C41A" stroke-width="1.2" marker-end="url(#b_l)"/>
+            <text x="162" y="78" fill="#52C41A">append 事件(带序号)</text>
+            <rect x="250" y="74" width="40" height="16" rx="4" fill="#E8F5E9" stroke="#52C41A"/>
+            <text x="254" y="85" fill="#2E7D32">e1 e2 e3</text>
+            <rect x="14" y="112" width="34" height="16" rx="4" fill="#EA6668"/><text x="18" y="123" fill="#fff">刷新</text>
+            <line x1="48" y1="120" x2="150" y2="120" stroke="#EA6668" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#b_l)"/>
+            <text x="90" y="136" fill="#6B7280">断连(任务继续跑)</text>
+            <rect x="14" y="152" width="34" height="16" rx="4" fill="#8BC8EA"/><text x="18" y="163">重载</text>
+            <line x1="48" y1="160" x2="140" y2="160" stroke="#8BC8EA" stroke-width="1.2" marker-end="url(#b_l)"/>
+            <text x="60" y="178" fill="#6B7280">带上 last_event_id 重连</text>
+            <line x1="150" y1="188" x2="262" y2="188" stroke="#52C41A" stroke-width="1.2" marker-end="url(#b_l)"/>
+            <text x="162" y="184" fill="#52C41A">重放 e1..eN(断点重建)</text>
+            <line x1="150" y1="208" x2="66" y2="208" stroke="#52C41A" stroke-width="1.2" marker-end="url(#b_r)"/>
+            <text x="60" y="203" fill="#52C41A">续推 eN+1..: 思考/正文继续流式</text>
+            <rect x="14" y="226" width="34" height="16" rx="4" fill="#52C41A"/><text x="20" y="237" fill="#fff">完成</text>
+            <text x="60" y="240" fill="#2E7D32">界面与后端状态一致, 不会重发</text>
+          </g>
+          <defs>
+            <marker id="b_l" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#52C41A"/></marker>
+            <marker id="b_r" viewBox="0 0 8 8" refX="2" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M8,0 L0,4 L8,8 z" fill="#9EACEA"/></marker>
+          </defs>
+        </svg>
+      </div>
+    </div>
+
+    <div style="font-size:11px;color:#6B7280;margin-top:10px;line-height:1.6;">
+      事实口径：连接无法跨刷新存活是 TCP/HTTP 语义决定的；"不断流"体验由 任务状态化 + 事件溯源重放 + 断点续订 组合实现（ChatGPT / Claude / 豆包等主流 Agent 均为此模式）。示意图仅作机制说明。
+    </div>
+  </div>
+</div>
+</html>

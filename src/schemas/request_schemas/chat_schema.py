@@ -9,3 +9,4 @@ class ChatRequest(BaseModel):
     file_ids: Optional[List[int]] = None  # 上传文件 ID 列表，解析内容拼接到 query 传入 LLM
     thinking_mode: Optional[bool] = False  # 是否开启深度思考模式
     reasoning_effort: Optional[str] = "low"  # 推理强度：low/high/max（仅 thinking_mode=True 时生效）
+    client_message_id: Optional[str] = None  # 前端生成的消息唯一 ID：后端按 (user_id, client_message_id) 幂等去重

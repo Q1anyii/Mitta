@@ -377,7 +377,7 @@
             return ok ? (data.data ?? null) : null;
         }
 
-        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort) {
+        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId) {
             const body = { query, thread_id: threadId };
             if (fileIds && fileIds.length > 0) {
                 body.file_ids = fileIds;
@@ -385,6 +385,11 @@
             // 深度思考设置：随每次请求传入，后端 llm_node 动态 bind
             body.thinking_mode = thinkingMode;
             body.reasoning_effort = reasoningEffort;
+            // 消息唯一 ID：后端按 (user_id, client_message_id) 幂等去重，
+            // 刷新重试/多标签页重复 POST 时后端不重复创建生成任务
+            if (clientMessageId) {
+                body.client_message_id = clientMessageId;
+            }
             const response = await fetch(`${API_BASE}/api/chat/`, {
                 method: 'POST',
                 headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -432,6 +437,14 @@
                     }
                     // 服务端图执行异常（工具执行失败等）：抛给调用方展示，不再静默断流
                     if (chunk.error) throw new Error(chunk.error);
+                    // 幂等拦截：同一条消息（client_message_id）已被处理过。
+                    // 抛特殊错误码 DUPLICATE，sendMessage catch 中回滚本地占位并触发重放，
+                    // 避免界面再叠加一条重复消息（后端不会创建新生成任务）
+                    if (chunk.duplicate) {
+                        const err = new Error('该消息已发送过，正在恢复原回复');
+                        err.code = 'DUPLICATE';
+                        throw err;
+                    }
                     // 工具调用开始事件：通知前端显示加载界面
                     if (chunk.tool_call_start && onToolCall) {
                         onToolCall({ type: 'start', name: chunk.tool_call_start.name, args: chunk.tool_call_start.args });
@@ -499,6 +512,25 @@
             if (!response.ok) throw new Error(`查询生成状态失败: ${response.status}`);
             const json = await response.json();
             return json && json.data ? json.data.generating : false;
+        }
+
+        // 读取会话的流式事件流（序号 > after）：刷新后重放思考/工具/正文断点，
+        // 再配合轮询续收新事件，实现"刷新后过程可见、继续流式"的体验
+        async function apiGetEvents(threadId, after = -1) {
+            const response = await fetch(`${API_BASE}/api/chat/${threadId}/events?after=${after}`, {
+                headers: authHeaders()
+            });
+            syncTokenFromHeaders(response.headers);
+            handleAuthError(response);
+            if (response.status === 403) {
+                const data = await response.json().catch(() => ({}));
+                const err = new Error(data.detail || '无权访问该会话');
+                err.status = 403;
+                throw err;
+            }
+            if (!response.ok) throw new Error(`读取事件流失败: ${response.status}`);
+            const json = await response.json();
+            return json && json.data && Array.isArray(json.data.events) ? json.data.events : [];
         }
 
         async function apiDeleteSession(threadId) {
@@ -1796,11 +1828,60 @@
                     return msg;
                 };
 
-                // 【自动续接】刷新/强刷后自动轮询补全未完成的 AI 回复。
-                // 后端"断连不中断生成"：客户端刷新只停 SSE 推送，后台线程继续跑完图并
-                // 提交 checkpoint。前端刷新后若发现该会话回复仍未完成（本地缓存末尾是
-                // 未完成 AI 占位且 history 尚未补全），每隔 RESUME_POLL_INTERVAL 轮询一次
-                // history + 生成状态：生成结束后若已拿到完整回复则自动渲染，无需手动再刷。
+                // 【事件重放】把结构化流式事件应用到 AI 消息上（增量语义，与 SSE 实时路径同构）。
+                // 事件来自后端 Redis 事件流（reasoning/content 为增量、tool_call_start/end 为状态点），
+                // 刷新后按产生顺序重放即可重建思考块/工具块/正文到断点，再续收新事件继续流式。
+                const _applyEventsToMsg = (aiMsg, events) => {
+                    if (!aiMsg || !Array.isArray(events) || events.length === 0) return;
+                    if (!aiMsg.blocks) aiMsg.blocks = [];
+                    let latestText = aiMsg.content || '';
+                    for (const item of events) {
+                        const ev = item && item.event ? item.event : item;
+                        // 深度思考增量：全量追加到 reasoning，再按增量同步 blocks
+                        if (ev.reasoning) {
+                            aiMsg.reasoning = (aiMsg.reasoning || '') + ev.reasoning;
+                            _syncReasoningBlock(aiMsg, aiMsg.reasoning);
+                        }
+                        // 正文增量：全量追加到 content，再按增量同步 blocks
+                        if (ev.content) {
+                            latestText = (latestText || '') + ev.content;
+                            aiMsg.content = latestText;
+                            _syncTextBlock(aiMsg, latestText);
+                        }
+                        // 工具调用开始：插入 running 工具块
+                        if (ev.tool_call_start) {
+                            aiMsg.blocks.push({
+                                type: 'tool',
+                                name: ev.tool_call_start.name,
+                                args: ev.tool_call_start.args || {},
+                                result: '',
+                                status: 'running',
+                                expanded: false,
+                                time: formatTime()
+                            });
+                        }
+                        // 工具调用结束：更新最后一个 running 同名工具块
+                        if (ev.tool_call_end) {
+                            for (let i = aiMsg.blocks.length - 1; i >= 0; i--) {
+                                const b = aiMsg.blocks[i];
+                                if (b.type === 'tool' && b.status === 'running' && b.name === ev.tool_call_end.name) {
+                                    b.status = 'done';
+                                    b.result = ev.tool_call_end.content || '';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                // 【自动续接】刷新/强刷后自动恢复未完成的 AI 回复（"刷新不断流"体验）。
+                // 后端"断连不中断生成"：客户端刷新只停 SSE 推送，后台线程继续跑完图并提交
+                // checkpoint；同时每个流式事件（思考/工具/正文增量）实时落库 Redis 事件流。
+                // 前端刷新后：
+                //   ① 重放已落库事件（after=-1 从头）→ 思考块/工具块/正文立即重建到断点；
+                //   ② 每 2s 续收 after=lastSeq 的新事件 → 界面继续滚动（像没有断过流）；
+                //   ③ history 兜底最终一致性：完整回复落库后整体替换。
+                // 这样刷新后"过程可见 + 继续流式"，用户不会误判"没在回复"而重复发送。
                 let _resumeTimer = null;
                 let _resumeStopped = false;
                 const startGenerationResume = (threadId) => {
@@ -1812,64 +1893,100 @@
                     const deadline = Date.now() + RESUME_MAX_WAIT;
                     // 记录当前续接的会话：用户中途切换会话则停止旧轮询
                     const targetThreadId = threadId;
+                    // 已重放到的最大事件序号（-1 = 尚未重放任何事件）
+                    let lastAppliedSeq = -1;
                     showToast('回复仍在生成中，正在自动续接…', 'info');
-                    _resumeTimer = setInterval(async () => {
-                        try {
-                            // 用户已切到其他会话：停止续接（保留当前会话内容）
-                            if (currentThreadId.value !== targetThreadId) {
-                                stopGenerationResume();
-                                return;
+                    // 单轮续接：重放新事件 → history 兜底 → 生成状态判定。
+                    // 首次立即执行（刷新后马上重建思考/工具断点），之后每 2s 续收
+                    const pollOnce = async () => {
+                        // 用户已切到其他会话：停止续接（保留当前会话内容）
+                        if (currentThreadId.value !== targetThreadId) {
+                            stopGenerationResume();
+                            return;
+                        }
+                        const [history, generating, newEvents] = await Promise.all([
+                            apiGetHistory(targetThreadId),
+                            apiGetGenerationStatus(targetThreadId),
+                            apiGetEvents(targetThreadId, lastAppliedSeq),
+                        ]);
+
+                        // ① 事件续收：把 lastSeq 之后的新事件重放到当前 AI 消息
+                        if (newEvents && newEvents.length > 0) {
+                            // 定位要重放的目标：messages 末尾的 assistant 消息。
+                            // 本地无占位（缓存丢失/跨浏览器刷新/空 AI 被过滤）时新建一个，
+                            // 让重放的事件有承载对象——刷新后思考/工具过程因此可见
+                            let aiMsg = messages.value.length > 0
+                                ? messages.value[messages.value.length - 1]
+                                : null;
+                            if (!aiMsg || aiMsg.role !== 'assistant') {
+                                aiMsg = { id: generateId(), role: 'assistant', content: '', reasoning: '', tool_calls: [], blocks: [], time: formatTime() };
+                                messages.value.push(aiMsg);
                             }
-                            const [history, generating] = await Promise.all([
-                                apiGetHistory(targetThreadId),
-                                apiGetGenerationStatus(targetThreadId),
-                            ]);
-                            const msgs = parseHistory(history).map(normalizeMessage);
-                            const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-                            const replyComplete = lastMsg && lastMsg.role === 'assistant'
-                                && (lastMsg.content || (lastMsg.blocks && lastMsg.blocks.length > 0));
-                            if (replyComplete) {
-                                // 后端已完成并落库：渲染完整回复并更新本地缓存，停止轮询
-                                messages.value = msgs;
-                                saveMessages();
-                                scrollToBottom();
-                                stopGenerationResume();
-                                showToast('回复已续接完成', 'success');
-                                return;
+                            // 首次重放（从 -1 开始）从零重建：事件流是完整增量序列
+                            // （与 SSE 同源），本地 blocks 只是不完整投影，直接重置后
+                            // 重放可保证与后端状态一致，避免叠加重复
+                            if (lastAppliedSeq === -1) {
+                                aiMsg.reasoning = '';
+                                aiMsg.content = '';
+                                aiMsg.blocks = [];
                             }
-                            if (!generating) {
-                                // 后台生成已结束但 history 仍无完整回复（生成异常/被中止）。
-                                // 【关键】parseHistory 会过滤空正文的 ai（仅挂载 tool_calls 的中转
-                                // 消息），此时 msgs 最后一条是 human，replyComplete 恒为 false——
-                                // 若没有本分支，轮询会干等到 5 分钟超时，用户误以为"还没生成完"
-                                // 而反复发送同一问题（实测同一会话累积 6 条 human）。
-                                // 这里把本地未完成占位标记为失败并明确提示，让用户点重新生成。
-                                const cached = cache.getMessages(targetThreadId);
-                                const lastC = cached && cached.length > 0 ? cached[cached.length - 1] : null;
-                                if (lastC && lastC.role === 'assistant') {
-                                    lastC.interrupted = true;
-                                    if (!lastC.content || !lastC.content.trim()) {
-                                        lastC.content = '（回复生成失败，请点击重新生成）';
-                                        lastC.blocks = [];
-                                    }
-                                    cache.setMessages(targetThreadId, cached);
-                                    messages.value = cached.map(normalizeMessage);
-                                    saveMessages();
+                            _applyEventsToMsg(aiMsg, newEvents);
+                            lastAppliedSeq = newEvents[newEvents.length - 1].seq;
+                            saveMessages();
+                            scrollToBottom();
+                        }
+
+                        // ② history 最终一致性兜底：完整回复落库后整体替换
+                        const msgs = parseHistory(history).map(normalizeMessage);
+                        const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+                        const replyComplete = lastMsg && lastMsg.role === 'assistant'
+                            && (lastMsg.content || (lastMsg.blocks && lastMsg.blocks.length > 0));
+                        if (replyComplete) {
+                            // 后端已完成并落库：渲染完整回复并更新本地缓存，停止轮询
+                            messages.value = msgs;
+                            saveMessages();
+                            scrollToBottom();
+                            stopGenerationResume();
+                            showToast('回复已续接完成', 'success');
+                            return;
+                        }
+                        if (!generating) {
+                            // 后台生成已结束但 history 仍无完整回复（生成异常/被中止）。
+                            // 【关键】parseHistory 会过滤空正文的 ai（仅挂载 tool_calls 的中转
+                            // 消息），此时 msgs 最后一条是 human，replyComplete 恒为 false——
+                            // 若没有本分支，轮询会干等到 5 分钟超时，用户误以为"还没生成完"
+                            // 而反复发送同一问题（实测同一会话累积 6 条 human）。
+                            // 这里把本地未完成占位标记为失败并明确提示，让用户点重新生成。
+                            const cached = cache.getMessages(targetThreadId);
+                            const lastC = cached && cached.length > 0 ? cached[cached.length - 1] : null;
+                            if (lastC && lastC.role === 'assistant') {
+                                lastC.interrupted = true;
+                                if (!lastC.content || !lastC.content.trim()) {
+                                    lastC.content = '（回复生成失败，请点击重新生成）';
+                                    lastC.blocks = [];
                                 }
-                                stopGenerationResume();
-                                showToast('回复生成未成功，请点击重新生成', 'warning');
-                                return;
+                                cache.setMessages(targetThreadId, cached);
+                                messages.value = cached.map(normalizeMessage);
+                                saveMessages();
                             }
-                            if (Date.now() > deadline) {
-                                stopGenerationResume();
-                                showToast('等待回复超时，请稍后重新加载', 'warning');
-                            }
-                        } catch (e) {
+                            stopGenerationResume();
+                            showToast('回复生成未成功，请点击重新生成', 'warning');
+                            return;
+                        }
+                        if (Date.now() > deadline) {
+                            stopGenerationResume();
+                            showToast('等待回复超时，请稍后重新加载', 'warning');
+                        }
+                    };
+                    // 立即重放一次（重建断点），再进入周期续收
+                    pollOnce().catch(() => { /* 单轮失败由下一轮重试 */ });
+                    _resumeTimer = setInterval(() => {
+                        pollOnce().catch(() => {
                             // 轮询期间网络抖动/接口异常：继续下一次轮询（不中断续接）
                             if (Date.now() > deadline) {
                                 stopGenerationResume();
                             }
-                        }
+                        });
                     }, RESUME_POLL_INTERVAL);
                 };
 
@@ -2116,6 +2233,9 @@
                     // 标记自上次渲染以来是否有 reasoning 更新——只有思考/工具更新才自动滚底，
                     // 正式回答内容不强制滚动，避免打断用户阅读
                     let dirtyReasoning = false;
+                    // 消息唯一 ID：后端幂等去重键（user_id + client_message_id）。
+                    // 刷新重试/多标签页重复 POST 同一消息时，后端 SETNX 拦截，不重复生成
+                    const clientMessageId = `cm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
                     try {
                         // 注意：push 后必须从响应式代理中取回引用。Vue 3 的 proxy 是惰性转换的，
@@ -2194,7 +2314,7 @@
                                     if (shouldScroll) scrollToBottom();
                                 }, 100);
                             }
-                        }, thinkingMode.value, reasoningEffort.value);
+                        }, thinkingMode.value, reasoningEffort.value, clientMessageId);
 
                         // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染
                         if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
@@ -2223,6 +2343,33 @@
                             currentToolCall.value = null;
                             saveMessages();
                             scrollToBottom();
+                            return;
+                        }
+                        // 幂等拦截：这条消息（client_message_id）后端已处理过
+                        //（此前已提交过同一条消息，生成进行中或已完成）。
+                        // 回滚本次本地 push 的 userMsg + AI 占位，避免界面叠加重复气泡，
+                        // 然后触发事件重放/自动续接，把既有的回复渲染回来。
+                        if (err && err.code === 'DUPLICATE') {
+                            // 回滚：删除刚 push 的用户消息和 AI 占位（都在消息列表末尾）
+                            if (aiMsg) {
+                                const idx = messages.value.indexOf(aiMsg);
+                                if (idx > -1) messages.value.splice(idx, 1);
+                            }
+                            if (messages.value.length > 0) {
+                                const last = messages.value[messages.value.length - 1];
+                                if (last && last.role === 'user' && last.content === displayContent) {
+                                    messages.value.splice(messages.value.length - 1, 1);
+                                }
+                            }
+                            isLoading.value = false;
+                            streaming.value = false;
+                            currentToolCall.value = null;
+                            saveMessages();
+                            showToast('该消息已发送过，正在恢复原回复', 'info');
+                            // 该会话当前展示的就是这条消息的回复（可能仍在后台生成）：
+                            // 刷新加载流程会重放事件流并自动续接，这里直接触发
+                            const tid = currentThreadId.value;
+                            await loadCurrentMessages();
                             return;
                         }
                         // 非主动停止（网络中断/页面刷新/服务端异常）：不再 pop 掉 AI 消息。

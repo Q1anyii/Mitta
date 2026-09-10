@@ -12,7 +12,8 @@ from loguru import logger
 
 from context.user_context import CtxUser
 from schemas.request_schemas.chat_schema import ChatRequest
-from service.chat_service import chat_service
+from service.chat_service import chat_service, _format_sse
+from service.cache_service import cache_service
 from service.file_upload_service import file_upload_service
 from service.login_service import login_service
 from utils.jwt_utils import get_current_user, TokenData
@@ -20,17 +21,48 @@ from utils.response_util import Response
 
 router = APIRouter(tags=["聊天"])
 
+# 幂等去重：同一 (user_id, client_message_id) 的发送请求只处理一次。
+# 前端刷新/重试/多标签页并发重复 POST 时，Redis SETNX 保证不重复创建生成任务，
+# 从后端根治"同一问题重复累积 N 条 human"（此前仅前端防重复，可被绕过）。
+_IDEMPOTENCY_KEY_PREFIX = "chat:idem:"
+_IDEMPOTENCY_TTL = 300  # 5 分钟：覆盖一次生成的完整生命周期
+
 
 @router.post("/api/chat/")
 def chat(request_body: ChatRequest, current_user: TokenData = Depends(get_current_user)):
-    """发送消息：流式返回 AI 回复（SSE）。"""
+    """发送消息：流式返回 AI 回复（SSE）。
+
+    幂等：请求携带 client_message_id 时，同一消息重复提交（刷新重试/多标签）直接
+    返回 duplicate 事件，不重复创建生成任务；前端收到后回滚本地占位并重放事件。
+    """
     query = request_body.query
     thread_id = request_body.thread_id
+    client_message_id = request_body.client_message_id
     # 会话归属校验（与 history/delete 一致）：会话已存在但非本人所有时拒绝，
     # 否则任意用户可用他人 thread_id 发消息，LangGraph 会用当前用户覆盖该会话归属 metadata 造成劫持
     owner = chat_service.get_thread_user_id(thread_id)
     if owner and owner != str(current_user.user_id) and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="无权使用该会话")
+
+    # 【幂等去重】Redis SETNX 唯一键：已存在说明同一条消息已被处理过。
+    # 返回 duplicate 事件（不是错误）：前端收到后不再追加新 human/占位，
+    # 转而重放事件流/轮询 history 拿回既有的回复，实现"重复提交不重复生成"。
+    if client_message_id:
+        idem_key = f"{_IDEMPOTENCY_KEY_PREFIX}{current_user.user_id}:{client_message_id}"
+        try:
+            acquired = cache_service.redis.set(idem_key, "1", nx=True, ex=_IDEMPOTENCY_TTL)
+            if not acquired:
+                logger.info(f"幂等拦截重复消息 user_id={current_user.user_id} client_message_id={client_message_id}")
+
+                def _duplicate_stream():
+                    yield _format_sse({"duplicate": True})
+                    yield _format_sse("[DONE]")
+
+                return StreamingResponse(_duplicate_stream(), media_type="text/event-stream")
+        except Exception as e:
+            # Redis 不可用/超时：降级放行（幂等是保护而非硬依赖），不阻塞对话
+            logger.warning(f"幂等检查失败，降级放行：{e}")
+
     # 认证在路由层完成：JWT 解析出 user_id/username 后查库，构造请求级用户上下文（供图内工具读取）
     user_row = login_service.get_user_by_id(str(current_user.user_id))
     user_info = (
@@ -99,6 +131,29 @@ def get_generation_status(thread_id: str, current_user: TokenData = Depends(get_
     generating = chat_service.is_generation_active(thread_id)
     logger.info(f"查询会话生成状态 thread_id={thread_id} generating={generating}")
     return {"ok": True, "data": {"generating": generating}}
+
+
+@router.get("/api/chat/{thread_id}/events")
+def get_chat_events(thread_id: str, after: int = -1,
+                    current_user: TokenData = Depends(get_current_user)):
+    """读取会话的流式事件流（序号 > after），供前端刷新后断点重放。
+
+    后端 stream() 会把思考/工具/正文增量事件实时写入 Redis List（带序号）。
+    前端刷新（SSE 连接必然断开）后：
+      1. GET /events?after=-1 → 重放已产生的全部事件，重建思考块/工具块/正文断点；
+      2. 轮询 /events?after=lastSeq 续收新事件 → 界面像"没有断过流"一样继续滚动；
+      3. 生成结束（generation-status=false）→ history 兜底最终一致性。
+
+    Returns:
+        {"ok": true, "data": {"events": [{"seq": int, "event": {...}}, ...]}}
+    """
+    # 会话归属校验（与 history 一致）
+    owner = chat_service.get_thread_user_id(thread_id)
+    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="无权访问该会话")
+    events = chat_service.get_thread_events(thread_id, after=after)
+    logger.debug(f"读取会话事件 thread_id={thread_id} after={after} 返回 {len(events)} 条")
+    return {"ok": True, "data": {"events": events}}
 
 
 @router.delete("/api/chat/{thread_id}")

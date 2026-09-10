@@ -37,17 +37,35 @@ def _format_sse(data) -> str:
 def _process_graph_chunk(chunk, meta) -> str | None:
     """处理 LangGraph stream 的单个 chunk，返回 SSE 事件字符串或 None。
 
+    语义等价于 ``_process_graph_chunk_events`` 的结构化事件再拼装 SSE 格式；
+    保留此函数是为了兼容既有调用方（若只关心推送不关心落库）。
+    """
+    events = _process_graph_chunk_events(chunk, meta)
+    if not events:
+        return None
+    return "".join(_format_sse(ev) for ev in events)
+
+
+def _process_graph_chunk_events(chunk, meta) -> list[dict] | None:
+    """处理 LangGraph stream 的单个 chunk，返回结构化事件列表（供落库 + 推送）。
+
     stream_mode="messages" 会捕获图中所有 LLM 调用的 token 事件，
     包括 classify_node 的 yes/no 与 memory_node 的记忆提取输出，
     必须按 meta["langgraph_node"] 过滤，只输出 llm_node 的增量，
     否则分类器的 "no" 会混入流式回答出现在前端。
+
+    事件结构（与前端 apiChat SSE 解析约定一致）：
+      {"reasoning": str}            深度思考增量
+      {"content": str}              正文增量
+      {"tool_call_start": {name,args}}
+      {"tool_call_end": {name,content}}
 
     Args:
         chunk: LangGraph 输出的消息 chunk（AIMessageChunk / ToolMessage 等）
         meta: 包含 langgraph_node 等元信息
 
     Returns:
-        SSE 事件字符串；过滤掉的 chunk 返回 None
+        结构化事件列表；过滤掉的 chunk 返回 None
     """
     node = meta.get("langgraph_node")
 
@@ -63,7 +81,7 @@ def _process_graph_chunk(chunk, meta) -> str | None:
             or (chunk.additional_kwargs or {}).get("reasoning")
         )
         if reasoning:
-            events.append(_format_sse({"reasoning": reasoning}))
+            events.append({"reasoning": reasoning})
         # 输出文本内容（content 可能是 str 或 list[dict]，多模态模型返回 list）
         if chunk.content:
             content = chunk.content
@@ -73,8 +91,8 @@ def _process_graph_chunk(chunk, meta) -> str | None:
                     for part in content
                 )
             if content:
-                events.append(_format_sse({"content": content}))
-        return "".join(events) if events else None
+                events.append({"content": content})
+        return events or None
 
     # llm_node 完整消息（非 chunk）：LangGraph stream_mode="messages" 在节点结束时
     # 会输出节点返回的完整 AIMessage，此时 tool_calls 已由 llm_node 内部合并完整
@@ -86,14 +104,13 @@ def _process_graph_chunk(chunk, meta) -> str | None:
             for tc in chunk.tool_calls:
                 tool_name = tc.get("name", "")
                 if tool_name:
-                    events.append(_format_sse({
+                    events.append({
                         "tool_call_start": {
                             "name": tool_name,
                             "args": tc.get("args") or {},
                         }
-                    }))
-            if events:
-                return "".join(events)
+                    })
+            return events or None
         return None
 
     # tool_node：工具执行结果，发送工具调用结束事件（供前端关闭加载动画）
@@ -106,12 +123,12 @@ def _process_graph_chunk(chunk, meta) -> str | None:
                 part.get("text", "") if isinstance(part, dict) else str(part)
                 for part in tool_content
             )
-        return _format_sse({
+        return [{
             "tool_call_end": {
                 "name": chunk.name,
                 "content": str(tool_content)[:300],  # 截断防止工具输出过大
             }
-        })
+        }]
 
     # classify_node / memory_node 等其他节点：过滤，不输出到前端
     return None
@@ -486,6 +503,52 @@ class ChatService:
             "metadata": {"user_id": user_id},  # 随 checkpoint 写入 metadata
         }
 
+    def _append_thread_event(self, thread_id: str, event: dict):
+        """将单个流式事件追加到 Redis List（key=chat:events:{thread_id}），带全局序号。
+
+        事件落库是"刷新后重放断点"的基础：前端刷新后先 GET events?after=N
+        重放已产生的思考/工具/正文增量重建界面，再续订后续事件，从而实现
+        "连接中断但过程可见、继续流式"的体验（与 ChatGPT/Claude 刷新恢复同理）。
+
+        Redis 不可用/超时（socket_timeout=3）时静默降级：不影响 SSE 推送与生成主链路。
+        """
+        try:
+            key = f"chat:events:{thread_id}"
+            cache_service.redis.rpush(key, json.dumps(event, ensure_ascii=False))
+            # 事件流带 TTL（7 天），避免长期会话堆积；超期后刷新重放从空开始，不影响 history 兜底
+            cache_service.redis.expire(key, 7 * 24 * 3600)
+        except Exception as e:
+            logger.debug(f"事件落库失败（不影响主链路）thread_id={thread_id}: {e}")
+
+    def get_thread_events(self, thread_id: str, after: int = -1) -> list[dict]:
+        """读取会话事件流中序号 > after 的事件（供前端刷新后断点重放）。
+
+        Args:
+            thread_id: 会话 ID
+            after: 已消费的最大序号；-1 表示从头开始读取
+
+        Returns:
+            [{"seq": int, "event": {...}}, ...]（按产生顺序）
+        """
+        try:
+            key = f"chat:events:{thread_id}"
+            raw_items = cache_service.redis.lrange(key, after + 1, -1)
+            # List 下标即事件序号：第 i 个元素 seq = after + 1 + i
+            return [
+                {"seq": after + 1 + i, "event": json.loads(item)}
+                for i, item in enumerate(raw_items)
+            ]
+        except Exception as e:
+            logger.debug(f"事件读取失败（按空处理）thread_id={thread_id}: {e}")
+            return []
+
+    def clear_thread_events(self, thread_id: str):
+        """删除会话的事件流（删除会话/回滚时清理，避免残留脏事件）。"""
+        try:
+            cache_service.redis.delete(f"chat:events:{thread_id}")
+        except Exception:
+            pass
+
     def stream(self, user_id, thread_id, input_str, user_info=None, file_ids: list[int] = None, thinking_mode: bool = False, reasoning_effort: str = "low"):
         """流式对话生成（SSE）。
 
@@ -537,15 +600,21 @@ class ChatService:
                     config=config,
                     stream_mode="messages",
                 ):
-                    event = _process_graph_chunk(chunk, meta)
-                    if event:  # None 表示该 chunk 被过滤（classify/memory 节点）
-                        event_queue.put(event)
+                    # 结构化事件：既落库（供刷新后断点重放），也推送 SSE（实时流）
+                    events = _process_graph_chunk_events(chunk, meta)
+                    if not events:  # None 表示该 chunk 被过滤（classify/memory 节点）
+                        continue
+                    for ev in events:
+                        self._append_thread_event(thread_id, ev)
+                        event_queue.put(_format_sse(ev))
                 event_queue.put(_SENTINEL)
             except Exception as e:
-                # 图执行异常：记录完整堆栈并推送错误事件，
+                # 图执行异常：记录完整堆栈并推送错误事件（同样落库，刷新后可见），
                 # 避免 SSE 静默断流导致前端报"发送消息失败"而日志无迹
                 logger.exception(f"对话流生成异常（thread_id={thread_id}）：{e}")
-                event_queue.put(_format_sse({"error": str(e), "error_type": type(e).__name__}))
+                err_event = {"error": str(e), "error_type": type(e).__name__}
+                self._append_thread_event(thread_id, err_event)
+                event_queue.put(_format_sse(err_event))
                 event_queue.put(_SENTINEL)
             finally:
                 # 无论成功/异常/断连，worker 结束都从注册表移除——
@@ -692,6 +761,8 @@ class ChatService:
         flag = False
         try:
             checkpointer.delete_thread(thread_id)
+            # 同步清理该会话的事件流（Redis），避免残留脏事件在重建会话时被重放
+            self.clear_thread_events(thread_id)
             logger.info(f"删除会话:{thread_id}成功")
             flag = True
             return flag, f"删除会话:{thread_id}成功"
