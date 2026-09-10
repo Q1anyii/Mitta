@@ -41,9 +41,9 @@ jobs:
           CHANGED=$(git diff --name-only HEAD~1 HEAD || true)
           echo "changed files:"
           echo "$CHANGED"
-          if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements.txt|\.github/workflows/)'; then
+          if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements.txt|\.github/workflows/|src/)'; then
             echo "build_required=true" >> $GITHUB_OUTPUT
-            echo "→ 需要重建镜像（Dockerfile/依赖/workflow 有变更）"
+            echo "→ 需要重建镜像（Dockerfile/依赖/workflow/src 代码有变更）"
           else
             echo "build_required=false" >> $GITHUB_OUTPUT
             echo "→ 跳过构建，复用 latest 镜像"
