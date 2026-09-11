@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 340" width="1180" height="340" font-family="Arial, 'PingFang SC', sans-serif">
+  <defs>
+    <marker id="arr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8A8F98"/>
+    </marker>
+  </defs>
+  <g fill="none" stroke="#8A8F98" stroke-width="1.6" marker-end="url(#arr1)">
+    <line x1="100" y1="88" x2="135" y2="88"/>
+    <line x1="250" y1="88" x2="270" y2="88"/>
+    <line x1="420" y1="88" x2="520" y2="88"/>
+    <line x1="345" y1="128" x2="333" y2="215"/>
+    <path d="M395,243 C480,243 530,170 572,128"/>
+    <line x1="625" y1="88" x2="675" y2="88"/>
+    <line x1="745" y1="128" x2="730" y2="215"/>
+    <path d="M670,243 C610,243 600,170 572,128"/>
+    <line x1="815" y1="88" x2="880" y2="88"/>
+    <line x1="995" y1="88" x2="1050" y2="88"/>
+  </g>
+  <g font-size="12" fill="#6B7280" text-anchor="middle">
+    <text x="472" y="80">No 直接生成</text>
+    <text x="300" y="176">Yes 走检索</text>
+    <text x="505" y="226">检索结果→state</text>
+    <text x="702" y="176">Yes 调用工具</text>
+    <text x="608" y="226">工具结果回传</text>
+    <text x="848" y="80">No 收尾</text>
+  </g>
+  <g>
+    <rect x="15" y="60" width="85" height="56" rx="16" fill="#E8F5E9" stroke="#4CAF50" stroke-width="1.6"/>
+    <text x="57" y="94" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">START</text>
+
+    <rect x="135" y="60" width="115" height="56" rx="10" fill="#E8EFFC" stroke="#5B8DEF" stroke-width="1.6"/>
+    <text x="192" y="83" font-size="13" font-weight="600" fill="#1A3C7E" text-anchor="middle">classify_node</text>
+    <text x="192" y="102" font-size="11" fill="#4A6DA8" text-anchor="middle">LLM 意图判断</text>
+
+    <polygon points="345,48 420,88 345,128 270,88" fill="#FBF6DF" stroke="#E0B63C" stroke-width="1.6"/>
+    <text x="345" y="93" font-size="12.5" font-weight="600" fill="#7A5B00" text-anchor="middle">needs_retrieval?</text>
+
+    <rect x="520" y="60" width="105" height="56" rx="10" fill="#E8EFFC" stroke="#5B8DEF" stroke-width="1.6"/>
+    <text x="572" y="83" font-size="13" font-weight="600" fill="#1A3C7E" text-anchor="middle">llm_node</text>
+    <text x="572" y="102" font-size="11" fill="#4A6DA8" text-anchor="middle">组装提示词+生成</text>
+
+    <polygon points="745,48 815,88 745,128 675,88" fill="#FBF6DF" stroke="#E0B63C" stroke-width="1.6"/>
+    <text x="745" y="93" font-size="12.5" font-weight="600" fill="#7A5B00" text-anchor="middle">tool_calls?</text>
+
+    <rect x="880" y="60" width="115" height="56" rx="10" fill="#E8EFFC" stroke="#5B8DEF" stroke-width="1.6"/>
+    <text x="937" y="83" font-size="13" font-weight="600" fill="#1A3C7E" text-anchor="middle">memory_node</text>
+    <text x="937" y="102" font-size="11" fill="#4A6DA8" text-anchor="middle">提取长期记忆</text>
+
+    <rect x="1050" y="60" width="90" height="56" rx="16" fill="#E8F5E9" stroke="#4CAF50" stroke-width="1.6"/>
+    <text x="1095" y="94" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">END</text>
+  </g>
+  <g>
+    <rect x="270" y="215" width="125" height="56" rx="10" fill="#F3E8FA" stroke="#9C5BD0" stroke-width="1.6"/>
+    <text x="332" y="238" font-size="13" font-weight="600" fill="#5B1E8E" text-anchor="middle">retrieve_node</text>
+    <text x="332" y="257" font-size="11" fill="#8A5BB8" text-anchor="middle">RAG 子图检索</text>
+
+    <rect x="670" y="215" width="120" height="56" rx="10" fill="#FEF0E4" stroke="#E08A3C" stroke-width="1.6"/>
+    <text x="730" y="238" font-size="13" font-weight="600" fill="#8E4A00" text-anchor="middle">tool_node</text>
+    <text x="730" y="257" font-size="11" fill="#B8742E" text-anchor="middle">执行 MCP 工具</text>
+  </g>
+</svg>

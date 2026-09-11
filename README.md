@@ -47,38 +47,11 @@
 
 ## 1. 主对话图（main_graph）
 
-```mermaid
-flowchart TD
-    START([START]) --> CLASSIFY[classify_node]
-
-    CLASSIFY -->|LLM 判断是否需要检索| ROUTE{needs_retrieval?}
-
-    ROUTE -->|Yes| RETRIEVE[retrieve_node]
-    ROUTE -->|No| LLM
-
-    RETRIEVE -->|检索结果转dict存入state| LLM[llm_node]
-
-    LLM -->|组装提示词+tools过滤| ROUTE_LLM{route_after_llm<br/>tool_calls?}
-
-    ROUTE_LLM -->|Yes| TOOL[tool_node<br/>ToolNode 执行 MCP 工具]
-    ROUTE_LLM -->|No| MEMORY[memory_node]
-
-    TOOL -->|工具执行结果 ToolMessage| LLM
-
-    MEMORY -->|idle 闲聊轮快速跳过 / executed-unavailable 轮 LLM 提取记忆写入 Store| END_NODE([END])
-
-    classDef llmNode fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b
-    classDef toolNode fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
-    classDef cacheNode fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
-    classDef decision fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#f57f17
-    classDef terminal fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20
-
-    class CLASSIFY,LLM,MEMORY llmNode
-    class TOOL toolNode
-    class RETRIEVE cacheNode
-    class ROUTE,ROUTE_LLM decision
-    class START,END_NODE terminal
-```
+<p align="center">
+  <img src="docs/figures/main-graph.svg" alt="Mitta 主对话图（横向）" width="95%">
+  <br/>
+  <em>主对话图（点击图片查看原图）</em>
+</p>
 
 ### 节点说明
 
@@ -100,44 +73,11 @@ flowchart TD
 
 ## 2. RAG 检索子图（retrieve_graph）
 
-```mermaid
-flowchart TD
-    START([START]) --> CHECK_CACHE[check_cache<br/>Redis 检索缓存检查]
-
-    CHECK_CACHE --> CACHE_HIT{缓存命中?}
-
-    CACHE_HIT -->|命中| OUTPUT[output_node<br/>返回缓存文档]
-    CACHE_HIT -->|未命中| REWRITE[rewrite<br/>LLM 查询改写]
-
-    REWRITE -->|主查询 + 子查询| DENSE[dense_query<br/>稠密向量多路召回<br/>n_results=20]
-
-    DENSE --> BM25[bm25_search<br/>BM25 稀疏检索<br/>RedisSearch top_k=20]
-
-    BM25 --> RETRIEVE[retrieve<br/>RRF 融合 + 文本去重]
-
-    RETRIEVE --> RERANK[rerank<br/>在线重排 top_n=5<br/>relevance_score 落 metadata]
-
-    RERANK --> STORE_CACHE[store_cache<br/>写入 Redis 缓存]
-    RERANK --> FILTER[filter<br/>相关性阈值过滤 ≥0.15]
-
-    FILTER --> OUTPUT
-    OUTPUT --> END_NODE([END])
-
-    classDef llmNode fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b
-    classDef vectorNode fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20
-    classDef sparseNode fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100
-    classDef cacheNode fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
-    classDef decision fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#f57f17
-    classDef terminal fill:#fce4ec,stroke:#c62828,stroke-width:2px,color:#b71c1c
-
-    class REWRITE,RERANK llmNode
-    class DENSE,RETRIEVE vectorNode
-    class BM25 sparseNode
-    class CHECK_CACHE,STORE_CACHE cacheNode
-    class FILTER decision
-    class CACHE_HIT decision
-    class START,END_NODE,OUTPUT terminal
-```
+<p align="center">
+  <img src="docs/figures/retrieve-graph.svg" alt="Mitta RAG 检索子图（横向）" width="95%">
+  <br/>
+  <em>RAG 检索子图（点击图片查看原图）</em>
+</p>
 
 ### 节点说明
 
