@@ -81,17 +81,37 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=min
 
-      # ========== 阶段 3：SCP 同步前端文件 + 配置（绕过 git pull） ==========
-      - name: Sync frontend & config to server via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.ECS_HOST }}
-          username: ${{ secrets.ECS_USER }}
-          key: ${{ secrets.ECS_SSH_KEY }}
-          # 前端静态文件 + compose 配置 + 运行时配置（.env 不在仓库，不会覆盖）
-          source: "resources/frontend,docker-compose.yml,resources/config,resources/system_prompt"
-          target: /opt/mitta
-          overwrite: true
+      # ========== 阶段 3：rsync 增量同步前端文件 + 配置（绕过 git pull） ==========
+      # 相比 scp-action 每次全量 tar 上传：rsync -c 按内容校验只传变化块，
+      # 改一个 CSS/JS 仅传几 KB（跨境公网下从 ~2.5min 压到秒级）。
+      # 注意：只对纯前端目录加 --delete 清理服务器残留；绝不对 /opt/mitta 根目录加，
+      # 否则会误删服务器上不在仓库的 .env、数据卷等运行时文件。
+      - name: Sync frontend & config to server via rsync
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.ECS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH_OPTS="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30"
+          HOST="${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}"
+          DEST="/opt/mitta"
+
+          echo "=== 增量同步前端（--delete 清理旧文件，含已删除的备份目录）==="
+          rsync -azc --delete --stats -e "ssh $SSH_OPTS" \
+            resources/frontend/ "$HOST:$DEST/resources/frontend/" | grep -E "transferred|Total transferred" || true
+
+          echo "=== 增量同步运行时配置 ==="
+          rsync -azc -e "ssh $SSH_OPTS" \
+            resources/config/ "$HOST:$DEST/resources/config/"
+          rsync -azc -e "ssh $SSH_OPTS" \
+            resources/system_prompt/ "$HOST:$DEST/resources/system_prompt/"
+
+          echo "=== 同步 compose 文件 ==="
+          rsync -azc -e "ssh $SSH_OPTS" \
+            docker-compose.yml "$HOST:$DEST/docker-compose.yml"
+
+          echo "✅ rsync 增量同步完成"
 
       # ========== 阶段 4：SSH 部署（只拉镜像，不本地 build） ==========
       - name: Deploy to Aliyun ECS
