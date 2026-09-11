@@ -807,8 +807,9 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 /* ========== 认证页米塔形象（路由联动：容器位移缩放 + 换脸交叉淡化 + 待机微动） ========== */
 .auth-mita {
     position: absolute; z-index: 0; pointer-events: none;
+    width: 72%; aspect-ratio: 1 / 1; height: auto;
     transition: left 1s var(--ease-smooth), top 1s var(--ease-smooth),
-                width 1s var(--ease-smooth), height 1s var(--ease-smooth);
+                width 1s var(--ease-smooth);
 }
 .auth-mita img {
     position: absolute; left: 0; top: 0; width: 100%; height: 100%;
@@ -816,14 +817,15 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     filter: drop-shadow(0 12px 26px rgba(0,0,0,.38));
     will-change: transform, opacity;
 }
-/* 登录：帽子米塔，居中偏右为主体，上下浮动（元气） */
-.auth-mita.mita-login { left: 42%; top: 25%; width: 400px; height: 400px; }
+/* 登录：帽子米塔，居中偏右为主体，上下浮动（元气）
+   注意：容器用百分比尺寸，保证右边界不超出 .auth-brand（overflow:hidden 会裁掉手势/身体） */
+.auth-mita.mita-login { left: 18%; top: 20%; }
 .auth-mita.mita-login img { animation: mita-float 3.2s ease-in-out infinite alternate; }
-/* 注册：善良米塔，移到右上部贴近弧线，柔和呼吸（温柔） */
-.auth-mita.mita-register { left: 52%; top: 12%; width: 300px; height: 300px; }
+/* 注册：善良米塔，移到上部贴近弧线，柔和呼吸（温柔） */
+.auth-mita.mita-register { left: 20%; top: 8%; width: 62%; }
 .auth-mita.mita-register img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 找回：疯狂米塔，移到左下，轻微摇摆 + 病娇抖动 */
-.auth-mita.mita-recover { left: 16%; top: 50%; width: 360px; height: 360px; }
+.auth-mita.mita-recover { left: 4%; top: 48%; width: 68%; }
 .auth-mita.mita-recover img { animation: mita-sway 2.4s ease-in-out infinite; }
 
 /* 换脸交叉淡化（Vue transition 默认并行模式：旧图淡出 + 新图淡入） */

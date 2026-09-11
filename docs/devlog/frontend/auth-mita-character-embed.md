@@ -68,6 +68,12 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
 - `prefers-reduced-motion: reduce` 时关闭全部动画与位移过渡（可访问性降级）。
 - 认证组件未用 `mode="out-in"`（会触发 nextSibling 空指针崩溃，代码注释已说明）。
 
+### 问题 5：米塔形象只显示头部，手势/身体被裁
+
+- **现象**：注册页渲染出的善良米塔只剩头部特写，竖拇指手势与身体消失。
+- **排查**：浏览器实测 .auth-mita 容器几何——登录态 400px、注册态 300px 容器用固定 px 宽 + 百分位 left 定位，右边界（login 596px / register 542px）超出品牌区 .auth-brand 宽度（约 466px），而 .auth-brand 为 overflow: hidden，容器右侧（手势所在区域）被整体裁掉。找回态（left 16% + 360px = 434px）未越界所以正常。
+- **解决**：容器尺寸改为百分比体系——基础 width: 72%; aspect-ratio: 1/1; height: auto，三态仅微调 width（login 72% / register 62% / recover 68%）与 left（18% / 20% / 4%），保证任何视口下右边界都落在品牌区内（实测 login 432 < 480、register 394 < 480、recover 346 < 480）。同时本地 SPA 服务器加 Cache-Control: no-store 头，避免改样式后浏览器仍用旧 CSS。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。
