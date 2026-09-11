@@ -685,6 +685,7 @@
                             <router-link to="/api/register">注册账号</router-link>
                             <router-link to="/api/recover">忘记密码？</router-link>
                         </div>
+                        <div class="auth-prompt">○ 确定 &nbsp;&nbsp;× 返回</div>
                     </div>
                 </div>
             `,
@@ -800,6 +801,7 @@
                         <div class="auth-links">
                             <router-link to="/api/login">已有账号？登录</router-link>
                         </div>
+                        <div class="auth-prompt">○ 确定 &nbsp;&nbsp;× 返回</div>
                     </div>
                 </div>
             `,
@@ -894,6 +896,7 @@
                         <div class="auth-links">
                             <router-link to="/api/login">返回登录</router-link>
                         </div>
+                        <div class="auth-prompt">○ 确定 &nbsp;&nbsp;× 返回</div>
                     </div>
                 </div>
             `,
