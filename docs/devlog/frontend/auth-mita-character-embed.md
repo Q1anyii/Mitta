@@ -160,6 +160,16 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
 - **实现**：login 标题 `(´-ω-`)`→`(´-ω-｀)`（日文假名对称）、描述补 `(。-ω-)`；recover 描述 `(¬‿¬)`→`(￢‿￢)`（更清晰）；register 不变。
 - **验证**：浏览器实测 DOM 渲染正确，三态风格一致。
 
+### 问题 17：Edge 浏览器认证页动态效果卡顿
+
+- **现象**：Edge 中路由切换动画（米塔位移/缩放、圆环变形）明显卡顿，Chrome 相对流畅。
+- **根因**：① `.auth-mita` 对 `left/top/right/bottom/width` 做 1s layout 过渡——大图每帧重排重绘，Edge 软件渲染下是最大卡顿源；② 三张米塔 PNG 均为 659KB~1MB（约 1280×1280），解码+drop-shadow+缩放重绘开销大；③ ring 的 `stroke-dasharray/dashoffset` 1s 过渡在 CPU 逐帧重算。
+- **修复**：
+  - `.auth-mita` 定位过渡移除（`transition: none`），路由切换改由既有的 `mita-fade` opacity 交叉淡化承担（0.55s，GPU 合成）；
+  - 三张米塔图用 PIL 压缩至 640×640（保持 RGBA 透明）：1MB→348KB、659KB→428KB、702KB→444KB（-35%~-67%）；
+  - ring 三态变形过渡 1s→0.7s 降负（wave/grow/bloom 均为 transform，保持 GPU 合成）。
+- **验证**：三态回归——图片 640×640 加载正常、贴角位置与 footer 无重叠不变；bloom 动画时间线正常（扩张→淡出→完整环）。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。

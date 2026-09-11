@@ -777,9 +777,9 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 }
 .auth-ring circle { fill: none; stroke-width: 13; stroke-linecap: round; }
 /* 三态配色：登录=淡蓝 / 注册=粉 / 找回=红；颜色 1s 平滑过渡 */
-.ring-main { stroke: rgba(122,180,242,.95); transition: stroke 1s var(--ease-smooth), stroke-dasharray 1s cubic-bezier(.65,.05,.36,1), stroke-dashoffset 1s cubic-bezier(.65,.05,.36,1); }
-.ring-sub { stroke: rgba(122,180,242,.42); stroke-width: 8; transition: stroke 1s var(--ease-smooth), stroke-dasharray 1s cubic-bezier(.65,.05,.36,1), stroke-dashoffset 1s cubic-bezier(.65,.05,.36,1); }
-.ring-dot { fill: #9CC9F5; stroke: none; transition: fill 1s var(--ease-smooth), transform 1s cubic-bezier(.65,.05,.36,1); }
+.ring-main { stroke: rgba(122,180,242,.95); transition: stroke .7s var(--ease-smooth), stroke-dasharray .7s cubic-bezier(.65,.05,.36,1), stroke-dashoffset .7s cubic-bezier(.65,.05,.36,1); }
+.ring-sub { stroke: rgba(122,180,242,.42); stroke-width: 8; transition: stroke .7s var(--ease-smooth), stroke-dasharray .7s cubic-bezier(.65,.05,.36,1), stroke-dashoffset .7s cubic-bezier(.65,.05,.36,1); }
+.ring-dot { fill: #9CC9F5; stroke: none; transition: fill .7s var(--ease-smooth), transform .7s cubic-bezier(.65,.05,.36,1); }
 .ring-register .ring-main { stroke: rgba(255,128,168,.95); }
 .ring-register .ring-sub { stroke: rgba(255,128,168,.42); }
 .ring-register .ring-dot { fill: #FFA9C4; }
@@ -854,8 +854,8 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .auth-mita {
     position: absolute; z-index: 0; pointer-events: none;
     width: 72%; aspect-ratio: 1 / 1; height: auto;
-    transition: left 1s var(--ease-smooth), top 1s var(--ease-smooth),
-                bottom 1s var(--ease-smooth), width 1s var(--ease-smooth), right 1s var(--ease-smooth);
+    /* 定位不做 layout 过渡（Edge 下大图逐帧重排严重卡顿）：路由切换靠 mita-fade 交叉淡化 */
+    transition: none;
 }
 .auth-mita img {
     position: absolute; left: 0; top: 0; width: 100%; height: 100%;
