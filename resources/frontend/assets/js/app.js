@@ -975,8 +975,10 @@
                             <circle class="ring-sub" cx="200" cy="200" r="150"/>
                             <circle class="ring-dot" cx="200" cy="50" r="11"/>
                         </svg>
-                        <!-- 米塔形象：容器按三态位移/缩放，img 交叉淡化换脸 -->
-                        <div class="auth-mita" :class="'mita-' + authMode" aria-hidden="true">
+                        <!-- 米塔形象：容器按三态位移/缩放，img 交叉淡化换脸
+                             v-if 排除 login：登录态帽子米塔已移除，容器不进 DOM，
+                             避免 CSS display:none 隐藏时路由切换触发旧图 leave 过渡导致帽子残留 -->
+                        <div v-if="authMode !== 'login'" class="auth-mita" :class="'mita-' + authMode" aria-hidden="true">
                             <transition name="mita-fade">
                                 <img :key="authMode" :src="mitaImg" :alt="mitaName">
                             </transition>

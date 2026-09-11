@@ -86,6 +86,13 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
 - **实现**：`AUTH_QUOTES.login` 重写——title「欢迎回来呀～ Mitta 等你很久了呢 (｡•̀ᴗ-)✧」、desc「登录后继续知识大冒险，准确、可靠的知识管家随时待命哦 ♪(^∇^*)」。
 - **验证**：登录页实测渲染新文案，无帽子相关措辞。
 
+### 问题 8：路由切换过渡期间帽子米塔残留
+
+- **现象**：从登录切到注册时，1s 过渡期间帽子米塔旧图短暂残留可见。
+- **排查**：登录态此前仅用 CSS `display:none` 隐藏 `.auth-mita` 容器，容器与帽子 img 仍在 DOM；切到注册时 Vue transition 对旧 img（key=login）做 leave 淡出、对新 img 做 enter 淡入，两者并存导致帽子残留。
+- **解决**：`.auth-mita` 容器加 `v-if="authMode !== 'login'"`——登录态容器整体不进 DOM，帽子图彻底不存在，切换时只挂载新图，无旧图 leave 过渡。
+- **验证**：login 态 `document.querySelector('.auth-mita')` 为 null；login→register 过渡早期 DOM 仅 1 张 `mita_kind.png`；recover 过渡早期仅 `mita_crazy.png`；recover→login 容器被移除。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。
