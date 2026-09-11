@@ -80,6 +80,12 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
 - **实现**：.auth-mita.mita-login { display: none; }；注册/找回改为 left: auto; right: 0 右对齐定位（右缘精确贴品牌区右边界，不受品牌区宽度变化影响）。
 - **验证**：login 态 .auth-mita display:none（无米塔）；register 右缘 480 = 品牌右缘 480（gap 0）；recover 右缘 480 = 品牌右缘 480（gap 0）。截图存 auth_login/register/recover.png。
 
+### 问题 7：登录页文案参照 Mitta system_prompt 重写
+
+- **需求**：登录态已移除帽子米塔形象，左侧文案不再提及"帽子"，改为参照 Mitta 全局 system_prompt 的人设风格（元气、温柔、俏皮、可靠知识管家，语气词"呀/哦/呢" + 颜文字）。
+- **实现**：`AUTH_QUOTES.login` 重写——title「欢迎回来呀～ Mitta 等你很久了呢 (｡•̀ᴗ-)✧」、desc「登录后继续知识大冒险，准确、可靠的知识管家随时待命哦 ♪(^∇^*)」。
+- **验证**：登录页实测渲染新文案，无帽子相关措辞。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。
