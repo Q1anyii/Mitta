@@ -1,4 +1,4 @@
-/* ============================================================================
+﻿/* ============================================================================
    MITTA — "NEO TOKYO" 设计系统
    视觉灵感：Persona 3 冷调蓝灰 × Persona 5 高对比红黑几何
    设计语言：粗墨描边 + 硬投影（Neo-Brutalism）+ 锐利切角 + 斜纹纹理 + 按压动效
@@ -169,7 +169,24 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     position: relative; z-index: 1;
     display: flex; align-items: center; justify-content: center; padding: 32px;
     overflow: hidden; background: var(--paper);
-    background-image: repeating-linear-gradient(-45deg, transparent 0 22px, rgba(18,184,201,.035) 22px 24px);
+    background-image:
+        radial-gradient(120% 90% at 100% 0%, rgba(255,59,78,.07), transparent 60%),
+        radial-gradient(90% 80% at 0% 100%, rgba(18,184,201,.06), transparent 55%),
+        linear-gradient(rgba(20,22,28,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(20,22,28,.045) 1px, transparent 1px);
+    background-size: auto, auto, 26px 26px, 26px 26px;
+}
+/* 右模块顶部细弧：与左侧圆环同色，把左右区块"圈"成一体（静态细线，无滤镜动画） */
+.auth-form-wrapper::before {
+    content: ''; position: absolute; top: -150px; left: 50%; transform: translateX(-50%);
+    width: 720px; height: 300px; pointer-events: none; z-index: 0;
+    border: 2px solid rgba(122,180,242,.22); border-bottom: none;
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    -webkit-mask: linear-gradient(180deg, #000 30%, transparent 92%);
+            mask: linear-gradient(180deg, #000 30%, transparent 92%);
+}
+.auth-layout.ring-register .auth-form-wrapper::before { border-color: rgba(255,128,168,.22); }
+.auth-layout.ring-recover .auth-form-wrapper::before { border-color: rgba(255,59,78,.20); }
 }
 /* ===== 卡片外背景大字（AuthLayout 统一管理；外层容器定位 + 内层 span 旋转；
         过渡由 Vue transition 方向类接管，滚轮式平滑切换） ===== */
@@ -829,7 +846,11 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 /* 三态配色：登录=淡蓝 / 注册=粉 / 找回=红；颜色 1s 平滑过渡 */
 .ring-main { stroke: rgba(122,180,242,.95); transition: stroke .7s var(--ease-smooth), stroke-dasharray .7s cubic-bezier(.65,.05,.36,1), stroke-dashoffset .7s cubic-bezier(.65,.05,.36,1); }
 .ring-sub { stroke: rgba(122,180,242,.42); stroke-width: 8; transition: stroke .7s var(--ease-smooth), stroke-dasharray .7s cubic-bezier(.65,.05,.36,1), stroke-dashoffset .7s cubic-bezier(.65,.05,.36,1); }
-.ring-dot { fill: #9CC9F5; stroke: none; transition: fill .7s var(--ease-smooth), transform .7s cubic-bezier(.65,.05,.36,1); }
+.ring-dot { fill: #9CC9F5; stroke: none; transition: fill .7s var(--ease-smooth); }
+/* 圆点沿圆弧轨迹运动：圆点固定在 12 点，整组绕圆心(200,200)旋转，故切换时沿圆周滑动而非直线瞬移 */
+.ring-dot-rot { transform-origin: 200px 200px; transition: transform 1s cubic-bezier(.65,.05,.36,1), opacity .8s ease; opacity: 1; }
+/* 登录(主)态圆点隐藏；注册/找回态显示。随 .auth-layout.ring-{mode} 自动切换，过渡由上面 transition 负责 */
+.auth-layout.ring-login .ring-dot-rot { opacity: 0; }
 .ring-register .ring-main { stroke: rgba(255,128,168,.95); }
 .ring-register .ring-sub { stroke: rgba(255,128,168,.42); }
 .ring-register .ring-dot { fill: #FFA9C4; }
@@ -843,11 +864,9 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 /* 注册：双弧分裂（相对两个半环），圆点移至底部 */
 .ring-register .ring-main { stroke-dasharray: 471.24 471.24; }
 .ring-register .ring-sub { stroke-dasharray: 471.24 471.24; stroke-dashoffset: -471.24; }
-.ring-register .ring-dot { transform: translate(0, 300px); }
 /* 找回：3/4 环留缺口，补弧填充缺口，圆点移至缺口处（左侧） */
 .ring-recover .ring-main { stroke-dasharray: 706.86 235.62; stroke-dashoffset: -117.81; }
 .ring-recover .ring-sub { stroke-dasharray: 117.81 824.67; stroke-dashoffset: -117.81; }
-.ring-recover .ring-dot { transform: translate(-150px, 150px); }
 
 /* 路由切换方向动画（由 app.js watch 注入一次性 class） */
 @keyframes ring-wave {
@@ -916,13 +935,13 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     will-change: transform, opacity;
 }
 /* 登录：睡衣米塔，左下角，柔和呼吸（慵懒惬意） */
-.auth-mita.mita-login { left: 6%; bottom: 80px; width: min(56%, 280px); }
+.auth-mita.mita-login { left: 6%; bottom: 36px; width: min(84%, 420px); }
 .auth-mita.mita-login img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 注册：米塔，右缘对齐品牌区右边线，柔和呼吸（温柔） */
-.auth-mita.mita-register { left: auto; right: 0; bottom: 80px; width: min(62%, 300px); }
+.auth-mita.mita-register { left: auto; right: 0; bottom: 36px; width: min(93%, 450px); }
 .auth-mita.mita-register img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 找回：米塔，右缘对齐品牌区右边线，轻微摇摆 + 安抚感 */
-.auth-mita.mita-recover { left: auto; right: 0; bottom: 80px; width: min(68%, 330px); }
+.auth-mita.mita-recover { left: auto; right: 0; bottom: 36px; width: min(100%, 495px); }
 .auth-mita.mita-recover img { animation: mita-sway 2.4s ease-in-out infinite; }
 
 /* 换脸交叉淡化（Vue transition 默认并行模式：旧图淡出 + 新图淡入） */
@@ -950,3 +969,4 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     .auth-mita img { animation: none !important; }
     .mita-fade-enter-active, .mita-fade-leave-active { transition: opacity .2s linear; }
 }
+

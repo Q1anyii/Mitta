@@ -965,7 +965,7 @@
 
         const AuthLayout = {
             template: `
-                <div class="auth-layout">
+                <div class="auth-layout" :class="'ring-' + authMode">
                     <div class="auth-brand">
                         <div class="auth-side-deco">NEO · TOKYO</div>
                         <!-- 氛围弧线：红色/金色弧段作背景点缀（米塔为主体，弧线弱化氛围） -->
@@ -973,7 +973,7 @@
                             <circle class="ring-fan" cx="200" cy="200" r="150"/>
                             <circle class="ring-main" cx="200" cy="200" r="150"/>
                             <circle class="ring-sub" cx="200" cy="200" r="150"/>
-                            <circle class="ring-dot" cx="200" cy="50" r="11"/>
+                            <g class="ring-dot-rot" :style="{ transform: 'rotate(' + dotAngle + 'deg)' }"><circle class="ring-dot" cx="200" cy="50" r="11"/></g>
                         </svg>
                         <!-- 米塔形象：容器按三态位移/缩放，img 交叉淡化换脸
                              登录=睡衣米塔（左下角），注册/找回右缘对齐右边线 -->
@@ -1009,7 +1009,8 @@
                 </div>
             `,
             data() {
-                return { ringAnim: '', quoteAnim: 'quote-swap', wordPos: null, wordHidden: false };
+                return { ringAnim: '', quoteAnim: 'quote-swap', wordPos: null, wordHidden: false,
+                         dotAngle: 0, dotShow: false };
             },
             watch: {
                 // 圆环切换方向动画：登录→注册=波动 / 登录→找回=变大缩回 / 返回登录=蓝色覆盖生长
@@ -1022,6 +1023,21 @@
                     // 提示词滚轮方向：注册目标=上滑；找回回登录=上滑；其余=下滑
                     const rollUp = (n === 'register' && o !== 'register') || (o === 'recover' && n === 'login');
                     this.quoteAnim = rollUp ? 'quote-up' : 'quote-down';
+                    // 圆环圆点：注册/找回都停在左下(225°视觉)；返回登录时按来向继续转出并淡出
+                    //  register(joinus)->login：逆时针走消失；recover(reset)->login：顺时针走消失
+                    //  login->register：顺时针抵达；login->recover：逆时针抵达；register<->recover 视觉同位不动
+                    const DOT_MOD = 225;
+                    if (n === 'login') {
+                        this.dotShow = false;
+                        if (o === 'register') this.dotAngle -= 135;
+                        else if (o === 'recover') this.dotAngle += 135;
+                    } else {
+                        this.dotShow = true;
+                        if (o === 'login') {
+                            if (n === 'register') this.dotAngle = this.nearestRot(this.dotAngle, DOT_MOD, 1);
+                            else if (n === 'recover') this.dotAngle = this.nearestRot(this.dotAngle, DOT_MOD, -1);
+                        }
+                    }
                     if (this.ringAnim) {
                         clearTimeout(this._ringTimer);
                         this._ringTimer = setTimeout(() => { this.ringAnim = ''; }, 1100);
@@ -1031,6 +1047,8 @@
                 }
             },
             mounted() {
+                // 直接以注册/找回页进入（刷新）时，圆点初始即显示在左下 225°；登录态默认隐藏
+                if (this.authMode !== 'login') { this.dotShow = true; this.dotAngle = 225; }
                 // 首屏大字定位：等待 router-view 内的 .auth-card 挂载后重试，直到就绪
                 this._retryWord();
                 window.addEventListener('resize', this._onWordResize);
@@ -1039,6 +1057,14 @@
                 window.removeEventListener('resize', this._onWordResize);
             },
             methods: {
+                // 沿 dir(+1 顺时针/-1 逆时针)找第一个 ≡ mod(度) 的等效角，保证圆点沿指定方向短弧抵达
+                nearestRot(cur, mod, dir) {
+                    let k = dir > 0 ? Math.ceil((cur - mod) / 360) : Math.floor((cur - mod) / 360);
+                    let cand = mod + 360 * k;
+                    if (dir > 0 && cand <= cur) cand += 360;
+                    if (dir < 0 && cand >= cur) cand -= 360;
+                    return cand;
+                },
                 // 大字动态定位：相对 .auth-card / .auth-form-wrapper（右模块），视口无关
                 _retryWord() {
                     if (document.querySelector('.auth-card') && this.$el.querySelector('.auth-bg-word')) {
