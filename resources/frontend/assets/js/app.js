@@ -664,7 +664,7 @@
                     <div class="auth-card">
                         <div class="auth-tag">01 / SIGN IN</div>
                         <h1>欢迎回来</h1>
-                        <p class="auth-subtitle">登录后继续与 Mitta 智能助理对话</p>
+                        <p class="auth-subtitle">{{ subtitle }}</p>
                         <form @submit.prevent="handleLogin">
                             <div class="form-group">
                                 <label class="form-label">用户 ID</label>
@@ -692,8 +692,15 @@
                 return {
                     form: { userId: '', password: '' },
                     errors: { userId: '', password: '' },
-                    isSubmitting: false
+                    isSubmitting: false,
+                    subtitle: '登录后继续与 Mitta 智能助理对话'
                 };
+            },
+            mounted() {
+                // 注册成功后跳转回来时，给出引导提示（贴合 Mitta 元气风格）
+                if (this.$route.query.registered === '1') {
+                    this.subtitle = '注册成功！请使用新账号登录 (๑•̀ㅂ•́)و✧';
+                }
             },
             methods: {
                 validate() {
@@ -843,7 +850,14 @@
                             })
                         });
                         const { ok, message } = await parseApiResponse(res);
-                        this.formMsg = message || (ok ? '注册成功' : '注册失败');
+                        if (ok) {
+                            this.formMsg = '注册成功，正在跳转登录...';
+                            setTimeout(() => {
+                                this.$router.push('/api/login?registered=1');
+                            }, 1200);
+                        } else {
+                            this.formMsg = message || '注册失败';
+                        }
                     } catch (err) {
                         this.formMsg = '网络异常，请稍后重试';
                     } finally {
@@ -926,19 +940,57 @@
             }
         };
 
+        // 认证页左侧品牌区动态文案（随路由模式切换，贴合对应米塔人格）
+        // 登录=帽子米塔（元气俏皮）/ 注册=善良米塔（温柔治愈）/ 找回=疯狂米塔（病娇安抚）
+        const AUTH_QUOTES = {
+            login: {
+                title: '帽子米塔，来迎接你啦！(๑•̀ㅂ•́)و✧',
+                desc: '戴上猫耳贝雷帽等你回来～登录后，继续我们的知识大冒险吧！'
+            },
+            register: {
+                title: '欢迎加入 Mitta 的温柔小窝 (｡･ω･｡)ﾉ♡',
+                desc: '牵住善良米塔的手，创建账号，专属知识管家即刻上线～'
+            },
+            recover: {
+                title: '别想逃哦～我帮你找回密码 ♡',
+                desc: '疯狂米塔会一直守着你，重新设置密码，马上就能回来啦～'
+            }
+        };
+
+        // 三态米塔形象素材（透明底 PNG，与参考图一一对应）
+        const MITA_IMAGES = {
+            login: { src: '/assets/img/mita_hat.png',   name: '帽子米塔' },
+            register: { src: '/assets/img/mita_kind.png',  name: '善良米塔' },
+            recover: { src: '/assets/img/mita_crazy.png',  name: '疯狂米塔' }
+        };
+
         const AuthLayout = {
             template: `
                 <div class="auth-layout">
                     <div class="auth-brand">
                         <div class="auth-side-deco">NEO · TOKYO</div>
+                        <!-- 氛围弧线：红色/金色弧段作背景点缀（米塔为主体，弧线弱化氛围） -->
+                        <svg class="auth-ring" :class="'ring-' + authMode" viewBox="0 0 400 400" aria-hidden="true">
+                            <circle class="ring-main" cx="200" cy="200" r="150"/>
+                            <circle class="ring-sub" cx="200" cy="200" r="150"/>
+                            <circle class="ring-dot" cx="200" cy="50" r="11"/>
+                        </svg>
+                        <!-- 米塔形象：容器按三态位移/缩放，img 交叉淡化换脸 -->
+                        <div class="auth-mita" :class="'mita-' + authMode" aria-hidden="true">
+                            <transition name="mita-fade">
+                                <img :key="authMode" :src="mitaImg" :alt="mitaName">
+                            </transition>
+                        </div>
                         <div class="auth-logo">
                             <div class="auth-logo-mark"><img src="/favicon.png" alt=""></div>
                             <span>Mitta AI</span>
                         </div>
-                        <div class="auth-quote">
-                            <h2>Mitta，你的元气智能助理 (๑•̀ㅂ•́)و✧</h2>
-                            <p>我是 Mitta，一名元气 AI 助理呀～基于知识库为你提供准确客观的信息，可爱只是糖衣，内核是绝对可靠的知识管家呢 (｡•̀ᴗ-)✧</p>
-                        </div>
+                        <transition name="quote-swap" mode="out-in">
+                            <div class="auth-quote" :key="authMode">
+                                <h2>{{ quote.title }}</h2>
+                                <p>{{ quote.desc }}</p>
+                            </div>
+                        </transition>
                         <div class="auth-footer">© 2026 MITTA AI — TAKE YOUR HEART</div>
                     </div>
                     <router-view v-slot="{ Component }">
@@ -946,7 +998,25 @@
                         <component v-if="Component" :is="Component" />
                     </router-view>
                 </div>
-            `
+            `,
+            computed: {
+                // 由当前路由推导认证模式：login / register / recover
+                authMode() {
+                    const p = this.$route.path;
+                    if (p.includes('register')) return 'register';
+                    if (p.includes('recover')) return 'recover';
+                    return 'login';
+                },
+                quote() {
+                    return AUTH_QUOTES[this.authMode] || AUTH_QUOTES.login;
+                },
+                mitaImg() {
+                    return (MITA_IMAGES[this.authMode] || MITA_IMAGES.login).src;
+                },
+                mitaName() {
+                    return (MITA_IMAGES[this.authMode] || MITA_IMAGES.login).name;
+                }
+            }
         };
 
         // ============================================================

@@ -147,10 +147,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     background-image: repeating-linear-gradient(-45deg, transparent 0 26px, rgba(255,255,255,.04) 26px 28px);
     pointer-events: none;
 }
-.auth-brand::after { /* 大号几何圆 */
-    content: ""; position: absolute; right: -120px; top: -120px; width: 360px; height: 360px;
-    border: 14px solid rgba(255,59,78,.85); border-radius: 50%;
-}
+/* 原静态大圆已由 .auth-ring（SVG 动态装饰）替代，见“动态装饰圆环”段 */
 .auth-logo { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
 .auth-logo-mark {
     width: 52px; height: 52px; background: var(--red); border: 3px solid #fff;
@@ -159,7 +156,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 }
 .auth-logo-mark img { width: 34px; height: 34px; object-fit: contain; }
 .auth-logo span { font-size: 26px; font-weight: 900; letter-spacing: 2px; }
-.auth-quote { position: relative; z-index: 1; max-width: 460px; animation: rise-in .6s var(--ease-smooth) both; }
+.auth-quote { position: relative; z-index: 1; max-width: 460px; }
 .auth-quote h2 { font-size: 38px; line-height: 1.25; font-weight: 900; margin-bottom: 20px;
     text-transform: none; }
 .auth-quote h2::after { content: ""; display: block; width: 64px; height: 6px; background: var(--yellow);
@@ -768,4 +765,88 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .inline-code {
     background: var(--surface-2); border: 1.5px solid var(--line-soft); padding: 2px 6px;
     border-radius: 4px; font-size: 12px; font-family: var(--font-mono);
+}
+
+
+/* ========== 认证页动态装饰圆环（路由联动平滑变形） ========== */
+/* 登录=完整环 / 注册=双弧分裂 / 找回=3/4环+补弧；stroke-dasharray 可被 CSS 过渡 */
+.auth-ring {
+    position: absolute; right: -110px; top: -110px; width: 380px; height: 380px;
+    z-index: 0; pointer-events: none; overflow: visible;
+    opacity: .5;  /* 弧线降为氛围层，米塔为主体 */
+}
+.auth-ring circle { fill: none; stroke-width: 13; stroke-linecap: round; }
+.ring-main { stroke: rgba(255,59,78,.92); }
+.ring-sub { stroke: rgba(255,209,102,.5); stroke-width: 8; }
+.ring-dot { fill: var(--yellow); stroke: none; }
+.auth-ring .ring-main,
+.auth-ring .ring-sub {
+    transition: stroke-dasharray 1s cubic-bezier(.65,.05,.36,1), stroke-dashoffset 1s cubic-bezier(.65,.05,.36,1);
+}
+.ring-dot { transform: translate(0,0); transition: transform 1s cubic-bezier(.65,.05,.36,1); }
+
+/* 默认（登录）：完整红色圆环，副弧隐藏，圆点居顶 */
+.auth-ring .ring-main { stroke-dasharray: 942.48 0; stroke-dashoffset: 0; }
+.auth-ring .ring-sub { stroke-dasharray: 0 942.48; stroke-dashoffset: 0; }
+/* 注册：双弧分裂（相对两个半环），圆点移至底部 */
+.ring-register .ring-main { stroke-dasharray: 471.24 471.24; }
+.ring-register .ring-sub { stroke-dasharray: 471.24 471.24; stroke-dashoffset: -471.24; }
+.ring-register .ring-dot { transform: translate(0, 300px); }
+/* 找回：3/4 环留缺口，金色补弧填充缺口，圆点移至缺口处（左侧） */
+.ring-recover .ring-main { stroke-dasharray: 706.86 235.62; stroke-dashoffset: -117.81; }
+.ring-recover .ring-sub { stroke-dasharray: 117.81 824.67; stroke-dashoffset: -117.81; }
+.ring-recover .ring-dot { transform: translate(-150px, 150px); }
+
+/* 左侧品牌区文案切换过渡 */
+.quote-swap-enter-active, .quote-swap-leave-active {
+    transition: opacity .45s var(--ease-smooth), transform .45s var(--ease-smooth);
+}
+.quote-swap-enter-from { opacity: 0; transform: translateY(16px); }
+.quote-swap-leave-to { opacity: 0; transform: translateY(-16px); }
+
+/* ========== 认证页米塔形象（路由联动：容器位移缩放 + 换脸交叉淡化 + 待机微动） ========== */
+.auth-mita {
+    position: absolute; z-index: 0; pointer-events: none;
+    transition: left 1s var(--ease-smooth), top 1s var(--ease-smooth),
+                width 1s var(--ease-smooth), height 1s var(--ease-smooth);
+}
+.auth-mita img {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 12px 26px rgba(0,0,0,.38));
+    will-change: transform, opacity;
+}
+/* 登录：帽子米塔，居中偏右为主体，上下浮动（元气） */
+.auth-mita.mita-login { left: 42%; top: 25%; width: 400px; height: 400px; }
+.auth-mita.mita-login img { animation: mita-float 3.2s ease-in-out infinite alternate; }
+/* 注册：善良米塔，移到右上部贴近弧线，柔和呼吸（温柔） */
+.auth-mita.mita-register { left: 52%; top: 12%; width: 300px; height: 300px; }
+.auth-mita.mita-register img { animation: mita-breathe 4.2s ease-in-out infinite; }
+/* 找回：疯狂米塔，移到左下，轻微摇摆 + 病娇抖动 */
+.auth-mita.mita-recover { left: 16%; top: 50%; width: 360px; height: 360px; }
+.auth-mita.mita-recover img { animation: mita-sway 2.4s ease-in-out infinite; }
+
+/* 换脸交叉淡化（Vue transition 默认并行模式：旧图淡出 + 新图淡入） */
+.mita-fade-enter-active, .mita-fade-leave-active { transition: opacity .55s ease; }
+.mita-fade-enter-from, .mita-fade-leave-to { opacity: 0; }
+
+@keyframes mita-float {
+    from { transform: translateY(0); }
+    to { transform: translateY(-14px); }
+}
+@keyframes mita-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+}
+@keyframes mita-sway {
+    0%, 100% { transform: rotate(-2deg) translateX(0); }
+    45% { transform: rotate(2deg) translateX(6px); }
+    50%, 54% { transform: rotate(-1.5deg) translateX(-4px); }  /* 病娇小抖动 */
+}
+
+/* 弱化动效偏好：关闭待机动画与位移过渡 */
+@media (prefers-reduced-motion: reduce) {
+    .auth-mita { transition: none; }
+    .auth-mita img { animation: none !important; }
+    .mita-fade-enter-active, .mita-fade-leave-active { transition: opacity .2s linear; }
 }
