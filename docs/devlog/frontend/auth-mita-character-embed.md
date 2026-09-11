@@ -111,6 +111,16 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
   - 注册米塔 `top: 8% → 30%`（69px → 258px），避开右上圆环区域（-110 ~ 270px）。
 - **验证**：三态 computed stroke 分别为淡蓝/粉/红；页面内点击跳转实测——login→register 注入 `ring-wave`、login→recover 注入 `ring-grow`、recover→login 注入 `ring-shrink-in`，动画结束后 class 清除恢复为纯 `ring-*`；注册页米塔 top 258 起，不与圆环重叠。
 
+### 问题 11：注册/找回→登录圆环"蓝色覆盖生长"动画 + 登录图替换 + 注册图再下移
+
+- **需求**：注册/找回页返回登录时，圆环从扇形/缺环形态动态"覆盖"成完整环——蓝色弧线从右上角（1:30 方向）出现并慢慢铺满整圆，环内副弧内容同步变空；登录页形象改为用户直供的 Q 版头像抠图（不再处理）；注册页米塔继续下移避免被文字覆盖。
+- **实现**：
+  - 新 keyframes `ring-cover`：`stroke-dasharray 0→942.48` + `stroke-dashoffset 117.81→0`（117.81 = 周长 45°，起点落在右上角），弧线从右上角顺时针生长成完整圆环；动画期间副弧 `dasharray 0` 强制隐藏（环内内容变空）。
+  - watch 方向：`o !== login && n === login` 注入 `ring-cover`（替代原 `ring-shrink-in`），0.95s 后清除。
+  - 登录图：直接复制 `头像4_抠图_只去白底.png`（1280×1280 透明底）覆盖 `mita_pajama.png`，`object-fit: contain` 完整显示，drop-shadow 保留。
+  - 注册米塔 `top: 30% → 38%`（258px → 327px），彻底避开右侧文案与圆环区域。
+- **验证**：登录页实测渲染新头像图（左下角 516~784px）；页面内 JS 点击跳转——register→login 与 recover→login 均注入 `ring-cover`，1.5s 后清除回 `ring-login`；注册米塔 top 327 起不再被文字覆盖。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。

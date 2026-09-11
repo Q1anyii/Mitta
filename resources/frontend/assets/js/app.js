@@ -1003,12 +1003,12 @@
                 return { ringAnim: '' };
             },
             watch: {
-                // 圆环切换方向动画：登录→注册=波动 / 登录→找回=变大缩回 / 返回登录=收缩淡入
+                // 圆环切换方向动画：登录→注册=波动 / 登录→找回=变大缩回 / 返回登录=蓝色覆盖生长
                 authMode(n, o) {
                     if (!o) return;
                     if (o === 'login' && n === 'register') this.ringAnim = 'ring-wave';
                     else if (o === 'login' && n === 'recover') this.ringAnim = 'ring-grow';
-                    else if (o !== 'login' && n === 'login') this.ringAnim = 'ring-shrink-in';
+                    else if (o !== 'login' && n === 'login') this.ringAnim = 'ring-cover';
                     else this.ringAnim = '';
                     if (this.ringAnim) {
                         clearTimeout(this._ringTimer);

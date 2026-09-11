@@ -812,13 +812,16 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     40% { transform: scale(1.3); }
     100% { transform: scale(1); }
 }
-@keyframes ring-shrink-in {
-    0% { transform: scale(1.28); opacity: .2; }
-    100% { transform: scale(1); opacity: 1; }
+/* 注册/找回 -> 登录：蓝色弧线从右上角（1:30 方向）生长覆盖成完整圆环，
+   副弧同步消失（环内内容变空）；dashoffset 起始 117.81 = 周长 942.48 的 45° */
+@keyframes ring-cover {
+    0% { stroke-dasharray: 0 942.48; stroke-dashoffset: 117.81; }
+    100% { stroke-dasharray: 942.48 0; stroke-dashoffset: 0; }
 }
 .auth-ring.ring-wave { animation: ring-wave 1s var(--ease-smooth); }
 .auth-ring.ring-grow { animation: ring-grow 1s var(--ease-smooth); }
-.auth-ring.ring-shrink-in { animation: ring-shrink-in .85s var(--ease-smooth); }
+.auth-ring.ring-cover .ring-main { animation: ring-cover .95s cubic-bezier(.65,.05,.36,1); }
+.auth-ring.ring-cover .ring-sub { stroke-dasharray: 0 942.48 !important; }
 
 /* 左侧品牌区文案切换过渡 */
 .quote-swap-enter-active, .quote-swap-leave-active {
@@ -844,7 +847,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .auth-mita.mita-login { left: 6%; top: 60%; width: 56%; }
 .auth-mita.mita-login img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 注册：米塔，右缘对齐品牌区右边线，柔和呼吸（温柔） */
-.auth-mita.mita-register { left: auto; right: 0; top: 30%; width: 62%; }
+.auth-mita.mita-register { left: auto; right: 0; top: 38%; width: 62%; }
 .auth-mita.mita-register img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 找回：米塔，右缘对齐品牌区右边线，轻微摇摆 + 安抚感 */
 .auth-mita.mita-recover { left: auto; right: 0; top: 48%; width: 68%; }
@@ -871,7 +874,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 /* 弱化动效偏好：关闭待机动画与位移过渡 */
 @media (prefers-reduced-motion: reduce) {
     .auth-mita { transition: none; }
-    .auth-ring.ring-wave, .auth-ring.ring-grow, .auth-ring.ring-shrink-in { animation: none !important; }
+    .auth-ring.ring-wave, .auth-ring.ring-grow, .auth-ring.ring-cover .ring-main { animation: none !important; }
     .auth-mita img { animation: none !important; }
     .mita-fade-enter-active, .mita-fade-leave-active { transition: opacity .2s linear; }
 }
