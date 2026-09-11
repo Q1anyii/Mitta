@@ -88,28 +88,38 @@ jobs:
       # 否则会误删服务器上不在仓库的 .env、数据卷等运行时文件。
       - name: Sync frontend & config to server via rsync
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p ~/.ssh
-          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.ECS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
-          SSH_OPTS="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30"
+          SSH_OPTS=(-i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=30)
           HOST="${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}"
           DEST="/opt/mitta"
 
-          echo "=== 增量同步前端（--delete 清理旧文件，含已删除的备份目录）==="
-          rsync -azc --delete --stats -e "ssh $SSH_OPTS" \
-            resources/frontend/ "$HOST:$DEST/resources/frontend/" | grep -E "transferred|Total transferred" || true
+          echo "=== [0] 确保远程已装 rsync（缺失自动安装）并预建目标目录 ==="
+          ssh "${SSH_OPTS[@]}" "$HOST" '
+            set -e
+            if ! command -v rsync >/dev/null 2>&1; then
+              echo "远程未安装 rsync，开始自动安装..."
+              if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y rsync;
+              elif command -v dnf     >/dev/null 2>&1; then dnf install -y rsync;
+              elif command -v yum     >/dev/null 2>&1; then yum install -y rsync;
+              else echo "无法识别包管理器，请手动在服务器安装 rsync"; exit 42; fi
+            fi
+            echo "远程 rsync 版本: $(rsync --version | head -1)"
+            mkdir -p /opt/mitta/resources/frontend /opt/mitta/resources/config /opt/mitta/resources/system_prompt
+          '
 
-          echo "=== 增量同步运行时配置 ==="
-          rsync -azc -e "ssh $SSH_OPTS" \
-            resources/config/ "$HOST:$DEST/resources/config/"
-          rsync -azc -e "ssh $SSH_OPTS" \
-            resources/system_prompt/ "$HOST:$DEST/resources/system_prompt/"
+          echo "=== [1] 增量同步前端（--delete 清理旧文件，含已删备份目录）==="
+          rsync -azc --delete -e "ssh ${SSH_OPTS[*]}" resources/frontend/ "$HOST:$DEST/resources/frontend/"
 
-          echo "=== 同步 compose 文件 ==="
-          rsync -azc -e "ssh $SSH_OPTS" \
-            docker-compose.yml "$HOST:$DEST/docker-compose.yml"
+          echo "=== [2] 增量同步运行时配置 ==="
+          rsync -azc -e "ssh ${SSH_OPTS[*]}" resources/config/ "$HOST:$DEST/resources/config/"
+          rsync -azc -e "ssh ${SSH_OPTS[*]}" resources/system_prompt/ "$HOST:$DEST/resources/system_prompt/"
+
+          echo "=== [3] 同步 compose 文件 ==="
+          rsync -azc -e "ssh ${SSH_OPTS[*]}" docker-compose.yml "$HOST:$DEST/docker-compose.yml"
 
           echo "✅ rsync 增量同步完成"
 
