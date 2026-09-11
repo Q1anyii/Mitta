@@ -776,26 +776,49 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     opacity: .5;  /* 弧线降为氛围层，米塔为主体 */
 }
 .auth-ring circle { fill: none; stroke-width: 13; stroke-linecap: round; }
-.ring-main { stroke: rgba(255,59,78,.92); }
-.ring-sub { stroke: rgba(255,209,102,.5); stroke-width: 8; }
-.ring-dot { fill: var(--yellow); stroke: none; }
-.auth-ring .ring-main,
-.auth-ring .ring-sub {
-    transition: stroke-dasharray 1s cubic-bezier(.65,.05,.36,1), stroke-dashoffset 1s cubic-bezier(.65,.05,.36,1);
-}
-.ring-dot { transform: translate(0,0); transition: transform 1s cubic-bezier(.65,.05,.36,1); }
+/* 三态配色：登录=淡蓝 / 注册=粉 / 找回=红；颜色 1s 平滑过渡 */
+.ring-main { stroke: rgba(122,180,242,.95); transition: stroke 1s var(--ease-smooth), stroke-dasharray 1s cubic-bezier(.65,.05,.36,1), stroke-dashoffset 1s cubic-bezier(.65,.05,.36,1); }
+.ring-sub { stroke: rgba(122,180,242,.42); stroke-width: 8; transition: stroke 1s var(--ease-smooth), stroke-dasharray 1s cubic-bezier(.65,.05,.36,1), stroke-dashoffset 1s cubic-bezier(.65,.05,.36,1); }
+.ring-dot { fill: #9CC9F5; stroke: none; transition: fill 1s var(--ease-smooth), transform 1s cubic-bezier(.65,.05,.36,1); }
+.ring-register .ring-main { stroke: rgba(255,128,168,.95); }
+.ring-register .ring-sub { stroke: rgba(255,128,168,.42); }
+.ring-register .ring-dot { fill: #FFA9C4; }
+.ring-recover .ring-main { stroke: rgba(255,59,78,.92); }
+.ring-recover .ring-sub { stroke: rgba(255,59,78,.42); }
+.ring-recover .ring-dot { fill: #FF6B7D; }
 
-/* 默认（登录）：完整红色圆环，副弧隐藏，圆点居顶 */
+/* 默认（登录）：完整圆环，副弧隐藏，圆点居顶 */
 .auth-ring .ring-main { stroke-dasharray: 942.48 0; stroke-dashoffset: 0; }
 .auth-ring .ring-sub { stroke-dasharray: 0 942.48; stroke-dashoffset: 0; }
 /* 注册：双弧分裂（相对两个半环），圆点移至底部 */
 .ring-register .ring-main { stroke-dasharray: 471.24 471.24; }
 .ring-register .ring-sub { stroke-dasharray: 471.24 471.24; stroke-dashoffset: -471.24; }
 .ring-register .ring-dot { transform: translate(0, 300px); }
-/* 找回：3/4 环留缺口，金色补弧填充缺口，圆点移至缺口处（左侧） */
+/* 找回：3/4 环留缺口，补弧填充缺口，圆点移至缺口处（左侧） */
 .ring-recover .ring-main { stroke-dasharray: 706.86 235.62; stroke-dashoffset: -117.81; }
 .ring-recover .ring-sub { stroke-dasharray: 117.81 824.67; stroke-dashoffset: -117.81; }
 .ring-recover .ring-dot { transform: translate(-150px, 150px); }
+
+/* 路由切换方向动画（由 app.js watch 注入一次性 class） */
+@keyframes ring-wave {
+    0% { transform: scale(1) rotate(0deg); }
+    25% { transform: scale(1.1) rotate(-4deg); }
+    50% { transform: scale(.96) rotate(3deg); }
+    75% { transform: scale(1.06) rotate(-1deg); }
+    100% { transform: scale(1) rotate(0deg); }
+}
+@keyframes ring-grow {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+@keyframes ring-shrink-in {
+    0% { transform: scale(1.28); opacity: .2; }
+    100% { transform: scale(1); opacity: 1; }
+}
+.auth-ring.ring-wave { animation: ring-wave 1s var(--ease-smooth); }
+.auth-ring.ring-grow { animation: ring-grow 1s var(--ease-smooth); }
+.auth-ring.ring-shrink-in { animation: ring-shrink-in .85s var(--ease-smooth); }
 
 /* 左侧品牌区文案切换过渡 */
 .quote-swap-enter-active, .quote-swap-leave-active {
@@ -821,7 +844,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .auth-mita.mita-login { left: 6%; top: 60%; width: 56%; }
 .auth-mita.mita-login img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 注册：米塔，右缘对齐品牌区右边线，柔和呼吸（温柔） */
-.auth-mita.mita-register { left: auto; right: 0; top: 8%; width: 62%; }
+.auth-mita.mita-register { left: auto; right: 0; top: 30%; width: 62%; }
 .auth-mita.mita-register img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 找回：米塔，右缘对齐品牌区右边线，轻微摇摆 + 安抚感 */
 .auth-mita.mita-recover { left: auto; right: 0; top: 48%; width: 68%; }
@@ -848,6 +871,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 /* 弱化动效偏好：关闭待机动画与位移过渡 */
 @media (prefers-reduced-motion: reduce) {
     .auth-mita { transition: none; }
+    .auth-ring.ring-wave, .auth-ring.ring-grow, .auth-ring.ring-shrink-in { animation: none !important; }
     .auth-mita img { animation: none !important; }
     .mita-fade-enter-active, .mita-fade-leave-active { transition: opacity .2s linear; }
 }

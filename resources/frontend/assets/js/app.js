@@ -969,7 +969,7 @@
                     <div class="auth-brand">
                         <div class="auth-side-deco">NEO · TOKYO</div>
                         <!-- 氛围弧线：红色/金色弧段作背景点缀（米塔为主体，弧线弱化氛围） -->
-                        <svg class="auth-ring" :class="'ring-' + authMode" viewBox="0 0 400 400" aria-hidden="true">
+                        <svg class="auth-ring" :class="['ring-' + authMode, ringAnim]" viewBox="0 0 400 400" aria-hidden="true">
                             <circle class="ring-main" cx="200" cy="200" r="150"/>
                             <circle class="ring-sub" cx="200" cy="200" r="150"/>
                             <circle class="ring-dot" cx="200" cy="50" r="11"/>
@@ -999,6 +999,23 @@
                     </router-view>
                 </div>
             `,
+            data() {
+                return { ringAnim: '' };
+            },
+            watch: {
+                // 圆环切换方向动画：登录→注册=波动 / 登录→找回=变大缩回 / 返回登录=收缩淡入
+                authMode(n, o) {
+                    if (!o) return;
+                    if (o === 'login' && n === 'register') this.ringAnim = 'ring-wave';
+                    else if (o === 'login' && n === 'recover') this.ringAnim = 'ring-grow';
+                    else if (o !== 'login' && n === 'login') this.ringAnim = 'ring-shrink-in';
+                    else this.ringAnim = '';
+                    if (this.ringAnim) {
+                        clearTimeout(this._ringTimer);
+                        this._ringTimer = setTimeout(() => { this.ringAnim = ''; }, 1100);
+                    }
+                }
+            },
             computed: {
                 // 由当前路由推导认证模式：login / register / recover
                 authMode() {

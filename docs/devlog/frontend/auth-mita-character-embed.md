@@ -102,6 +102,15 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
   - 模板移除 `v-if` 排除 login，登录态恢复渲染米塔；`.mita-login` 定位 `left: 6%; top: 60%; width: 56%`（左下角，右界 62% < 品牌区安全）。
 - **验证**：login 渲染 `mita_pajama.png`（left 29 / top 516 / bottom 784，左下区域，不越界）；register/recover 仍右缘对齐品牌区右边线（480=480）；三态文案均无善良/疯狂/帽子字样。
 
+### 问题 10：圆环三态配色 + 路由切换方向动画
+
+- **需求**：圆环（`.auth-ring` SVG 装饰）按登录/注册/找回三态变色——登录=淡蓝、注册=粉、找回=红；路由切换时加入方向感知动态效果——登录→注册=圆环波动、登录→找回=变大后缩回、返回登录=收缩淡入（另一种风格）；注册页米塔适当下移避免遮住圆环。
+- **实现**：
+  - 三态配色：`ring-login` 淡蓝 rgba(122,180,242,.95) / `ring-register` 粉 rgba(255,128,168,.95) / `ring-recover` 红 rgba(255,59,78,.92)，`stroke/fill` 加 1s 过渡随几何变形同步平滑变色。
+  - 方向动画：AuthLayout 增加 `data.ringAnim` + `watch.authMode`，按旧值→新值注入一次性 class（`ring-wave` / `ring-grow` / `ring-shrink-in`），1.1s 后自动清除；keyframes 为 scale/rotate 组合。
+  - 注册米塔 `top: 8% → 30%`（69px → 258px），避开右上圆环区域（-110 ~ 270px）。
+- **验证**：三态 computed stroke 分别为淡蓝/粉/红；页面内点击跳转实测——login→register 注入 `ring-wave`、login→recover 注入 `ring-grow`、recover→login 注入 `ring-shrink-in`，动画结束后 class 清除恢复为纯 `ring-*`；注册页米塔 top 258 起，不与圆环重叠。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。
