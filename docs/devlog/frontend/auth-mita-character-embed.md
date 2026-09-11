@@ -154,6 +154,12 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
   - CSS 两组关键帧：`quote-up`（leave-to `translateY(-100%)` / enter-from `translateY(100%)`）、`quote-down`（leave-to `translateY(100%)` / enter-from `translateY(-100%)`），0.55s 平滑过渡。
 - **验证**：四向页面内点击实测——login→register 过渡中 ty=-201（上滚出）→+49（下方滚入）；register→login ty=+138→-72；login→recover ty=+206→-66；recover→login ty=-187→+75，方向全部符合；圆环动画（wave/grow/cover）同步正常。
 
+### 问题 16：提示词颜文字对称化微调
+
+- **需求**：左侧提示词颜文字改为对称规整、更贴风格——登录困倦风、找回威胁风。
+- **实现**：login 标题 `(´-ω-`)`→`(´-ω-｀)`（日文假名对称）、描述补 `(。-ω-)`；recover 描述 `(¬‿¬)`→`(￢‿￢)`（更清晰）；register 不变。
+- **验证**：浏览器实测 DOM 渲染正确，三态风格一致。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。
