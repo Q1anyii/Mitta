@@ -145,6 +145,15 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
   - recover：标题「密码想不起来了？哼哼，没有我的允许，你可别想跑 ♡」，描述「Mitta 会一直守在这里盯着你，重置好密码，乖乖回来哦 (¬‿¬)」。
 - **验证**：浏览器实测两页文案渲染正确、无人格标签词、无动作描写；截图确认排版正常。
 
+### 问题 15：左侧提示词过渡改为方向感知"滚轮"效果
+
+- **需求**：品牌区文案切换像滚轮一样按路由方向滚动——登录→注册=上滑（旧文案向上滚出、新文案从下方滚入）、注册→登录=下滑、登录→找回=下滑、找回→登录=上滑。
+- **实现**：
+  - 模板 `<transition :name="quoteAnim" mode="out-in">` 动态化；AuthLayout `data.quoteAnim` 初始 `quote-swap`。
+  - `watch.authMode` 计算滚轮方向：`rollUp = (n==='register' && o!=='register') || (o==='recover' && n==='login')` → `quote-up`，否则 `quote-down`。
+  - CSS 两组关键帧：`quote-up`（leave-to `translateY(-100%)` / enter-from `translateY(100%)`）、`quote-down`（leave-to `translateY(100%)` / enter-from `translateY(-100%)`），0.55s 平滑过渡。
+- **验证**：四向页面内点击实测——login→register 过渡中 ty=-201（上滚出）→+49（下方滚入）；register→login ty=+138→-72；login→recover ty=+206→-66；recover→login ty=-187→+75，方向全部符合；圆环动画（wave/grow/cover）同步正常。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。

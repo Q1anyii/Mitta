@@ -838,12 +838,17 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     to { opacity: 0; }
 }
 
-/* 左侧品牌区文案切换过渡 */
-.quote-swap-enter-active, .quote-swap-leave-active {
-    transition: opacity .45s var(--ease-smooth), transform .45s var(--ease-smooth);
+/* 左侧品牌区文案滚轮过渡（方向感知，由 app.js 注入 quote-up/quote-down） */
+.quote-up-enter-active, .quote-up-leave-active,
+.quote-down-enter-active, .quote-down-leave-active {
+    transition: opacity .55s var(--ease-smooth), transform .55s var(--ease-smooth);
 }
-.quote-swap-enter-from { opacity: 0; transform: translateY(16px); }
-.quote-swap-leave-to { opacity: 0; transform: translateY(-16px); }
+/* 上滑：旧文案向上滚出，新文案从下方滚入 */
+.quote-up-leave-to { opacity: 0; transform: translateY(-100%); }
+.quote-up-enter-from { opacity: 0; transform: translateY(100%); }
+/* 下滑：旧文案向下滚出，新文案从上方滚入 */
+.quote-down-leave-to { opacity: 0; transform: translateY(100%); }
+.quote-down-enter-from { opacity: 0; transform: translateY(-100%); }
 
 /* ========== 认证页米塔形象（路由联动：容器位移缩放 + 换脸交叉淡化 + 待机微动） ========== */
 .auth-mita {

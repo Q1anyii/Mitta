@@ -986,7 +986,7 @@
                             <div class="auth-logo-mark"><img src="/favicon.png" alt=""></div>
                             <span>Mitta AI</span>
                         </div>
-                        <transition name="quote-swap" mode="out-in">
+                        <transition :name="quoteAnim" mode="out-in">
                             <div class="auth-quote" :key="authMode">
                                 <h2>{{ quote.title }}</h2>
                                 <p>{{ quote.desc }}</p>
@@ -1001,7 +1001,7 @@
                 </div>
             `,
             data() {
-                return { ringAnim: '' };
+                return { ringAnim: '', quoteAnim: 'quote-swap' };
             },
             watch: {
                 // 圆环切换方向动画：登录→注册=波动 / 登录→找回=变大缩回 / 返回登录=蓝色覆盖生长
@@ -1011,6 +1011,9 @@
                     else if (o === 'login' && n === 'recover') this.ringAnim = 'ring-grow';
                     else if (o !== 'login' && n === 'login') this.ringAnim = 'ring-cover';
                     else this.ringAnim = '';
+                    // 提示词滚轮方向：注册目标=上滑；找回回登录=上滑；其余=下滑
+                    const rollUp = (n === 'register' && o !== 'register') || (o === 'recover' && n === 'login');
+                    this.quoteAnim = rollUp ? 'quote-up' : 'quote-down';
                     if (this.ringAnim) {
                         clearTimeout(this._ringTimer);
                         this._ringTimer = setTimeout(() => { this.ringAnim = ''; }, 1100);
