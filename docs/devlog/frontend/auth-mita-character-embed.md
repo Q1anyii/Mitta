@@ -93,6 +93,15 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
 - **解决**：`.auth-mita` 容器加 `v-if="authMode !== 'login'"`——登录态容器整体不进 DOM，帽子图彻底不存在，切换时只挂载新图，无旧图 leave 过渡。
 - **验证**：login 态 `document.querySelector('.auth-mita')` 为 null；login→register 过渡早期 DOM 仅 1 张 `mita_kind.png`；recover 过渡早期仅 `mita_crazy.png`；recover→login 容器被移除。
 
+### 问题 9：登录页换睡衣米塔 + 文案去人格标签
+
+- **需求**：登录页改用睡衣米塔（用户直供白底 jpg），置于左下角；三态文案移除"善良/疯狂/帽子"等人格标签词，统一为 Mitta，语气风格（温柔治愈/安抚）不变。
+- **实现**：
+  - 睡衣米塔 jpg 经 rembg u2netp 抠图为透明底 PNG（1280×1280 RGBA），存入 `assets/img/mita_pajama.png`；废弃 `mita_hat.png` 删除。
+  - `MITA_IMAGES.login` 指向睡衣米塔，name 统一为 "Mitta"；`AUTH_QUOTES` register/recover 文案去人格词（「牵住 Mitta 的手…」「Mitta 会一直守着你…」）。
+  - 模板移除 `v-if` 排除 login，登录态恢复渲染米塔；`.mita-login` 定位 `left: 6%; top: 60%; width: 56%`（左下角，右界 62% < 品牌区安全）。
+- **验证**：login 渲染 `mita_pajama.png`（left 29 / top 516 / bottom 784，左下区域，不越界）；register/recover 仍右缘对齐品牌区右边线（480=480）；三态文案均无善良/疯狂/帽子字样。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。

@@ -817,12 +817,13 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     filter: drop-shadow(0 12px 26px rgba(0,0,0,.38));
     will-change: transform, opacity;
 }
-/* 登录：帽子米塔已移除（保留红色弧线作氛围），登录态不显示米塔 */
-.auth-mita.mita-login { display: none; }
-/* 注册：善良米塔，右缘对齐品牌区右边线，柔和呼吸（温柔） */
+/* 登录：睡衣米塔，左下角，柔和呼吸（慵懒惬意） */
+.auth-mita.mita-login { left: 6%; top: 60%; width: 56%; }
+.auth-mita.mita-login img { animation: mita-breathe 4.2s ease-in-out infinite; }
+/* 注册：米塔，右缘对齐品牌区右边线，柔和呼吸（温柔） */
 .auth-mita.mita-register { left: auto; right: 0; top: 8%; width: 62%; }
 .auth-mita.mita-register img { animation: mita-breathe 4.2s ease-in-out infinite; }
-/* 找回：疯狂米塔，右缘对齐品牌区右边线，轻微摇摆 + 病娇抖动 */
+/* 找回：米塔，右缘对齐品牌区右边线，轻微摇摆 + 安抚感 */
 .auth-mita.mita-recover { left: auto; right: 0; top: 48%; width: 68%; }
 .auth-mita.mita-recover img { animation: mita-sway 2.4s ease-in-out infinite; }
 

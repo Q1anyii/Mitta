@@ -940,8 +940,7 @@
             }
         };
 
-        // 认证页左侧品牌区动态文案（随路由模式切换，贴合对应米塔人格）
-        // 登录=帽子米塔（元气俏皮）/ 注册=善良米塔（温柔治愈）/ 找回=疯狂米塔（病娇安抚）
+        // 认证页左侧品牌区动态文案（随路由模式切换；人格标签已移除，统一为 Mitta，语气风格不变）
         const AUTH_QUOTES = {
             login: {
                 title: '欢迎回来呀～ Mitta 等你很久了呢 (｡•̀ᴗ-)✧',
@@ -949,19 +948,19 @@
             },
             register: {
                 title: '欢迎加入 Mitta 的温柔小窝 (｡･ω･｡)ﾉ♡',
-                desc: '牵住善良米塔的手，创建账号，专属知识管家即刻上线～'
+                desc: '牵住 Mitta 的手，创建账号，专属知识管家即刻上线～'
             },
             recover: {
                 title: '别想逃哦～我帮你找回密码 ♡',
-                desc: '疯狂米塔会一直守着你，重新设置密码，马上就能回来啦～'
+                desc: 'Mitta 会一直守着你，重新设置密码，马上就能回来啦～'
             }
         };
 
-        // 三态米塔形象素材（透明底 PNG，与参考图一一对应）
+        // 三态米塔形象素材（透明底 PNG；登录=睡衣米塔）
         const MITA_IMAGES = {
-            login: { src: '/assets/img/mita_hat.png',   name: '帽子米塔' },
-            register: { src: '/assets/img/mita_kind.png',  name: '善良米塔' },
-            recover: { src: '/assets/img/mita_crazy.png',  name: '疯狂米塔' }
+            login: { src: '/assets/img/mita_pajama.png',  name: 'Mitta' },
+            register: { src: '/assets/img/mita_kind.png', name: 'Mitta' },
+            recover: { src: '/assets/img/mita_crazy.png', name: 'Mitta' }
         };
 
         const AuthLayout = {
@@ -976,9 +975,8 @@
                             <circle class="ring-dot" cx="200" cy="50" r="11"/>
                         </svg>
                         <!-- 米塔形象：容器按三态位移/缩放，img 交叉淡化换脸
-                             v-if 排除 login：登录态帽子米塔已移除，容器不进 DOM，
-                             避免 CSS display:none 隐藏时路由切换触发旧图 leave 过渡导致帽子残留 -->
-                        <div v-if="authMode !== 'login'" class="auth-mita" :class="'mita-' + authMode" aria-hidden="true">
+                             登录=睡衣米塔（左下角），注册/找回右缘对齐右边线 -->
+                        <div class="auth-mita" :class="'mita-' + authMode" aria-hidden="true">
                             <transition name="mita-fade">
                                 <img :key="authMode" :src="mitaImg" :alt="mitaName">
                             </transition>
