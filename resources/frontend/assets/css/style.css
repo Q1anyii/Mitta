@@ -814,21 +814,24 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 }
 /* 注册/找回 -> 登录：扇形扇出式覆盖——淡蓝扇形从右上角（-45°）张开铺满整圆，
    随后扇形淡出（环内内容变空），主弧经 CSS 过渡平滑回归完整环（非弧线生长） */
-@property --fan-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+/* 覆盖圆盘：整圆淡蓝填充，从圆心原点 scale 扩张成固定圆（bloom） */
 .ring-fan {
-    fill: conic-gradient(from -45deg, rgba(122,180,242,.30), rgba(122,180,242,.30) var(--fan-angle), transparent var(--fan-angle));
+    fill: rgba(122,180,242,.30);
     opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
 }
 .auth-ring.ring-wave { animation: ring-wave 1s var(--ease-smooth); }
 .auth-ring.ring-grow { animation: ring-grow 1s var(--ease-smooth); }
 .auth-ring.ring-cover .ring-fan {
     opacity: 1;
-    animation: fan-out .95s cubic-bezier(.65,.05,.36,1), fan-fade .6s ease .85s forwards;
+    animation: fan-bloom .75s cubic-bezier(.2,.75,.3,1), fan-fade .5s ease .95s forwards;
 }
 .auth-ring.ring-cover .ring-sub { stroke-dasharray: 0 942.48 !important; }
-@keyframes fan-out {
-    from { --fan-angle: 0deg; }
-    to { --fan-angle: 360deg; }
+@keyframes fan-bloom {
+    0% { transform: scale(0); }
+    70% { transform: scale(1.08); }
+    100% { transform: scale(1); }
 }
 @keyframes fan-fade {
     from { opacity: 1; }
@@ -847,7 +850,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     position: absolute; z-index: 0; pointer-events: none;
     width: 72%; aspect-ratio: 1 / 1; height: auto;
     transition: left 1s var(--ease-smooth), top 1s var(--ease-smooth),
-                width 1s var(--ease-smooth), right 1s var(--ease-smooth);
+                bottom 1s var(--ease-smooth), width 1s var(--ease-smooth), right 1s var(--ease-smooth);
 }
 .auth-mita img {
     position: absolute; left: 0; top: 0; width: 100%; height: 100%;
@@ -856,13 +859,13 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     will-change: transform, opacity;
 }
 /* 登录：睡衣米塔，左下角，柔和呼吸（慵懒惬意） */
-.auth-mita.mita-login { left: 6%; top: min(60%, 520px); width: min(56%, 280px); }
+.auth-mita.mita-login { left: 6%; bottom: 80px; width: min(56%, 280px); }
 .auth-mita.mita-login img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 注册：米塔，右缘对齐品牌区右边线，柔和呼吸（温柔） */
-.auth-mita.mita-register { left: auto; right: 0; top: min(38%, 340px); width: min(62%, 300px); }
+.auth-mita.mita-register { left: auto; right: 0; bottom: 80px; width: min(62%, 300px); }
 .auth-mita.mita-register img { animation: mita-breathe 4.2s ease-in-out infinite; }
 /* 找回：米塔，右缘对齐品牌区右边线，轻微摇摆 + 安抚感 */
-.auth-mita.mita-recover { left: auto; right: 0; top: min(48%, 430px); width: min(68%, 330px); }
+.auth-mita.mita-recover { left: auto; right: 0; bottom: 80px; width: min(68%, 330px); }
 .auth-mita.mita-recover img { animation: mita-sway 2.4s ease-in-out infinite; }
 
 /* 换脸交叉淡化（Vue transition 默认并行模式：旧图淡出 + 新图淡入） */
