@@ -685,7 +685,6 @@
                             <router-link to="/api/register">注册账号</router-link>
                             <router-link to="/api/recover">忘记密码？</router-link>
                         </div>
-                        <div class="auth-prompt">○ 确定 &nbsp;&nbsp;× 返回</div>
                     </div>
                 </div>
             `,
@@ -801,7 +800,6 @@
                         <div class="auth-links">
                             <router-link to="/api/login">已有账号？登录</router-link>
                         </div>
-                        <div class="auth-prompt">○ 确定 &nbsp;&nbsp;× 返回</div>
                     </div>
                 </div>
             `,
@@ -896,7 +894,6 @@
                         <div class="auth-links">
                             <router-link to="/api/login">返回登录</router-link>
                         </div>
-                        <div class="auth-prompt">○ 确定 &nbsp;&nbsp;× 返回</div>
                     </div>
                 </div>
             `,
@@ -997,6 +994,14 @@
                         </transition>
                         <div class="auth-footer">© 2026 MITTA AI — TAKE YOUR HEART</div>
                     </div>
+                    <!-- 卡片外背景大字：滚轮式平滑过渡（方向由元素自身的 .word-{mode} 类决定：SIGN IN 下进下出 / JOIN US 左进左出 / RESET 缩放进出） -->
+                    <transition name="word" mode="out-in" @enter="positionWord">
+                        <div class="auth-bg-word" :class="'word-' + authMode"
+                             :style="wordPos ? { left: wordPos.left + 'px', top: wordPos.top + 'px', display: wordHidden ? 'none' : '' } : null"
+                             :key="authMode" aria-hidden="true" @enter="positionWord">
+                            <span>{{ bgWord }}</span>
+                        </div>
+                    </transition>
                     <router-view v-slot="{ Component }">
                         <!-- 不用 out-in 过渡：mode="out-in" 切换时计算 anchor 会触发 nextSibling 空指针崩溃 -->
                         <component v-if="Component" :is="Component" />
@@ -1004,7 +1009,7 @@
                 </div>
             `,
             data() {
-                return { ringAnim: '', quoteAnim: 'quote-swap' };
+                return { ringAnim: '', quoteAnim: 'quote-swap', wordPos: null, wordHidden: false };
             },
             watch: {
                 // 圆环切换方向动画：登录→注册=波动 / 登录→找回=变大缩回 / 返回登录=蓝色覆盖生长
@@ -1021,6 +1026,56 @@
                         clearTimeout(this._ringTimer);
                         this._ringTimer = setTimeout(() => { this.ringAnim = ''; }, 1100);
                     }
+                    // 大字新位置：nextTick 后新字已挂载（默认过渡模式新旧字同时存在），实测尺寸定位
+                    this.$nextTick(() => this.positionWord());
+                }
+            },
+            mounted() {
+                // 首屏大字定位：等待 router-view 内的 .auth-card 挂载后重试，直到就绪
+                this._retryWord();
+                window.addEventListener('resize', this._onWordResize);
+            },
+            beforeDestroy() {
+                window.removeEventListener('resize', this._onWordResize);
+            },
+            methods: {
+                // 大字动态定位：相对 .auth-card / .auth-form-wrapper（右模块），视口无关
+                _retryWord() {
+                    if (document.querySelector('.auth-card') && this.$el.querySelector('.auth-bg-word')) {
+                        this.positionWord();
+                    } else {
+                        this._wordTimer = setTimeout(() => this._retryWord(), 120);
+                    }
+                },
+                // 大字位置计算（用 offset 布局坐标，不受卡片 pop-in / 大字过渡的 transform 动画污染，
+                // 因此首次进入、动画进行中定位也准确，无需刷新）：大字落在「卡片与右模块边缘空白带」正中、垂直居中。
+                _calcWordPos() {
+                    const card = document.querySelector('.auth-card');
+                    const wrap = document.querySelector('.auth-form-wrapper');
+                    // out-in 模式下只有当前字；兼容过渡中并存场景，选当前模式元素
+                    const words = this.$el.querySelectorAll('.auth-bg-word');
+                    let w = null;
+                    words.forEach(el => { if (el.classList.contains('word-' + this.authMode)) w = el; });
+                    if (!w && words.length) w = words[words.length - 1];
+                    if (!card || !wrap || !w) return null;
+                    // 全部相对 .auth-layout（大字的 offsetParent 与定位包含块）
+                    const wL = wrap.offsetLeft, wT = wrap.offsetTop, wW = wrap.offsetWidth, wH = wrap.offsetHeight;
+                    const cL = wL + card.offsetLeft, cR = cL + card.offsetWidth;
+                    const bw = w.offsetWidth, bh = w.offsetHeight;   // 布局尺寸，不含自身 transform
+                    const isLogin = this.authMode === 'login';
+                    const gap = isLogin ? (wL + wW - cR) : (cL - wL); // 该侧空白带宽度
+                    // 竖排后视觉占宽 ≈ 外层高 bh；空白带容不下（含 12px 余量）则隐藏，避免跨中缝/压卡片
+                    if (gap < bh + 12) return { left: 0, top: 0, hidden: true };
+                    const cx = isLogin ? (cR + wL + wW) / 2 : (wL + cL) / 2;
+                    return { left: Math.round(cx - bw / 2), top: Math.round(wT + (wH - bh) / 2), hidden: false };
+                },
+                positionWord() {
+                    const pos = this._calcWordPos();
+                    if (pos) { this.wordPos = pos; this.wordHidden = !!pos.hidden; }
+                },
+                _onWordResize() {
+                    clearTimeout(this._wordTimer);
+                    this._wordTimer = setTimeout(() => this.positionWord(), 150);
                 }
             },
             computed: {
@@ -1039,6 +1094,9 @@
                 },
                 mitaName() {
                     return (MITA_IMAGES[this.authMode] || MITA_IMAGES.login).name;
+                },
+                bgWord() {
+                    return { login: 'SIGN IN', register: 'JOIN US', recover: 'RESET' }[this.authMode] || 'SIGN IN';
                 }
             }
         };

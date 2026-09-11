@@ -187,6 +187,19 @@ Mitta 认证页左侧品牌区原本是 SVG 圆环动态装饰。需求升级为
   - 三个模板底部加 P3 操作提示条 `.auth-prompt`（`○ 确定 × 返回`，等宽字右对齐，细线分隔）。
 - **验证**：三页 computed 样式核验——卡片 rgba(8,18,36,.86)/细白边、输入框 rgba(255,255,255,.06) 白字、按钮 rgb(255,59,78) 白字、提示条存在；截图确认左右深蓝统一、可读性正常；修复中途发现的 background 简写被 background-image 覆盖导致渐变失效问题。
 
+### 问题 20：卡片外背景大字（SIGN IN / JOIN US / RESET）统一渲染与定位/可见性连环修复
+
+- **需求**：参考 P3 菜单边缘竖排大字，在右模块「卡片与模块边缘之间的空白带」放置背景大字——登录 SIGN IN 居右、注册 JOIN US / 找回 RESET 居左；要求像左侧提示词一样滚轮式平滑过渡（不硬切）、沿文字方向长度对齐卡片宽度、垂直居中，且三页首屏直接访问都要可见、位置不随窗口宽度漂移。
+- **实现与踩坑（多个根因逐层定位）**：
+  1. **统一渲染 + 固定过渡名**：三处 View 内各自的大字移除，改由 AuthLayout 在 `router-view` 前用单个 `<transition name="word" mode="out-in" @enter="positionWord">` 按 `:key="authMode"` 渲染。Vue2 下动态 `name` / 动态 `*-active-class` 不生效且会让过渡 watch 重置、卡死在 leave-from，最终固定 `name="word"`，进出方向靠元素自身 `.word-login/.word-register/.word-recover` 与过渡类组合（如 `.word-login.word-leave-to{transform:translateY(80px)}`），旧元素离开时保留旧 mode 类，实现 SIGN IN 下进下出 / JOIN US 左进左出 / RESET 缩放进出。
+  2. **根因 A——渐变文字只显示 JOIN US**：`-webkit-background-clip:text` 设在外层 `.auth-bg-word`，而 SIGN IN/RESET 的文字在用于旋转 90° 的内层 `<span>` 里，背景裁剪**无法穿透子元素**，span 内文字 `text-fill-color:transparent` 又无自身背景 → 全透明不可见；JOIN US 是直接文本节点所以唯一正常。修复：`.auth-bg-word span{background-image:inherit;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}`，并统一让三态文字都包 span。
+  3. **根因 B——大字被卡片白底盖住**：`.auth-card` 的 `pop-in` 入场动画形成堆叠上下文，`elementFromPoint` 实测大字中心点命中 auth-card。修复：`.auth-form-wrapper{z-index:1}` 形成独立层、`.auth-bg-word{z-index:5}` 盖在整个右模块之上。
+  4. **根因 C——必须刷新一次才居中**：首次进入时卡片仍在 `pop-in`（transform scale）动画中，`getBoundingClientRect()` 返回被缩放污染的尺寸 → 定位偏；动画结束（或刷新）后 rect 稳定才居中。改为**纯布局坐标** `offsetLeft/offsetTop/offsetWidth/offsetHeight`（不含任何 transform），并核验 offsetParent 链（大字、卡片、wrapper 最终都相对 `.auth-layout`）；页面内强制复算验证视觉中心与空白带中心 `dX=0、dY=0`，动画进行中定位也准确。
+  5. **统一竖排 + 长度对齐卡片宽**：JOIN US 由横排改为 `rotate(-90deg)` 竖排（横排 404px 塞不进窄空白带会跨中缝），与 SIGN IN(`rotate(90deg)` 右侧)、RESET(`rotate(-90deg)` 左侧) 风格统一；按实测把沿文字方向长度调到 ≈ 卡片宽（395px）：SIGN IN 86px→405、JOIN US 76px→404、RESET 98px→383；单行 `white-space:nowrap`。
+  6. **自适应隐藏替代媒体查询一刀切**：`_calcWordPos()` 用 offset 实测该侧空白带宽度 `gap`，竖排视觉占宽 ≈ 外层 `offsetHeight`，当 `gap < bh + 12` 时返回 `hidden` 并内联 `display:none`，宽屏自动显示、窄窗自动隐藏，不写死断点。
+  7. **首屏与 resize**：首屏直接访问时卡片尚未挂载，`_retryWord()` 每 120ms 重试直到卡片与大字都就绪；`window resize` 150ms 防抖重定位。
+- **验证**：8090 本地 SPA 实测——三页首屏大字均可见；过渡类序列正确（旧字 leave → 新字 enter-from→enter-to，进入位置即正确无跳位）；offset 复算视觉中心与空白带中心完全重合；窄窗自动隐藏、宽屏居中；长度与卡片宽误差 <5%。
+
 ## 四、验证
 
 - 本地 SPA 服务（8090）实测三态：文案、形象、位置、待机动画全部随路由切换正常；JS 无报错。

@@ -164,58 +164,84 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .auth-quote p { font-size: 15px; line-height: 1.9; color: rgba(255,255,255,.82); }
 .auth-footer { position: relative; z-index: 1; font-size: 12px; letter-spacing: 1px; color: rgba(255,255,255,.55); }
 
-/* 右侧表单区（P3 冷调蓝灰：与品牌区深蓝同系，略亮形成层次） */
+/* 右侧表单区（大字层定位上下文；z-index:1 形成独立堆叠层，保证 .auth-bg-word(z-index:5) 盖在卡片之上） */
 .auth-form-wrapper {
+    position: relative; z-index: 1;
     display: flex; align-items: center; justify-content: center; padding: 32px;
-    overflow-y: auto;
-    background-color: #0C1A30;
-    background-image: linear-gradient(150deg, #0C1A30 0%, #132C46 60%, #0B6E86 140%),
-        repeating-linear-gradient(-45deg, transparent 0 26px, rgba(255,255,255,.035) 26px 28px);
+    overflow: hidden; background: var(--paper);
+    background-image: repeating-linear-gradient(-45deg, transparent 0 22px, rgba(18,184,201,.035) 22px 24px);
 }
-/* 认证卡片：P3 蓝黑半透明面板 + 细亮边 + 白字（作用域限 .auth-card，不影响聊天区） */
+/* ===== 卡片外背景大字（AuthLayout 统一管理；外层容器定位 + 内层 span 旋转；
+        过渡由 Vue transition 方向类接管，滚轮式平滑切换） ===== */
+.auth-layout { position: relative; }
+.auth-bg-word {
+    position: absolute; z-index: 5; pointer-events: none;
+    font-weight: 900; letter-spacing: 6px; line-height: 1;
+    color: transparent; -webkit-background-clip: text; background-clip: text;
+    background-image: linear-gradient(180deg, rgba(28,30,36,.2), rgba(28,30,36,.06));
+    user-select: none; will-change: transform, opacity;
+}
+/* 卡片内容盖在水印大字之上（大字仅作背景水印） */
+.auth-card > * { position: relative; z-index: 3; }
+.auth-bg-word span {
+    display: inline-block; white-space: nowrap; word-break: keep-all;
+    /* 旋转用内层 span 必须继承外层渐变并自行裁剪，否则 background-clip:text 无法穿透子元素 → 文字透明不可见 */
+    background-image: inherit;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+}
+/* 登录：SIGN IN 侧边竖排（深黑→灰渐变；纵向长度对齐卡片宽度；位置由 app.js 动态对齐右侧空白带中心） */
+.word-login { font-size: 86px; letter-spacing: 10px;
+    background-image: linear-gradient(180deg, #14161B 0%, #3A3E48 55%, rgba(28,30,36,.18) 100%);
+}
+.word-login span { transform: rotate(90deg); }
+/* 注册：JOIN US 左侧空白带竖排（逆时针 90°，左进左出；纵向长度对齐卡片宽度；位置由 app.js 动态对齐左侧空白带中心） */
+.word-register { font-size: 76px; letter-spacing: 14px; }
+.word-register span { transform: rotate(-90deg); }
+/* 找回：RESET 红字竖排，位于左侧空白带（逆时针 90°，纵向长度对齐卡片宽度，水印感淡红，缩放进出） */
+.word-recover { font-size: 98px; letter-spacing: 18px;
+    background-image: linear-gradient(180deg, rgba(255,59,78,.34), rgba(255,59,78,.10));
+}
+.word-recover span { transform: rotate(-90deg); }
+/* ---- 滚轮式平滑过渡（固定 name="word"；方向由元素自身 .word-{mode} 类决定，
+        旧元素离开时保留旧类 → 各自原有方向进出：SIGN IN 下进下出 / JOIN US 左进左出 / RESET 缩放进出） ---- */
+.word-enter-active, .word-leave-active {
+    transition: transform .5s var(--ease-smooth), opacity .5s var(--ease-smooth);
+}
+.word-enter-from, .word-leave-to { opacity: 0; }
+.word-login.word-enter-from { transform: translateY(-80px); }
+.word-login.word-leave-to { transform: translateY(80px); }
+.word-register.word-enter-from { transform: translateX(90px); }
+.word-register.word-leave-to { transform: translateX(-90px); }
+.word-recover.word-enter-from { transform: scale(.7); }
+.word-recover.word-leave-to { transform: scale(.7); }
+/* 卡片盖在大字层上 */
+.auth-card { position: relative; z-index: 1; }
 .auth-card {
-    width: 100%; max-width: 420px; background: rgba(8,18,36,.86);
-    border: 1.5px solid rgba(255,255,255,.16); padding: 40px 36px;
-    clip-path: var(--clip-cut-sm);
-    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+    width: 100%; max-width: 420px; background: var(--surface); border: 3px solid var(--ink);
+    padding: 40px 36px; clip-path: var(--clip-cut); box-shadow: var(--shadow-hard-lg);
     animation: pop-in .45s var(--ease-pop) both;
-    backdrop-filter: blur(6px);
 }
-.auth-card h1 { font-size: 30px; font-weight: 900; letter-spacing: -.5px; margin-bottom: 6px; color: #fff; }
-.auth-card .auth-subtitle { color: rgba(255,255,255,.62); font-size: 14px; margin-bottom: 28px; }
-.auth-card .form-group { margin-bottom: 18px; }
-.auth-card .form-label { display: block; font-size: 12px; font-weight: 800; letter-spacing: 1.5px;
-    text-transform: uppercase; color: #7FC4F8; margin-bottom: 7px; }
-.auth-card .form-input {
-    width: 100%; padding: 12px 14px; font-size: 14px; color: #fff;
-    background: rgba(255,255,255,.06); border: 1.5px solid rgba(255,255,255,.2);
-    border-radius: 3px; outline: none;
-    transition: border-color .15s, box-shadow .15s, background .15s;
+.auth-card h1 { font-size: 30px; font-weight: 900; letter-spacing: -.5px; margin-bottom: 6px; }
+.auth-subtitle { color: var(--text-2); font-size: 14px; margin-bottom: 28px; }
+.form-group { margin-bottom: 18px; }
+.form-label { display: block; font-size: 12px; font-weight: 800; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text-2); margin-bottom: 7px; }
+.form-input, .modal .form-group input, .modal .form-group textarea, .mcp-json-editor {
+    width: 100%; padding: 12px 14px; font-size: 14px; color: var(--text);
+    background: var(--surface-2); border: 2px solid var(--ink); border-radius: var(--r-sm);
+    transition: box-shadow .15s, background .15s, transform .12s;
 }
-.auth-card .form-input::placeholder { color: rgba(255,255,255,.38); }
-.auth-card .form-input:focus {
-    background: rgba(255,255,255,.09); border-color: #5FA8E8;
-    box-shadow: 0 0 0 3px rgba(95,168,232,.25);
+.form-input:focus, .modal .form-group input:focus, .modal .form-group textarea:focus, .mcp-json-editor:focus {
+    background: #fff; box-shadow: 3px 3px 0 var(--brand); transform: translate(-1px,-1px);
 }
-.auth-card .form-error { color: #FF6B7D; font-size: 12px; font-weight: 700; margin-top: 6px; min-height: 14px; }
-.auth-card .auth-msg { margin-bottom: 14px; }
-.auth-card .auth-submit {
-    width: 100%; margin-top: 6px; background: var(--red); color: #fff;
-    border: 1.5px solid rgba(255,255,255,.35); border-radius: 3px;
-    box-shadow: none; transform: none;
-}
-.auth-card .auth-submit:hover { background: #FF5A6A; transform: none; box-shadow: 0 0 0 3px rgba(255,59,78,.25); }
-.auth-card .auth-submit:active { background: var(--red-deep); transform: translateY(1px); }
-.auth-card .auth-submit:disabled { opacity: .6; cursor: not-allowed; }
-.auth-card .auth-links { display: flex; justify-content: space-between; margin-top: 22px; font-size: 13px; }
-.auth-card .auth-links a { position: relative; color: rgba(255,255,255,.78); }
-.auth-card .auth-links a:hover { color: #7FC4F8; }
-/* P3 底部操作提示条 */
-.auth-card .auth-prompt {
-    margin-top: 26px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.12);
-    font-size: 11px; letter-spacing: 2px; color: rgba(255,255,255,.5);
-    font-family: var(--font-mono); text-align: right;
-}
+[data-theme="dark"] .form-input:focus, [data-theme="dark"] .modal .form-group input:focus { background: #0D1420; }
+.form-error { color: var(--red-deep); font-size: 12px; font-weight: 700; margin-top: 6px; min-height: 14px; }
+.auth-msg { margin-bottom: 14px; }
+.auth-submit { width: 100%; margin-top: 6px; }
+.auth-links { display: flex; justify-content: space-between; margin-top: 22px; font-size: 13px; }
+.auth-links a { position: relative; }
+.auth-links a:hover { color: var(--red); }
 
 /* ============================ 5. 聊天整体布局 ============================ */
 .chat-layout { display: flex; height: 100vh; overflow: hidden; background: var(--paper); }
@@ -718,10 +744,13 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 @keyframes tool-glow { 0%,100% { box-shadow: 2px 2px 0 var(--ink); } 50% { box-shadow: 2px 2px 0 var(--brand); } }
 
 /* ============================ 9. 响应式 ============================ */
-@media (max-width: 900px) {
+/* 背景大字是否显示由 app.js 按卡片两侧空白带实际宽度动态判断（放不下自动 display:none），无需断点一刀切 */
+/* 单列断点收紧到 700px：桌面半屏（约 810px CSS 视口）仍保持双列，背景大字可见；仅手机单列 */
+@media (max-width: 700px) {
     .auth-layout { grid-template-columns: 1fr; }
     .auth-brand { display: none; }   /* 移动端只留表单，品牌区隐藏 */
     .auth-form-wrapper { padding: 20px; }
+    .auth-bg-word { display: none; } /* 移动端隐藏背景大字，避免定位错位 */
 }
 @media (max-width: 768px) {
     .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 82vw; max-width: 300px;
@@ -754,15 +783,13 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 
 /* ========== 全新 UI 追加：装饰元素 ========== */
 /* 认证卡片编号标签（P5 式章节编号） */
-/* P3 式章节编号标签：蓝底白字（tag-mint 同化为 P3 蓝） */
 .auth-tag {
     display: inline-block; font-size: 11px; font-weight: 900; letter-spacing: 2.5px;
-    color: #fff; background: rgba(127,196,248,.18); border: 1px solid rgba(127,196,248,.5);
-    padding: 4px 10px; margin-bottom: 16px;
+    color: #fff; background: var(--ink); padding: 4px 10px; margin-bottom: 16px;
     clip-path: polygon(0 0,100% 0,calc(100% - 7px) 100%,0 100%);
 }
-.auth-tag.tag-mint { background: rgba(127,196,248,.24); border-color: rgba(127,196,248,.6); color: #CFE9FF; }
-.tag-violet .auth-tag { background: rgba(139,92,246,.24); border-color: rgba(139,92,246,.5); }
+.auth-tag.tag-mint { background: var(--mint); color: #06281D; }
+.tag-violet .auth-tag { background: var(--violet); }
 /* 品牌区竖排装饰文字 */
 .auth-side-deco {
     position: absolute; right: 18px; bottom: 46px; z-index: 1;
