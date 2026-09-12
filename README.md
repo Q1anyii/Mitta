@@ -2,6 +2,12 @@
 
 基于 **LangGraph + RAG + MCP + 流式 SSE** 的智能助理系统。系统内置完整的知识库检索链路（查询改写 → 多路召回 → RRF 融合 → 在线重排），支持短期记忆（多轮对话恢复）与长期记忆（用户档案），通过 MCP 协议接入外部工具（文件系统、Git、数据库等），并通过 SSE 流式输出实现打字机效果。
 
+## 界面介绍
+
+![Mitta 演示](docs/assets/登录演示.gif)
+
+![](docs/assets/聊天演示.gif)
+
 ## 功能特性
 
 - **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
@@ -23,23 +29,23 @@
 
 ## 技术栈
 
-| 层次        | 技术                                                                                               |
-| --------- | ------------------------------------------------------------------------------------------------ |
-| 语言/环境     | Python 3.13                                                                                      |
-| Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）                       |
-| LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                                        |
-| 大模型       | DeepSeek（deepseek-v4-flash），OpenAI 兼容协议，支持 reasoning_content 深度思考                           |
-| Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                                |
-| 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                                       |
-| 向量库       | ChromaDB（默认，免部署）/ Milvus（可插拔，Protocol 抽象，零业务改动切换）                                          |
+| 层次        | 技术                                                                                     |
+| --------- | -------------------------------------------------------------------------------------- |
+| 语言/环境     | Python 3.13                                                                            |
+| Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）             |
+| LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                              |
+| 大模型       | DeepSeek（deepseek-v4-flash），OpenAI 兼容协议，支持 reasoning_content 深度思考                      |
+| Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                      |
+| 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                             |
+| 向量库       | ChromaDB（默认，免部署）/ Milvus（可插拔，Protocol 抽象，零业务改动切换）                                      |
 | 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store + 用户表 userinfo / user_profile / user_files） |
-| 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                               |
-| MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                   |
-| Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                                      |
-| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写设计系统 + 多主题 + 响应式移动端                          |
-| 反向代理      | Nginx（静态托管 + API 代理 + SSE 缓冲关闭）                                                                  |
-| 认证        | JWT（PyJWT）+ bcrypt 密码哈希                                                                          |
-| 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                                 |
+| 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                     |
+| MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                         |
+| Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                            |
+| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写设计系统 + 多主题 + 响应式移动端                                   |
+| 反向代理      | Nginx（静态托管 + API 代理 + SSE 缓冲关闭）                                                        |
+| 认证        | JWT（PyJWT）+ bcrypt 密码哈希                                                                |
+| 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                       |
 
 ## 系统架构
 
@@ -85,7 +91,7 @@
 | --------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
 | **check_cache** | Redis 检索缓存检查 | `cache_service.query_cache(thread_id, question)`，LSH 快速过滤 + 向量重排验证                                         |
 | **rewrite**     | LLM 查询改写     | 输出 JSON：`{主查询, 子查询[], 关键词[]}`，解决多轮指代问题                                                                     |
-| **dense_query** | 稠密向量多路召回     | 原始 query + 改写 query 独立检索向量库，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                               |
+| **dense_query** | 稠密向量多路召回     | 原始 query + 改写 query 独立检索向量库，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                                   |
 | **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
 | **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
 | **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=5，分数写入 `doc.metadata["relevance_score"]` |
@@ -264,13 +270,13 @@ cp .env.example .env
 
 编辑 `.env`，填写以下必填项：
 
-| 变量                    | 说明                                 |
-| --------------------- | ---------------------------------- |
-| `DEEPSEEK_API_KEY`    | DeepSeek API 密钥（主模型 + RAGAS 评判）    |
-| `SILICONFLOW_API_KEY` | 硅基流动 API 密钥（Embedding + 重排）        |
+| 变量                    | 说明                                       |
+| --------------------- | ---------------------------------------- |
+| `DEEPSEEK_API_KEY`    | DeepSeek API 密钥（主模型 + RAGAS 评判）          |
+| `SILICONFLOW_API_KEY` | 硅基流动 API 密钥（Embedding + 重排）              |
 | `POSTGRESQL_DB_URL`   | PostgreSQL 连接串（Checkpointer/Store + 用户表） |
-| `REDIS_DB_URL`        | Redis 连接串                          |
-| `JWT_SECRET_KEY`      | JWT 签名密钥（随机强密钥）                    |
+| `REDIS_DB_URL`        | Redis 连接串                                |
+| `JWT_SECRET_KEY`      | JWT 签名密钥（随机强密钥）                          |
 
 ### 3. 启动基础设施
 
@@ -330,19 +336,19 @@ docker-compose up -d etcd minio milvus
 
 项目内置 11 台开箱即用的 MCP 服务器（`resources/config/mcp_servers.json`，启动时加载、所有用户共享），覆盖内容获取、数据存储、记忆推理与基础工具四类能力：
 
-| 服务器 | 启动方式 | 作用 |
-|---|---|---|
-| filesystem | `npx @modelcontextprotocol/server-filesystem` | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录 |
-| fetch | `uvx mcp-server-fetch` | 网页抓取：按 URL 拉取网页内容并转 Markdown，供 RAG 引用实时网页信息 |
-| sqlite | `uvx mcp-server-sqlite` | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db` |
-| markitdown | `uvx markitdown-mcp` | 文档转 Markdown：PDF / Word / Excel / 图片等转纯文本，供知识库切分 |
-| context7 | `npx @upstash/context7-mcp` | 最新技术文档检索：拉取 API / SDK 官方文档（含版本、参数） |
-| dbhub | `npx @bytebase/dbhub --demo` | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构 |
-| chroma | `uvx chroma-mcp` | Chroma 向量数据库：持久化知识库（`chroma_data`），语义相似度检索，RAG 核心存储 |
-| memory | `npx @modelcontextprotocol/server-memory` | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好 |
-| basic-memory | `uvx basic-memory mcp` | 个人知识库：管理 Markdown 笔记与实体关系，为 Agent 提供可检索长期记忆 |
-| sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析 |
-| time | `uvx mcp-server-time` | 时间服务：获取当前时间、时区换算、日期计算 |
+| 服务器                 | 启动方式                                                   | 作用                                                  |
+| ------------------- | ------------------------------------------------------ | --------------------------------------------------- |
+| filesystem          | `npx @modelcontextprotocol/server-filesystem`          | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录                |
+| fetch               | `uvx mcp-server-fetch`                                 | 网页抓取：按 URL 拉取网页内容并转 Markdown，供 RAG 引用实时网页信息         |
+| sqlite              | `uvx mcp-server-sqlite`                                | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db`      |
+| markitdown          | `uvx markitdown-mcp`                                   | 文档转 Markdown：PDF / Word / Excel / 图片等转纯文本，供知识库切分    |
+| context7            | `npx @upstash/context7-mcp`                            | 最新技术文档检索：拉取 API / SDK 官方文档（含版本、参数）                  |
+| dbhub               | `npx @bytebase/dbhub --demo`                           | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构     |
+| chroma              | `uvx chroma-mcp`                                       | Chroma 向量数据库：持久化知识库（`chroma_data`），语义相似度检索，RAG 核心存储 |
+| memory              | `npx @modelcontextprotocol/server-memory`              | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好                   |
+| basic-memory        | `uvx basic-memory mcp`                                 | 个人知识库：管理 Markdown 笔记与实体关系，为 Agent 提供可检索长期记忆         |
+| sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析                  |
+| time                | `uvx mcp-server-time`                                  | 时间服务：获取当前时间、时区换算、日期计算                               |
 
 能力分工：**filesystem / markitdown / fetch / context7** 负责获取内容，**chroma / sqlite / dbhub** 负责存储与查询，**memory / basic-memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。
 
@@ -363,8 +369,8 @@ python ../resources/knowledge-base/ingest_knowledge.py
 | ------ | ----------------------------------- | ----------------------------------- |
 | POST   | `/api/knowledge/upload`             | 上传文档入库（.md/.txt/.pdf，≤10MB，双通道自动写入） |
 | GET    | `/api/knowledge/documents`          | 列出知识库全部文档（按来源聚合，含 chunk 数）          |
-| DELETE | `/api/knowledge/source/{source}`    | 删除指定来源文件的全部 chunk                 |
-| DELETE | `/api/knowledge/documents/{doc_id}` | 删除单个文档 chunk                       |
+| DELETE | `/api/knowledge/source/{source}`    | 删除指定来源文件的全部 chunk                   |
+| DELETE | `/api/knowledge/documents/{doc_id}` | 删除单个文档 chunk                        |
 
 ```bash
 # 示例：增量上传一篇文档（需 JWT）
@@ -399,12 +405,12 @@ nginx
 
 ### 认证
 
-| 方法   | 路径              | 说明   |
-| ---- | --------------- | ---- |
+| 方法   | 路径              | 说明                                      |
+| ---- | --------------- | --------------------------------------- |
 | POST | `/api/login`    | 用户登录（返回 access token，refresh 隐式存 Redis） |
-| POST | `/api/register` | 用户注册 |
-| POST | `/api/recover`  | 密码找回 |
-| POST | `/api/logout`   | 登出（Redis 删除 access+refresh，即时失效） |
+| POST | `/api/register` | 用户注册                                    |
+| POST | `/api/recover`  | 密码找回                                    |
+| POST | `/api/logout`   | 登出（Redis 删除 access+refresh，即时失效）        |
 
 ### 对话
 
@@ -433,22 +439,22 @@ nginx
 
 ### MCP / 系统
 
-| 方法      | 路径                | 说明                    |
-| ------- | ----------------- | --------------------- |
-| GET/PUT | `/api/mcp/config` | 当前用户 MCP 配置读写（PostgreSQL 按用户隔离） |
-| POST    | `/api/mcp/reload` | 重载当前用户 MCP 配置（清除图缓存+关闭旧连接，立即生效） |
-| DELETE  | `/api/mcp/config/{server_name}` | 删除单个 MCP 服务器配置 |
-| GET     | `/health`         | 健康检查                  |
-| GET     | `/mcp`            | 内置 MCP 服务器端点（FastMCP） |
+| 方法      | 路径                              | 说明                              |
+| ------- | ------------------------------- | ------------------------------- |
+| GET/PUT | `/api/mcp/config`               | 当前用户 MCP 配置读写（PostgreSQL 按用户隔离） |
+| POST    | `/api/mcp/reload`               | 重载当前用户 MCP 配置（清除图缓存+关闭旧连接，立即生效） |
+| DELETE  | `/api/mcp/config/{server_name}` | 删除单个 MCP 服务器配置                  |
+| GET     | `/health`                       | 健康检查                            |
+| GET     | `/mcp`                          | 内置 MCP 服务器端点（FastMCP）           |
 
 ### 知识库
 
-| 方法     | 路径                                  | 说明                                  |
-| ------ | ----------------------------------- | ----------------------------------- |
-| POST   | `/api/knowledge/upload`             | 上传文档增量入库（.md/.txt/.pdf，双通道写入）      |
-| GET    | `/api/knowledge/documents`          | 知识库文档列表（按来源聚合，含总 chunk 数）          |
-| DELETE | `/api/knowledge/source/{source}`    | 按来源删除全部 chunk                     |
-| DELETE | `/api/knowledge/documents/{doc_id}` | 按 doc_id 删除单个 chunk                |
+| 方法     | 路径                                  | 说明                            |
+| ------ | ----------------------------------- | ----------------------------- |
+| POST   | `/api/knowledge/upload`             | 上传文档增量入库（.md/.txt/.pdf，双通道写入） |
+| GET    | `/api/knowledge/documents`          | 知识库文档列表（按来源聚合，含总 chunk 数）     |
+| DELETE | `/api/knowledge/source/{source}`    | 按来源删除全部 chunk                 |
+| DELETE | `/api/knowledge/documents/{doc_id}` | 按 doc_id 删除单个 chunk           |
 
 ## 核心设计说明
 
@@ -474,14 +480,15 @@ MCP 工具通过 `langchain_mcp_adapters` 加载为 async 工具，闭包捕获�
 ### 节点级缓存（LangGraph CachePolicy + Redis）
 
 > 注：retrieve_node 和 tool_node 缓存已删除，原因：
+> 
 > 1. 子图 retrieve_graph 内置缓存机制，外层设置缓存目的减少一次子图创建，后续可把子图缓存机制抽出
 > 2. tool_node 的缓存 key 不带 tool_call_id，若缓存复用影响 ToolMessage 导致工具调用失败
 
 LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结果按 TTL 缓存到 Redis：
 
-| 节点            | 缓存键                                    | TTL | 策略                |
-| ------------- | -------------------------------------- | --- | ----------------- |
-| memory_node   | 消息轮次+输入+AI回复（仅 executed/unavailable 轮） | 10s | idle 闲聊轮返回随机键永不命中 |
+| 节点          | 缓存键                                    | TTL | 策略                |
+| ----------- | -------------------------------------- | --- | ----------------- |
+| memory_node | 消息轮次+输入+AI回复（仅 executed/unavailable 轮） | 10s | idle 闲聊轮返回随机键永不命中 |
 
 缓存键自定义设计：默认 key_func 对节点输入整体 pickle 哈希，而 Send payload 含每轮变化的 messages，会导致缓存键每轮都变、永不命中。自定义 key_func 只取稳定部分（用户输入/工具参数），确保缓存可命中。
 
@@ -573,11 +580,11 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 使用 pytest 框架，覆盖核心工具模块：
 
-| 测试文件 | 覆盖模块 | 用例数 |
-| -------- | -------- | ------ |
-| `tests/test_config.py` | 环境变量加载/校验/布尔解析 | 18 |
-| `tests/test_jwt_utils.py` | JWT 签发/验证/过期/密码哈希(bcrypt) | 14 |
-| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/int 范围 | 11 |
+| 测试文件                         | 覆盖模块                      | 用例数 |
+| ---------------------------- | ------------------------- | --- |
+| `tests/test_config.py`       | 环境变量加载/校验/布尔解析            | 18  |
+| `tests/test_jwt_utils.py`    | JWT 签发/验证/过期/密码哈希(bcrypt) | 14  |
+| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/int 范围       | 11  |
 
 **运行方式**：
 
@@ -609,15 +616,15 @@ docker-compose up -d
 
 服务端口：
 
-| 服务         | 端口        | 说明                 |
-| ---------- | --------- | ------------------ |
-| Nginx      | 80/443    | 前端 + API 统一入口（HTTPS） |
-| FastAPI    | 8000      | 后端 API（直接访问）       |
+| 服务         | 端口        | 说明                           |
+| ---------- | --------- | ---------------------------- |
+| Nginx      | 80/443    | 前端 + API 统一入口（HTTPS）         |
+| FastAPI    | 8000      | 后端 API（直接访问）                 |
 | PostgreSQL | 5432      | Checkpointer/Store/MCP配置/用户表 |
-| Redis      | 6379/8001 | 缓存 + RedisSearch BM25  |
-| Milvus     | 19530     | 向量库（可选，api 不硬依赖）  |
-| etcd       | 2379      | Milvus 依赖（可选）       |
-| MinIO      | 9000/9001 | Milvus 依赖（可选）       |
+| Redis      | 6379/8001 | 缓存 + RedisSearch BM25        |
+| Milvus     | 19530     | 向量库（可选，api 不硬依赖）             |
+| etcd       | 2379      | Milvus 依赖（可选）                |
+| MinIO      | 9000/9001 | Milvus 依赖（可选）                |
 
 > **低配服务器方案**：1核2GB 以下服务器建议停用 Milvus/etcd/MinIO，将 `resources/config/vector_db.json` 改为 `chroma` 类型，仅运行 api+nginx+postgres+redis 四个容器。
 
@@ -676,10 +683,10 @@ flowchart TD
 
 `git diff --name-only HEAD~1 HEAD` 检查本次提交变更范围：
 
-| 变更文件 | 是否重建镜像 | 耗时 |
-| ------- | ---------- | ---- |
-| 仅源码 / 前端 / 配置 | 否（复用 latest） | **~2-3 分钟** |
-| `Dockerfile` / `requirements.txt` / `.github/workflows/` | 是（全量构建） | 8-12 分钟 |
+| 变更文件                                                     | 是否重建镜像       | 耗时          |
+| -------------------------------------------------------- | ------------ | ----------- |
+| 仅源码 / 前端 / 配置                                            | 否（复用 latest） | **~2-3 分钟** |
+| `Dockerfile` / `requirements.txt` / `.github/workflows/` | 是（全量构建）      | 8-12 分钟     |
 
 构建产物同时打 `SHORT_SHA` 与 `latest` 两个 tag，跳过构建的部署直接从 ACR 拉取已有 `latest`。
 
@@ -687,14 +694,14 @@ flowchart TD
 
 在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置：
 
-| Secret | 说明 |
-| ------ | ---- |
+| Secret         | 说明                                                |
+| -------------- | ------------------------------------------------- |
 | `ACR_REGISTRY` | 阿里云 ACR 地址（如 `registry.cn-hangzhou.aliyuncs.com`） |
-| `ACR_USERNAME` | ACR 用户名 |
-| `ACR_PASSWORD` | ACR 密码 |
-| `ECS_HOST` | 服务器公网 IP |
-| `ECS_USER` | SSH 用户名（如 root） |
-| `ECS_SSH_KEY` | SSH 私钥 |
+| `ACR_USERNAME` | ACR 用户名                                           |
+| `ACR_PASSWORD` | ACR 密码                                            |
+| `ECS_HOST`     | 服务器公网 IP                                          |
+| `ECS_USER`     | SSH 用户名（如 root）                                   |
+| `ECS_SSH_KEY`  | SSH 私钥                                            |
 
 ### 部署脚本要点
 
@@ -716,6 +723,7 @@ flowchart TD
 **用户级（推荐）**：登录后在网页「设置 → MCP 配置」中添加，保存后自动热重载生效。
 
 **全局默认**：
+
 1. 在 `resources/config/mcp_servers.json` 添加服务器配置
 2. 如需规则层命中，在 `src/mcp_client/client.py` 的 `SERVER_TAGS` 中添加关键词
 3. 重启后端，日志会显示加载的工具数量
