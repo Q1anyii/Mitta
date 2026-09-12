@@ -21,6 +21,7 @@
 - **文件上传与解析**：支持上传多种格式文件，上传后立即解析文本内容，发送消息时与用户输入一并送入 LLM
 - **知识库增量更新 API**：通过 HTTP 接口向知识库增量上传文档（Chroma 向量 + RedisSearch BM25 双通道自动入库），支持文档列表查询、按来源/按文档删除，无需登录服务器跑脚本
 - **流式输出**：`stream_mode="messages"` 逐 token 输出，前端打字机效果；工具调用时实时显示加载状态
+- **断点续传（刷新不中断）**：聊天任务与 SSE 连接解耦，每个思考/工具/正文事件按序号落 Redis；刷新或重连时携带 `last_event_id`，先重放缺失的历史事件、再续推新事件，强刷也能恢复思考过程与流式输出，且不会因重发而重复累积对话
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
 - **现代化前端**：Vue 3 SPA（CDN 单文件，多主题 + 响应式移动端 + 高对比几何切角动效），工具调用记录穿插展示、复制/分享/重新生成
@@ -639,7 +640,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 项目使用 GitHub Actions 实现「**境外构建 → 阿里云 ACR 镜像仓库 → 服务器拉取部署**」的混合方案，解决两个部署痛点：
 
-1. **服务器无法访问 GitHub**：不走服务器 `git pull`，代码由 Actions 拉取后 SCP 同步
+1. **服务器无法访问 GitHub**：不走服务器 `git pull`，代码由 Actions 拉取后 rsync 同步
 2. **服务器本地 build 太慢**：`apt-get` 从 deb.debian.org 下载超时，改为服务器只从 ACR 拉现成镜像
 
 ### 工作流文件
@@ -654,7 +655,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 └─────────────┘               │  ① 拉代码+构建镜像       │
                               │  ② 推 ACR（sha+latest） │
                               └──────────┬───────────┘
-                                         │ SCP 同步前端/配置
+                                         │ rsync 增量同步前端/配置
                                          ▼
 ┌─────────────┐   docker pull    ┌──────────────────────┐
 │ 阿里云 ACR   │ ◄────────────── │  阿里云 ECS 服务器      │
@@ -670,10 +671,10 @@ flowchart TD
     CHECK --> DETECT{② 需要重建镜像？<br/>Dockerfile/requirements/workflow 变更}
     DETECT -->|是| BUILD[③ Buildx + Login ACR<br/>取 SHORT_SHA + Build&push]
     DETECT -->|否| SKIP[跳过构建<br/>复用 latest 镜像]
-    BUILD --> SCP
-    SKIP --> SCP
-    SCP[④ SCP 同步前端/配置到 /opt/mitta]
-    SCP --> SSH[⑤ SSH 部署：清残留+登录 ACR+pull+up -d]
+    BUILD --> RSYNC
+    SKIP --> RSYNC
+    RSYNC[④ rsync 增量同步前端/配置到 /opt/mitta]
+    RSYNC --> SSH[⑤ SSH 部署：清残留+登录 ACR+pull+up -d]
     SSH --> HEALTH{⑥ 健康检查<br/>curl /health × 8}
     HEALTH -->|200| OK[✅ 部署成功<br/>清理悬空镜像]
     HEALTH -->|全失败| FAIL[❌ docker logs --tail 50<br/>exit 1]
@@ -706,9 +707,9 @@ flowchart TD
 ### 部署脚本要点
 
 - **[0] 清理配置残留**：`rm -f resources/config/.mcp_config_path .vector_config_path`，防止容器内把本地 Windows 路径残留解析成 `/app/E:\...` 导致全局配置读不到
-- **SCP 同步目录**：`resources/frontend`（前端即时生效）、`docker-compose.yml`、`resources/config`、`resources/system_prompt`
+- **rsync 增量同步**：`rsync -azc`（按内容校验，只传变化块）把 `resources/frontend`、`docker-compose.yml`、`resources/config`、`resources/system_prompt` 同步到 `/opt/mitta`；前端目录加 `--delete` 清理服务器残留，根目录不加以免误删 `.env` 与数据卷。相比原 SCP 全量打包，跨境公网下从 ~2.5 分钟降到秒级
 - **只拉镜像不本地 build**：`docker compose pull api && docker compose up -d --no-build api`
-- **健康检查**：`sleep 10` + `curl localhost:8000/health` 最多 8 次（5 秒间隔），8 次全失败则贴日志并 `exit 1`
+- **健康检查**：`sleep 20` + `curl localhost:8000/health` 最多 24 次（5 秒间隔），全失败则贴日志并 `exit 1`
 
 > 完整流程图见 [docs/ci-flow.html](docs/ci-flow.html)。
 
