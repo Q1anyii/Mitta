@@ -87,6 +87,21 @@ async def _close_mcp_holders(holders: list) -> None:
 
 app = FastAPI(title="Mitta AI", lifespan=lifespan)
 
+# CORS：放行 Tauri 桌面端与本地开发 origin。
+# Tauri 2.x 在 Windows/Linux 上 origin 是 http://tauri.localhost，macOS 是 tauri://localhost。
+# 线上 Nginx 同源（前端与 API 同域）不需要 CORS，本地直连后端调试需要。
+# JWT 走 Authorization header，不用 cookie，故 allow_credentials=False，origin 可精确列出。
+from fastapi.middleware.cors import CORSMiddleware
+# Tauri dev 模式下 origin 是 http://localhost:<随机端口>（每次启动端口不同），
+# 打包后是 http://tauri.localhost / tauri://localhost。用正则统一覆盖，不用每次加新端口。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^(http://(localhost|127\.0\.0\.1)(:\d+)?|tauri://localhost|https?://tauri\.localhost)$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # 挂载 MCP 服务器端点（fastmcp 3.x：http_app 返回 Starlette app，2.x 的 streamable_http_app 已改名）
 # 外部 MCP 客户端（Claude Desktop 等）通过 http://localhost:8000/mcp 调用 agent 能力
 app.mount("/mcp", mcp.http_app())
