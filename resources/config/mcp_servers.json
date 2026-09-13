@@ -61,14 +61,6 @@
     ]
   },
   {
-    "name": "markitdown",
-    "type": "stdio",
-    "command": "uvx",
-    "args": [
-      "markitdown-mcp"
-    ]
-  },
-  {
     "name": "context7",
     "type": "stdio",
     "command": "npx",
@@ -85,28 +77,6 @@
       "-y",
       "@bytebase/dbhub",
       "--demo"
-    ]
-  },
-  {
-    "name": "chroma",
-    "type": "stdio",
-    "command": "uvx",
-    "args": [
-      "chroma-mcp",
-      "--client-type",
-      "persistent",
-      "--data-dir",
-      "/app/user_files/user_01/AgentProject/resources/chroma_data"
-    ]
-  },
-  {
-    "name": "basic-memory",
-    "type": "stdio",
-    "command": "uvx",
-    "args": [
-      "--prerelease=allow",
-      "basic-memory",
-      "mcp"
     ]
   }
 ]
