@@ -1,4 +1,4 @@
-﻿/* ============================================================================
+/* ============================================================================
    MITTA — "NEO TOKYO" 设计系统
    视觉灵感：Persona 3 冷调蓝灰 × Persona 5 高对比红黑几何
    设计语言：粗墨描边 + 硬投影（Neo-Brutalism）+ 锐利切角 + 斜纹纹理 + 按压动效
@@ -986,11 +986,11 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .persona-option:hover { background: var(--surface-2); }
 .persona-option.selected { background: var(--violet); color: #fff; }
 /* ── chibi 浮动气泡（H-20260919-01）── */
-.chibi-dock { position: fixed; right: 24px; bottom: 96px; display: flex; flex-direction: column; gap: 10px;
+.chibi-dock { position: fixed; right: 24px; top: 96px; display: flex; flex-direction: column; gap: 10px;
     z-index: 80; pointer-events: none; }
 .chibi-bubble { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px; max-width: 260px;
     padding: 10px 12px; background: var(--surface); border: 2px solid var(--ink);
-    border-radius: 14px 14px 4px 14px; box-shadow: var(--shadow-hard);
+    border-radius: 14px 14px 14px 4px; box-shadow: var(--shadow-hard);
     animation: menu-pop .22s var(--ease-pop) both; }
 .chibi-text { font-size: 12.5px; line-height: 1.5; color: var(--text-2); font-weight: 600; }
 .chibi-close { flex-shrink: 0; width: 18px; height: 18px; display: grid; place-items: center;
