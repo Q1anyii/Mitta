@@ -134,7 +134,18 @@ def print_config_summary() -> None:
 
 _mcp_config_cache: list[dict] | None = None
 
-def load_mcp_server_configs(user_id: str = None) -> list[dict]:
+
+def _filter_by_groups(servers: list[dict], groups: list[str] | None) -> list[dict]:
+    """按 group 过滤 MCP 配置；groups=None 时原样返回（向后兼容）。
+
+    无 group 字段的历史配置默认归入 first_party（不因新增分组字段而失效）。
+    """
+    if not groups:
+        return servers
+    groups_set = set(groups)
+    return [s for s in servers if s.get("group", "first_party") in groups_set]
+
+def load_mcp_server_configs(user_id: str = None, groups: list[str] | None = None) -> list[dict]:
     """加载 MCP 服务器配置列表。
 
     【架构变更】优先从 PostgreSQL 数据库按用户加载（mcp_config_service）；
@@ -154,14 +165,14 @@ def load_mcp_server_configs(user_id: str = None) -> list[dict]:
                 servers = _mcp_mod.mcp_config_service.get_user_servers(user_id)
                 if servers:
                     logger.info(f"从数据库加载用户 [{user_id}] 的 MCP 配置：{len(servers)} 个")
-                    return servers
+                    return _filter_by_groups(servers, groups)
         except Exception as e:
             logger.warning(f"从数据库加载用户 [{user_id}] MCP 配置失败，降级到文件: {e}")
 
     # 降级：本地文件全局配置（启动时默认服务器）
     global _mcp_config_cache
     if _mcp_config_cache is not None:
-        return _mcp_config_cache
+        return _filter_by_groups(_mcp_config_cache, groups)
     config_path = get_mcp_config_path()
     if not config_path or not Path(config_path).is_file():
         logger.info(f"MCP 全局配置文件不存在（路径: {config_path}），使用空配置")
@@ -200,7 +211,7 @@ def load_mcp_server_configs(user_id: str = None) -> list[dict]:
             continue
         validated.append(item)
     _mcp_config_cache = validated
-    return validated
+    return _filter_by_groups(validated, groups)
 
 
 # ============================================================

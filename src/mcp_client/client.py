@@ -267,7 +267,9 @@ class McpServerConnection:
             pass
 
 
-async def init_mcp_holders(servers: list[dict[str, Any]], timeout: int = 120) -> list[McpServerConnection]:
+async def init_mcp_holders(
+    servers: list[dict[str, Any]], timeout: int = 120, groups: list[str] | None = None
+) -> list[McpServerConnection]:
     """按配置连接全部 MCP 服务器，返回连接列表。
 
     - connections[i].tools：LangChain 工具列表（供图使用）
@@ -284,6 +286,11 @@ async def init_mcp_holders(servers: list[dict[str, Any]], timeout: int = 120) ->
                  导致全部服务器被跳过，故调大默认值。
                  防止 MCP 服务器启动后 stdio 通信无响应时阻塞整个后端启动。
     """
+    if groups is not None:
+        groups_set = set(groups)
+        servers = [c for c in servers if c.get("group", "first_party") in groups_set]
+        logger.info(f"MCP 分组启动：仅连接 {groups_set}，共 {len(servers)} 台")
+
     async def _connect_one(cfg: dict[str, Any]) -> McpServerConnection | None:
         """连接单个服务器（每个连接在独立 task 中执行）。
 
@@ -328,3 +335,164 @@ async def demo_call(servers: list[dict[str, Any]]) -> None:
             await holder.call({})
     for conn in connections:
         await conn.close()
+
+
+class McpLazyLoader:
+    """第三方 MCP 懒加载器（方案B：分组 + 分级启动）。
+
+    设计目标（1.6G 内存服务器约束）：
+    - 第三方扩展 server 进程不常驻（context7/dbhub 等低频工具，常驻浪费内存）；
+    - 启动期「闪连预热」：临时连接拿工具 schema（供工具向量索引语义召回），
+      随即关闭，不保持进程；
+    - 运行期「命中触发」：ToolFilter 语义层命中未连接第三方工具时，
+      由 llm_node 调用 trigger() 同步拉起真实连接，工具注入可变工具池，
+      本轮重试筛选后即可用。
+
+    失败语义：预热失败 / 连接失败的 server 进入 _failed，不再重试，
+    不阻塞主链路（对应工具降级为不可用，LLM 如实告知）。
+    """
+
+    def __init__(
+        self,
+        servers: list[dict[str, Any]],
+        tool_loop: asyncio.AbstractEventLoop,
+        timeout: int = 120,
+        safety_fn=None,
+    ):
+        self._lazy_cfgs: dict[str, dict[str, Any]] = {
+            cfg["name"]: cfg for cfg in servers if cfg.get("lazy")
+        }
+        self._tool_loop = tool_loop
+        self._timeout = timeout
+        self._safety_fn = safety_fn
+        self._connections: dict[str, McpServerConnection] = {}
+        self._loaded_tools: list[BaseTool] = []
+        self._server_of_tool: dict[str, str] = {}
+        self._tool_metas: list[dict] = []
+        self._failed: set[str] = set()
+        self._loading: set[str] = set()
+
+    # ---------- 预热：闪连拿 schema，不保持进程 ----------
+    async def _warmup_one(self, name: str, cfg: dict) -> list[dict] | None:
+        conn = McpServerConnection(cfg)
+        try:
+            await asyncio.wait_for(conn.open(), timeout=min(self._timeout, 30))
+        except (Exception, asyncio.CancelledError) as e:
+            logger.warning(f"MCP 懒加载预热 [{name}] 失败（标记不可用）: {e}")
+            self._failed.add(name)
+            await conn.close()
+            return None
+        metas = []
+        try:
+            for h in conn.holders:
+                metas.append({
+                    "name": h.name,
+                    "description": h.description or "",
+                    "tags": SERVER_TAGS.get(name, []),
+                })
+                self._server_of_tool[h.name] = name
+        finally:
+            await conn.close()  # 闪连即关：只取 schema，不常驻进程
+        return metas
+
+    def warmup(self) -> "McpLazyLoader":
+        """启动期闪连全部懒加载 server，收集工具 schema（不阻塞主流程超时）。"""
+        if not self._lazy_cfgs:
+            return self
+
+        async def _run():
+            for name, cfg in self._lazy_cfgs.items():
+                metas = await self._warmup_one(name, cfg)
+                if metas:
+                    self._tool_metas.extend(metas)
+
+        fut = asyncio.run_coroutine_threadsafe(_run(), self._tool_loop)
+        try:
+            fut.result(timeout=min(60, 15 + 15 * len(self._lazy_cfgs)))
+        except Exception as e:
+            logger.warning(f"MCP 懒加载预热未完成（不阻塞启动）: {e}")
+        logger.info(
+            f"MCP 懒加载：{len(self._lazy_cfgs)} 台第三方，预热 {len(self._tool_metas)} 个工具 schema"
+        )
+        return self
+
+    # ---------- 查询 ----------
+    def tool_metas(self) -> list[dict]:
+        """预热拿到的第三方工具 schema（供工具向量索引，不入执行池）。"""
+        return list(self._tool_metas)
+
+    def server_of(self, tool_name: str) -> str | None:
+        return self._server_of_tool.get(tool_name)
+
+    def is_pending_tool(self, tool_name: str) -> bool:
+        """工具属于懒加载 server 且当前未连接（未加载到执行池）。"""
+        server = self._server_of_tool.get(tool_name)
+        if not server:
+            return False
+        if server in self._failed:
+            return False
+        if server in self._connections:
+            return False
+        return True
+
+    def loaded_tools(self) -> list[BaseTool]:
+        return list(self._loaded_tools)
+
+    # ---------- 触发：命中即真实连接 ----------
+    def trigger(self, server_name: str) -> bool:
+        """同步触发真实连接（阻塞当前线程直到完成），成功后工具注入池。
+
+        在线程池线程（同步图）里调用：连接提交到工具常驻循环，
+        与第一方连接同 loop，保证 session 与工具调用同循环。
+        """
+        if server_name in self._failed or server_name in self._connections:
+            return server_name in self._connections
+        if server_name in self._loading:
+            logger.warning(f"MCP 懒加载 [{server_name}] 连接中，跳过重复触发")
+            return False
+        cfg = self._lazy_cfgs.get(server_name)
+        if not cfg:
+            return False
+        self._loading.add(server_name)
+        conn: McpServerConnection | None = None
+        try:
+            async def _do():
+                c = McpServerConnection(cfg)
+                try:
+                    await asyncio.wait_for(c.open(), timeout=self._timeout)
+                    return c
+                except (Exception, asyncio.CancelledError):
+                    await c.close()
+                    return None
+
+            fut = asyncio.run_coroutine_threadsafe(_do(), self._tool_loop)
+            conn = fut.result(timeout=self._timeout + 10)
+        except Exception as e:
+            logger.warning(f"MCP 懒加载 [{server_name}] 连接异常: {e}")
+            return False
+        finally:
+            self._loading.discard(server_name)
+        if conn is None:
+            self._failed.add(server_name)
+            logger.warning(f"MCP 懒加载 [{server_name}] 连接失败，标记不可用")
+            return False
+        tools = conn.tools
+        if self._safety_fn is not None:
+            tools = self._safety_fn(tools) or []
+        self._connections[server_name] = conn
+        self._loaded_tools.extend(tools)
+        logger.success(
+            f"MCP 懒加载：server [{server_name}] 已连接，新增 {len(tools)} 个工具"
+        )
+        return True
+
+    async def aclose(self) -> None:
+        """关闭所有已连接的懒加载 server（进程级释放）。"""
+        for conn in self._connections.values():
+            try:
+                await conn.close()
+            except BaseException:
+                pass
+        self._connections.clear()
+        self._loaded_tools.clear()
+        logger.info(f"MCP 懒加载：已释放 {len(self._lazy_cfgs)} 台第三方连接")

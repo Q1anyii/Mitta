@@ -26,6 +26,9 @@ class ToolFilter:
             embedding_function: 向量库 Embedding 函数（依赖注入），None 时降级
         """
         self._semantic_available = True  # 语义层熔断开关：失败后降级规则层，重启恢复
+        # 语义命中了「未加载」工具（懒加载第三方 server 未连接）时的工具名列表，
+        # 由 select_tools 每轮重置；llm_node 据此触发 McpLazyLoader.trigger
+        self.last_pending_hits: list[str] = []
         # 兼容旧调用：未注入时延迟导入
         if selector_llm is None:
             from init import selector_llm as _selector
@@ -69,10 +72,17 @@ class ToolFilter:
         tool_map = {t.name: t for t in tools}        # 内存映射表：外键 -> 对象
         try:
             hits = self.vector_store.query([query], top_k, TOOL_DISTANCE_THRESHOLD)[0]  # 已按距离升序 + 阈值过滤
-            selected = [
-                tool_map[h.metadata["tool_name"]] for h in hits
-                if h.metadata.get("tool_name") in tool_map  # 两道防线：缺外键的旧数据丢弃、工具已移除丢弃
-            ]
+            selected = []
+            for h in hits:
+                name = h.metadata.get("tool_name")
+                if not name:
+                    continue  # 缺外键的旧数据丢弃
+                if name in tool_map:
+                    selected.append(tool_map[name])
+                else:
+                    # 语义命中但未加载（懒加载第三方 server）：记录触发信号，
+                    # 本轮回调方（llm_node）据此拉起连接，下一轮/重试筛选即可用
+                    self.last_pending_hits.append(name)
             if len(selected) > TOOLS_EMBEDDING_LIMIT:
                 selected = self.llm_refine_tools(query, selected)
                 
@@ -85,6 +95,7 @@ class ToolFilter:
 
     def select_tools(self, query: str, tools: list[BaseTool]) -> list[BaseTool]:
         try:
+            self.last_pending_hits = []  # 每轮重置：懒加载触发信号（见 query_available_tools）
             rule_hit = self.rule_based_filter(query, tools)          # 强相关：tags 命中
             semantic_hit = self.query_available_tools(query, tools, top_k=TOP_FILTER_TOOLS)  # 弱相关：语义补充
             # 按 name 去重保序：StructuredTool 不可哈希（dict.fromkeys 会炸 TypeError），

@@ -13,7 +13,7 @@ from loguru import logger
 
 from container import AppDependencies
 from config import validate_config, load_mcp_server_configs
-from mcp_client.client import init_mcp_holders
+from mcp_client.client import McpLazyLoader, init_mcp_holders
 from mcp_client.mcp_server.agent_server import mcp
 from routers.auth_router import router as auth_router
 from routers.chat_router import router as chat_router
@@ -31,6 +31,31 @@ from utils.tools_util import safety_filter, tools_embedding
 # 注意：.env 加载由 config.py 统一处理，无需重复 load_dotenv()
 
 
+def _make_pending_tools(metas: list[dict]) -> list:
+    """把懒加载第三方工具 schema 转成「不可执行占位工具」，仅用于工具语义索引。
+
+    真实工具未连接时无 BaseTool 对象；用 schema 构造占位工具喂给 tools_embedding，
+    使 ToolFilter 语义层能召回第三方工具名（命中后由 llm_node 触发真实连接）。
+    """
+    from langchain_core.tools import StructuredTool
+
+    def _noop(**kwargs):
+        return "该工具当前未加载，请提示用户稍后重试或换用其他方式。"
+
+    pending = []
+    for m in metas:
+        try:
+            pending.append(StructuredTool.from_function(
+                func=_noop,
+                name=m["name"],
+                description=m["description"],
+                tags=m.get("tags") or None,
+            ))
+        except Exception as e:
+            logger.warning(f"懒加载工具占位构造失败 {m.get('name')}: {e}")
+    return pending
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时初始化资源，关闭时释放资源。"""
@@ -44,20 +69,31 @@ async def lifespan(app: FastAPI):
     # 故 MCP 连接与工具调用全部提交到本循环（见 mcp_client.make_sync_tool）
     tool_loop = asyncio.new_event_loop()
     threading.Thread(target=tool_loop.run_forever, daemon=True, name="mcp-tool-loop").start()
+    # 方案B：分组 + 分级启动——第一方核心（filesystem/mitta-tools/sqlite/memory/...）常驻，
+    # 第三方扩展（context7/dbhub）懒加载：进程不常驻，命中工具时按需连接
+    servers = load_mcp_server_configs()
     mcp_holders = asyncio.run_coroutine_threadsafe(
-        init_mcp_holders(load_mcp_server_configs()), tool_loop
+        init_mcp_holders(servers, groups=["first_party"]), tool_loop
     ).result(timeout=130)
     mcp_tools = [t for h in mcp_holders for t in h.tools]
     filtered_tools = []
+    lazy_loader = None
     if mcp_tools:
         filtered_tools = safety_filter(mcp_tools)
-        tools_embedding(filtered_tools)
-        logger.success(f"已加载{len(filtered_tools)}个MCP 工具，共{len(mcp_holders)}类")
+        # 第三方懒加载器：闪连预热工具 schema（供语义索引），不保持进程
+        lazy_loader = McpLazyLoader(servers, tool_loop, safety_fn=safety_filter).warmup()
+        # 工具向量索引 = 第一方真实工具 + 第三方 schema 占位（语义可召回，执行时才连接）
+        index_tools = list(filtered_tools) + _make_pending_tools(lazy_loader.tool_metas())
+        tools_embedding(index_tools)
+        logger.success(
+            f"已加载{len(filtered_tools)}个MCP 工具（第一方{len(mcp_holders)}类；"
+            f"懒加载第三方{len(lazy_loader.tool_metas())}个工具已入语义索引）"
+        )
     logger.info("正在初始化 LangGraph 资源...")
     # 创建依赖容器：所有外部依赖（LLM/Embedding/重排/System Prompt）统一在这里创建，
     # 通过参数注入到各服务和图中，替代原 init.py 全局初始化
     deps = AppDependencies()
-    chat_service.open(filtered_tools, tool_loop=tool_loop, deps=deps)
+    chat_service.open(filtered_tools, tool_loop=tool_loop, deps=deps, lazy_loader=lazy_loader)
     login_service.open()
     cache_service.open(embed_model=deps.embed_model, online_rerank=deps.online_rerank)
     user_profile_service.open()
@@ -70,6 +106,9 @@ async def lifespan(app: FastAPI):
     # 常驻循环上，关闭必须提交到该循环，否则跨循环 await 报错
     if mcp_holders:
         asyncio.run_coroutine_threadsafe(_close_mcp_holders(mcp_holders), tool_loop).result(timeout=10)
+    if lazy_loader is not None:
+        # 释放已连接的懒加载第三方进程（首方连接已随 mcp_holders 关闭）
+        asyncio.run_coroutine_threadsafe(lazy_loader.aclose(), tool_loop).result(timeout=10)
     tool_loop.call_soon_threadsafe(tool_loop.stop)
     chat_service.close(timeout=10)
     login_service.close(timeout=10)

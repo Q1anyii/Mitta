@@ -39,6 +39,7 @@ def llm_node(
     tool_filter: ToolFilter,
     tools: list[BaseTool],
     get_user_system_prompt,
+    lazy_loader=None,
 ) -> OverAllState:
     """核心生成节点：组装上下文 → 筛选工具 → LLM 生成 → 返回消息。
 
@@ -127,6 +128,17 @@ def llm_node(
         filter_query = input_str  # 话题切换/首轮：纯用户输入，检索信号纯净
 
     selected_tools = tool_filter.select_tools(filter_query, tools)
+    # ── 5.1 懒加载触发：语义命中未连接的第三方 MCP 工具 → 拉起连接 → 重试筛选 ──
+    # 首调会阻塞当前线程等待连接（低频第三方工具首调慢可接受）；
+    # 连接成功后工具注入可变工具池（tools 为同一 list 引用），重试本轮即可用。
+    pending_hits = list(getattr(tool_filter, "last_pending_hits", []) or [])
+    if pending_hits and lazy_loader is not None:
+        server_name = lazy_loader.server_of(pending_hits[0])
+        if server_name:
+            logger.info(f"工具筛选命中懒加载 server [{server_name}]（{pending_hits}），触发连接")
+            if lazy_loader.trigger(server_name):
+                # 工具池已扩充：重新筛选，本轮即可使用新工具
+                selected_tools = tool_filter.select_tools(filter_query, tools)
     # 工具调用死循环防护（两道防线）：
     # (a) 轮次上限：历史中 ToolMessage 数量即已执行工具轮次，达到 MAX_TOOL_ROUNDS
     #     后本轮不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）；

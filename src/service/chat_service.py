@@ -173,10 +173,11 @@ class ChatService:
         self._active_generations: dict[str, dict] = {}
         self._active_generations_lock = _threading.Lock()
 
-    def open(self, mcp_tools: list | None = None, tool_loop=None, deps=None):
+    def open(self, mcp_tools: list | None = None, tool_loop=None, deps=None, lazy_loader=None):
         self._global_mcp_tools = mcp_tools or []
         self._tool_loop = tool_loop
         self._deps = deps  # AppDependencies 容器（依赖注入），None 时各构建函数降级到全局 import
+        self._lazy_loader = lazy_loader  # 方案B：第三方 MCP 懒加载器（全局图专用）
         # 创建向量库：注入 embedding_function，未提供 deps 时 create_vector_store 内部降级
         vec_cfg = load_vector_db_config()
         embed_fn = deps.embedding_function if deps else None
@@ -219,6 +220,7 @@ class ChatService:
             system_prompt=mg_prompt,
             cache=self.cache,
             mcp_tools=mcp_tools,
+            lazy_loader=self._lazy_loader,
         )
         # 初始化 MCP 配置数据库服务（PostgreSQL 存储，按用户隔离）
         try:

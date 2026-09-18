@@ -2,6 +2,8 @@
   {
     "name": "filesystem",
     "type": "stdio",
+    "group": "first_party",
+    "lazy": false,
     "command": "npx",
     "args": [
       "-y",
@@ -13,6 +15,8 @@
   {
     "name": "sqlite",
     "type": "stdio",
+    "group": "first_party",
+    "lazy": false,
     "command": "uvx",
     "args": [
       "--from",
@@ -28,6 +32,8 @@
   {
     "name": "sequential-thinking",
     "type": "stdio",
+    "group": "first_party",
+    "lazy": false,
     "command": "npx",
     "args": [
       "-y",
@@ -37,6 +43,8 @@
   {
     "name": "memory",
     "type": "stdio",
+    "group": "first_party",
+    "lazy": false,
     "command": "npx",
     "args": [
       "-y",
@@ -47,6 +55,8 @@
   {
     "name": "time",
     "type": "stdio",
+    "group": "first_party",
+    "lazy": false,
     "command": "uvx",
     "args": [
       "mcp-server-time"
@@ -55,6 +65,8 @@
   {
     "name": "context7",
     "type": "stdio",
+    "group": "third_party",
+    "lazy": true,
     "command": "npx",
     "args": [
       "-y",
@@ -64,6 +76,8 @@
   {
     "name": "dbhub",
     "type": "stdio",
+    "group": "third_party",
+    "lazy": true,
     "command": "npx",
     "args": [
       "-y",
@@ -74,6 +88,8 @@
   {
     "name": "mitta-tools",
     "type": "stdio",
+    "group": "first_party",
+    "lazy": false,
     "command": "python",
     "args": [
       "src/mcp_client/mcp_server/mitta_tools_server.py"

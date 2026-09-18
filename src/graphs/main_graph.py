@@ -20,6 +20,30 @@ from langgraph.store.base import BaseStore
 from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
 from langgraph.prebuilt import ToolNode
+
+
+class DynamicToolNode(ToolNode):
+    """工具池可变版 ToolNode：每次执行前按 provider 刷新工具表。
+
+    静态 ToolNode 构造时把工具拷贝进 tools_by_name，运行时追加的懒加载
+    工具无法路由（报"未注册工具"）；本节点每次执行前重读 provider 返回的
+    最新工具列表，使方案B懒加载连接后追加的工具立即可执行。
+    """
+
+    def __init__(self, tool_provider, handle_tool_errors=None):
+        self._tool_provider = tool_provider
+        super().__init__(tool_provider(), handle_tool_errors=handle_tool_errors)
+
+    def _refresh_tools(self):
+        self.tools_by_name = {t.name: t for t in self._tool_provider()}
+
+    def _run_one(self, call, input_type, tool_runtime):
+        self._refresh_tools()
+        return super()._run_one(call, input_type, tool_runtime)
+
+    async def _arun_one(self, call, input_type, tool_runtime):
+        self._refresh_tools()
+        return await super()._arun_one(call, input_type, tool_runtime)
 from loguru import logger
 
 from graphs.state import OverAllState
@@ -60,6 +84,7 @@ def build_main_graph(
     system_prompt: str = None,
     cache=None,
     mcp_tools: list[BaseTool] | None = None,
+    lazy_loader=None,
 ):
     """构建并编译主对话图。
 
@@ -88,11 +113,13 @@ def build_main_graph(
     # 工具：ToolNode 绑定全量安全工具（按 name 路由执行），
     # LLM 侧在 llm_node 里按本轮 query 运行时筛选后 bind_tools
     tool_filter = ToolFilter(selector_llm=model)
-    tools = list(mcp_tools or [])  # build 期无用户 query，不做筛选，直接全量绑定路由
+    # 工具池直接引用调用方列表（不 list() 拷贝）：lazy_loader 连接后往同一
+    # 列表 extend，llm_node 与 DynamicToolNode 通过同一引用看到新增工具
+    tools = mcp_tools or []  # build 期无用户 query，不做筛选，直接全量绑定路由
     # handle_tool_errors 必须显式配置：langgraph 1.1.x 默认只兜底参数校验错误，
     # MCP 工具执行异常会原样抛出让整图中断（SSE 断流）；
     # 自定义回调把错误转成 status="error" 的 ToolMessage 回传 LLM 自纠
-    tool_node = ToolNode(tools, handle_tool_errors=_tool_error_message)
+    tool_node = DynamicToolNode(lambda: tools, handle_tool_errors=_tool_error_message)
 
     # get_user_system_prompt 从 init 导入（纯函数，依赖 MySQL user_profile 表）
     from init import get_user_system_prompt
@@ -105,6 +132,7 @@ def build_main_graph(
         store=store, model=model, system_prompt=system_prompt,
         tool_filter=tool_filter, tools=tools,
         get_user_system_prompt=get_user_system_prompt,
+        lazy_loader=lazy_loader,
     )
     memory_node_bound = partial(memory_node, store=store, model=model)
 
