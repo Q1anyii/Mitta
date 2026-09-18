@@ -4,28 +4,42 @@
     "n_results": 20,
     "filter_threshold": 0.25,
     "category": null,
-    "metric": "boolean"
+    "metric": "boolean",
+    "deprecated_metric_note": "旧口径（coverage 关键词覆盖率 / boolean 句级覆盖）依赖 ground_truth 与知识库的文本同一性；实测 test-qa 文档未入库、答案多为改写组织，字面匹配天然偏低。key_points 口径以知识库可支撑的原句事实点为判定单元，更接近生产体验（H-20260918-02）。",
+    "key_points_scope": "基础概念 10 条试点（已按生产 405 chunks 验证事实点可在某 chunk 找到原句）"
+  },
+  "key_points": {
+    "single_path": {
+      "avg_point_coverage": 0.7583,
+      "query_full_hit_ratio": 0.5,
+      "queries_with_kp": 10
+    },
+    "hybrid_pipeline": {
+      "avg_point_coverage": 0.7833,
+      "query_full_hit_ratio": 0.6,
+      "queries_with_kp": 10
+    }
   },
   "single_path": {
     "avg_recall": 0.3111,
     "median_recall": 0.0,
-    "avg_latency_ms": 987.9,
-    "p95_latency_ms": 3159.1,
-    "p99_latency_ms": 11545.7,
+    "avg_latency_ms": 443.1,
+    "p95_latency_ms": 2222.7,
+    "p99_latency_ms": 2566.6,
     "zero_result_ratio": 0.0
   },
   "hybrid_pipeline": {
     "avg_recall": 0.2667,
     "median_recall": 0.0,
-    "avg_latency_ms": 4400.3,
-    "p95_latency_ms": 6917.8,
-    "p99_latency_ms": 14190.2,
+    "avg_latency_ms": 4500.1,
+    "p95_latency_ms": 8735.0,
+    "p99_latency_ms": 10295.8,
     "zero_result_ratio": 0.0,
     "stage_breakdown_ms": {
-      "rewrite": 2744.2,
-      "dense_retrieve": 952.1,
-      "bm25": 15.6,
-      "rerank": 688.4
+      "rewrite": 3226.6,
+      "dense_retrieve": 457.8,
+      "bm25": 15.4,
+      "rerank": 800.2
     }
   }
 }

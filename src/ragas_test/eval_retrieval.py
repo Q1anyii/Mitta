@@ -265,6 +265,19 @@ def evaluate_recall(retrieved_docs: List[RetrievedDoc], ground_truth: str, k: in
     return 1.0 if covered / len(sentences) >= 0.5 else 0.0
 
 
+def evaluate_key_points(retrieved_docs: List[RetrievedDoc], key_points: List[str], k: int = 5) -> Tuple[int, int]:
+    """关键事实点覆盖（H-20260918-02 新口径）：任一事实点在 top-k 文档文本中出现即命中。
+
+    事实点取自评测集 ground_truth 的核心事实，且以能在知识库某条 chunk 中找到原句为准
+    （禁止"宽泛到必然命中"的作弊式表述）。返回 (命中点数, 总点数)。
+    """
+    if not retrieved_docs or not key_points:
+        return 0, len(key_points) or 0
+    top_k_text = " ".join(doc.text for doc in retrieved_docs[:k])
+    hit = sum(1 for kp in key_points if kp and kp in top_k_text)
+    return hit, len(key_points)
+
+
 # ============================================================
 # 单路召回（baseline）
 # ============================================================
@@ -347,6 +360,47 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
     return filtered, total_elapsed, stats
 
 
+def diagnose_retrieve(vector_store, query: str, n_results: int, filter_threshold: float) -> str:
+    """诊断单条 query：输出 dense 候选池 → rerank → filter 各级变化，
+    辅助判定相关文档是在哪一级丢失（H-20260918-02 诊断要求）。"""
+    rows = []
+    queries = rewrite_query(query)
+    rows.append(f'- 改写: {queries}')
+    dense_results = vector_store.query(queries, n_results=n_results)
+    dense20 = []
+    for qres in dense_results:
+        for d in qres:
+            if all(d.text != x.text for x in dense20):
+                dense20.append(d)
+    rows.append(f'- dense 候选池({len(dense20)}):')
+    for d in dense20[:20]:
+        src = ((d.metadata or {}).get("source") or (d.metadata or {}).get("source_file") or "?")
+        rows.append(f'    `[{str(d.id)[:16]}]` {src} | {d.text[:60]}')
+    bm25_docs = bm25_search(query, top_k=n_results)
+    rows.append(f'- BM25 候选({len(bm25_docs)})')
+    merged = dedup_by_text(rrf_fusion(dense_results + [bm25_docs]))
+    rows.append(f'- RRF 融合候选({len(merged)})')
+    final_docs = []
+    if merged:
+        try:
+            rerank_results = online_rerank(queries[0], [d.text for d in merged], top_n=5)
+            for r in rerank_results:
+                doc = merged[r["index"]]
+                doc.metadata["relevance_score"] = r["relevance_score"]
+                final_docs.append(doc)
+        except Exception as e:
+            rows.append(f'- rerank 失败: {e}')
+            final_docs = merged[:5]
+    rows.append('- rerank top5:')
+    for d in final_docs:
+        rows.append(f"    `[{str(d.id)[:16]}]` score={d.metadata.get('relevance_score', '?'):.3f} | {d.text[:50]}")
+    filtered = [d for d in final_docs if d.metadata.get("relevance_score", 0) >= filter_threshold]
+    if not filtered and final_docs:
+        filtered = final_docs[:3]
+    rows.append(f'- filter(>={filter_threshold}) 后({len(filtered)}): {[str(d.id)[:12] for d in filtered]}')
+    return "\n".join(rows)
+
+
 # ============================================================
 # 主流程
 # ============================================================
@@ -359,6 +413,7 @@ def main():
     parser.add_argument("--category", type=str, default=None, help="按 category 过滤测试集")
     parser.add_argument("--metric", type=str, default="boolean", choices=["boolean", "coverage"], help="recall 口径：boolean 布尔命中率（默认）| coverage 旧关键词覆盖率")
     parser.add_argument("--no-pipeline", action="store_true", help="只测单路召回")
+    parser.add_argument("--diagnose", action="store_true", help="对未命中 query 输出候选明细诊断到 diagnose_report.md")
     args = parser.parse_args()
 
     # 加载测试集
@@ -371,16 +426,6 @@ def main():
     logger.info("初始化向量库...")
     vector_store = create_vector_store(load_vector_db_config())
     logger.info(f"向量库就绪，collection 文档数: {vector_store.count()}")
-
-    # 注入含 RedisSearch 的 Redis（6379 WSL sorts-redis；.env 的 6380 无 RedisSearch，BM25 无法工作）
-    import redis as _redis
-    cache_service.db_url = "redis://:sorts_dev@localhost:6379"
-    cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
-    cache_service.redis = _redis.Redis(
-        host=cache_service.host, port=cache_service.port,
-        password=cache_service.password,
-        socket_timeout=3, socket_connect_timeout=3,
-    )
 
     # 注入含 RedisSearch 的 Redis（6379 WSL sorts-redis；.env 的 6380 无 RedisSearch，BM25 无法工作）
     import redis as _redis
@@ -407,6 +452,9 @@ def main():
     single_recalls = []
     single_latencies = []
     single_zero = 0
+    single_kp = []
+    pipeline_kp = []
+    diagnose_log = []
 
     for i, item in enumerate(test_queries):
         query = item["question"]
@@ -414,6 +462,11 @@ def main():
         recall = evaluate_recall(docs, item["ground_truth"], k=5, metric=args.metric)
         single_recalls.append(recall)
         single_latencies.append(elapsed)
+        kp_hit, kp_total = evaluate_key_points(docs, item.get("key_points") or [], k=5)
+        single_kp.append((kp_hit, kp_total))
+        if args.diagnose and (recall == 0 or (kp_total and kp_hit < kp_total)):
+            diagnose_log.append(f"### 单路 Q{i} [{item.get('category')}] {query}")
+            diagnose_log.append(diagnose_retrieve(vector_store, query, args.n_results, args.filter_threshold))
         if not docs:
             single_zero += 1
         if (i + 1) % 10 == 0:
@@ -437,6 +490,11 @@ def main():
             pipeline_recalls.append(recall)
             pipeline_latencies.append(elapsed)
             pipeline_stats_all.append(stats)
+            kp_hit, kp_total = evaluate_key_points(docs, item.get("key_points") or [], k=5)
+            pipeline_kp.append((kp_hit, kp_total))
+            if args.diagnose and (recall == 0 or (kp_total and kp_hit < kp_total)):
+                diagnose_log.append(f"### 混合 Q{i} [{item.get('category')}] {query}")
+                diagnose_log.append(diagnose_retrieve(vector_store, query, args.n_results, args.filter_threshold))
             if not docs:
                 pipeline_zero += 1
             if (i + 1) % 10 == 0:
@@ -488,6 +546,18 @@ def main():
         logger.info(f"  平均候选数:   {statistics.mean(s['num_candidates'] for s in pipeline_stats_all):.1f}")
 
     # 保存 JSON 报告
+    def kp_stats(pairs):
+        pairs = [p for p in pairs if p[1] > 0]
+        if not pairs:
+            return None
+        coverage = [h / t for h, t in pairs]
+        full = sum(1 for h, t in pairs if h == t) / len(pairs)
+        return {
+            "avg_point_coverage": round(statistics.mean(coverage), 4),
+            "query_full_hit_ratio": round(full, 4),
+            "queries_with_kp": len(pairs),
+        }
+
     report = {
         "config": {
             "limit": args.limit,
@@ -495,7 +565,14 @@ def main():
             "filter_threshold": args.filter_threshold,
             "category": args.category,
             "metric": args.metric,
+            "deprecated_metric_note": "旧口径（coverage 关键词覆盖率 / boolean 句级覆盖）依赖 ground_truth 与知识库的文本同一性；实测 test-qa 文档未入库、答案多为改写组织，字面匹配天然偏低。key_points 口径以知识库可支撑的原句事实点为判定单元，更接近生产体验（H-20260918-02）。",
+            "key_points_scope": "基础概念 10 条试点（已按生产 405 chunks 验证事实点可在某 chunk 找到原句）",
         },
+        "key_points": {
+            "single_path": kp_stats(single_kp),
+            "hybrid_pipeline": kp_stats(pipeline_kp),
+        },
+
         "single_path": {
             "avg_recall": round(statistics.mean(single_recalls), 4),
             "median_recall": round(statistics.median(single_recalls), 4),
@@ -524,6 +601,16 @@ def main():
     output_path = Path(__file__).parent / "retrieval_eval_report.json"
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(f"\n评估报告已保存: {output_path}")
+
+    if args.diagnose:
+        diag_path = Path(__file__).parent / "diagnose_report.md"
+        if diagnose_log:
+            header = "# 检索失败 Case 诊断明细（H-20260918-02）\n\n对布尔口径=0 或 key_points 未全中的 query，输出各级候选池变化，判定相关文档在哪一级丢失。\n\n"
+            diag_path.write_text(header + "\n\n".join(diagnose_log), encoding="utf-8")
+            logger.info(f"诊断明细已保存: {diag_path}（{len(diagnose_log)} 条 case）")
+        else:
+            diag_path.write_text("# 检索失败 Case 诊断明细（H-20260918-02）\n\n无失败 case。", encoding="utf-8")
+            logger.info(f"诊断明细已保存: {diag_path}（无失败 case）")
 
 
 if __name__ == "__main__":
