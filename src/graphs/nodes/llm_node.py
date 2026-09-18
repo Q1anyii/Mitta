@@ -111,13 +111,12 @@ def llm_node(
     system_content = get_user_system_prompt(user_id, system_prompt)
 
     # ── 4.1 人格注入：按 state.persona 选人格 prompt + 工具白名单 ──
-    # cappie（帽子米塔）= 现状基线：不拼人格 prompt（= 现有 Mitta system_prompt 行为），
-    # 不过滤工具。只有非默认人格才追加人格 prompt，保证"不传 persona = 现状行为完全一致"。
+    # 所有人格（含默认 cappie）都追加人格 prompt：cappie 也叠 PROMPT_CAPPIE 语气层，
+    # 让默认技术问答带米塔味但仍严谨可靠。顺序不变——原 system_prompt / 用户自定义 /
+    # 长期记忆在前，人格 prompt 在后（语气层不推翻事实层、隐私铁律）。
     persona_key = state.get("persona") or DEFAULT_PERSONA
     persona = get_persona(persona_key)
-    is_default_persona = persona_key == DEFAULT_PERSONA
-    if not is_default_persona:
-        system_content += f"\n\n{persona['prompt']}"
+    system_content += f"\n\n{persona['prompt']}"
     if long_term and long_term != "（暂无档案）":
         system_content += f"\n\n【用户长期记忆】\n{long_term}"
 
