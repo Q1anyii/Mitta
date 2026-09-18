@@ -15,6 +15,7 @@ Mitta 检索链路离线评估脚本
     python -m ragas_test.eval_retrieval --limit 20       # 指定 query 数量
     python -m ragas_test.eval_retrieval --no-pipeline    # 只测单路召回
     python -m ragas_test.eval_retrieval --n-results 20   # 稠密召回数量
+    python -m ragas_test.eval_retrieval --dataset resources/knowledge-base/test-qa/eval_project_dataset.json --output project_retrieval_eval_report.json  # 项目专属评测集
 
 测试集：
     resources/knowledge-base/test-qa/eval_dataset.json
@@ -50,19 +51,27 @@ from service.cache_service import cache_service
 DATASET_PATH = Path(__file__).parent.parent.parent / "resources" / "knowledge-base" / "test-qa" / "eval_dataset.json"
 
 
-def load_test_queries(limit: int = 50, category: str = None) -> List[Dict]:
-    """从 eval_dataset.json 加载测试 QA。"""
-    if not DATASET_PATH.exists():
-        logger.error(f"测试集不存在: {DATASET_PATH}")
+def load_test_queries(limit: int = 50, category: str = None, dataset_path: Path = None) -> List[Dict]:
+    """从评测集 JSON 加载测试 QA（默认 eval_dataset.json，可传 --dataset 指定其他集）。
+
+    兼容两种结构：
+    - 原集：顶层为数组 [{question, ground_truth, key_points?, category, source_file?}]
+    - 新集（eval_project_dataset.json）：顶层对象 {"_meta": {...}, "dataset": [...]}
+    """
+    path = dataset_path or DATASET_PATH
+    if not path.exists():
+        logger.error(f"测试集不存在: {path}")
         sys.exit(1)
 
-    with open(DATASET_PATH, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
+    if isinstance(data, dict):
+        data = data.get("dataset", [])
 
     if category:
         data = [d for d in data if category in d.get("category", "")]
 
-    logger.info(f"加载测试集: {len(data)} 条（limit={limit}, category={category or '全部'}）")
+    logger.info(f"加载测试集: {path.name} {len(data)} 条（limit={limit}, category={category or '全部'}）")
     return data[:limit]
 
 
@@ -414,10 +423,18 @@ def main():
     parser.add_argument("--metric", type=str, default="boolean", choices=["boolean", "coverage"], help="recall 口径：boolean 布尔命中率（默认）| coverage 旧关键词覆盖率")
     parser.add_argument("--no-pipeline", action="store_true", help="只测单路召回")
     parser.add_argument("--diagnose", action="store_true", help="对未命中 query 输出候选明细诊断到 diagnose_report.md")
+    parser.add_argument("--dataset", type=str, default=None,
+                        help="评测集 JSON 路径（默认 resources/knowledge-base/test-qa/eval_dataset.json）")
+    parser.add_argument("--output", type=str, default="retrieval_eval_report.json",
+                        help="报告输出文件名（默认 retrieval_eval_report.json，落盘到本脚本同目录）")
     args = parser.parse_args()
 
-    # 加载测试集
-    test_queries = load_test_queries(args.limit, args.category)
+    # 加载测试集（--dataset 指定其他集，如 eval_project_dataset.json）
+    dataset_path = None
+    if args.dataset:
+        _p = Path(args.dataset)
+        dataset_path = _p if _p.is_absolute() else (Path(__file__).parent.parent.parent / _p)
+    test_queries = load_test_queries(args.limit, args.category, dataset_path)
     if not test_queries:
         logger.error("无测试 query，退出")
         return
@@ -565,8 +582,9 @@ def main():
             "filter_threshold": args.filter_threshold,
             "category": args.category,
             "metric": args.metric,
+            "dataset": str(dataset_path or DATASET_PATH),
             "deprecated_metric_note": "旧口径（coverage 关键词覆盖率 / boolean 句级覆盖）依赖 ground_truth 与知识库的文本同一性；实测 test-qa 文档未入库、答案多为改写组织，字面匹配天然偏低。key_points 口径以知识库可支撑的原句事实点为判定单元，更接近生产体验（H-20260918-02）。",
-            "key_points_scope": "基础概念 10 条试点（已按生产 405 chunks 验证事实点可在某 chunk 找到原句）",
+            "key_points_scope": "基础概念 10 条试点（已按生产 405 chunks 验证事实点可在某 chunk 找到原句）" if not dataset_path else "项目专属评测集全部条目（21 条，key_points 逐一在生产 405 chunks 验证存在原句）",
         },
         "key_points": {
             "single_path": kp_stats(single_kp),
@@ -598,7 +616,7 @@ def main():
             },
         }
 
-    output_path = Path(__file__).parent / "retrieval_eval_report.json"
+    output_path = Path(__file__).parent / args.output
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(f"\n评估报告已保存: {output_path}")
 

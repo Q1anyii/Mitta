@@ -1,0 +1,148 @@
+{
+  "_meta": {
+    "name": "project_eval_dataset",
+    "purpose": "项目专属评测集（双轨制 B 轨）：以知识库真实入库内容（resources/knowledge-base/01~10.md）为唯一出题源，测'项目检索质量'的真值 recall",
+    "source_files": [
+      "03-langgraph-architecture.md",
+      "04-rag-retrieval-system.md",
+      "06-system-architecture.md",
+      "08-security-authentication.md",
+      "01-python-best-practices.md",
+      "02-fastapi-backend.md",
+      "05-database-design.md",
+      "07-exception-handling.md",
+      "09-frontend-vue3.md",
+      "10-engineering-practices.md"
+    ],
+    "anti_cheat": "每条 key_points 均已逐一在生产向量库 chunk 原文 grep 验证存在原句（或可验证的近义原句），2026-09-19 验证通过",
+    "created": "2026-09-19"
+  },
+  "dataset": [
+    {
+      "question": "项目的 LangGraph 检索图是怎么构建的？节点有哪些？",
+      "ground_truth": "检索图用 StateGraph 构建，状态 schema 是 RAGState；节点包括 check_cache（缓存检查）、rewrite（Query 改写）、retrieve（多查询并行检索）、rerank（重排序）、store_cache（存入缓存）、output_node（输出）。check_cache 命中则直接输出，未命中走 rewrite 之后的检索流程。",
+      "key_points": ["builder = StateGraph(state_schema=RAGState)", "add_node(\"check_cache\", check_cache)", "check_cache", "rewrite", "retrieve"],
+      "category": "langgraph-architecture"
+    },
+    {
+      "question": "Checkpointer 和 Store 在项目里分别存什么？",
+      "ground_truth": "Checkpointer（PostgresSaver）用于持久化图的执行状态，存会话级状态和对话历史；Store（PostgresStore）用于存储跨会话的长期数据，如用户全局自定义 prompt。Checkpointer 管'这次对话'，Store 管'这个用户'。",
+      "key_points": ["Checkpointer 用于持久化图的执行状态", "PostgresSaver", "Store 用于存储跨会话的长期数据", "custom_prompt"],
+      "category": "langgraph-architecture"
+    },
+    {
+      "question": "LangGraph 状态设计要注意什么？有哪些常见陷阱？",
+      "ground_truth": "状态是累积的（additive），只存放需要跨节点传递的数据。常见陷阱：状态累积导致数据膨胀（大对象用引用或临时存储）；递归深度超限（默认 recursion_limit=25，可传入 config 调大）；Checkpointer 表未创建（使用 PostgresSaver 必须先 setup()）；stream 同步生成器在异步 FastAPI 中阻塞事件循环（用 asyncio.to_thread 托管）。",
+      "key_points": ["状态是累积的", "recursion_limit", "setup()", "asyncio.to_thread"],
+      "category": "langgraph-architecture"
+    },
+    {
+      "question": "条件边和 Send 扇出在检索图里怎么用？",
+      "ground_truth": "条件边（add_conditional_edges）在 check_cache 节点按 cache_hit 状态路由：命中走 output_node 直接输出，未命中走 rewrite 进入检索流程。Send 扇出（map_queries）为每个改写后的查询创建一个 retrieve 并行任务：Send(\"retrieve\", {\"query\": q})。",
+      "key_points": ["add_conditional_edges", "cache_hit", "Send(\"retrieve\", {\"query\": q})", "map_queries"],
+      "category": "langgraph-architecture"
+    },
+    {
+      "question": "项目知识库文档入库时怎么切分的？",
+      "ground_truth": ".md 文件先按标题切分（MarkdownHeaderTextSplitter，按 # 和 ## 切），再按字符大小切分兜底（RecursiveCharacterTextSplitter，chunk_size=500、chunk_overlap=50 保留上下文重叠）。原则：按标题切分保留语义边界，overlap 避免关键信息被切断。",
+      "key_points": ["MarkdownHeaderTextSplitter", "RecursiveCharacterTextSplitter", "chunk_size=500", "chunk_overlap=50"],
+      "category": "rag-retrieval-system"
+    },
+    {
+      "question": "RRF 融合的原理是什么？项目里 k 取多少？",
+      "ground_truth": "RRF（Reciprocal Rank Fusion）按排名融合多个查询的检索结果：score(d) = Σ 1/(k+rank+1)，rank 是文档在某查询结果中的排名（从 0 开始）。项目里 RRF_K=60。优势：不需要归一化不同查询的相似度分数、对排名敏感、实现简单计算高效。",
+      "key_points": ["RRF_K = 60", "1.0 / (k + rank + 1)", "不需要归一化", "RRF 公式"],
+      "category": "rag-retrieval-system"
+    },
+    {
+      "question": "项目用的重排序模型是什么？怎么调用？",
+      "ground_truth": "用 BAAI/bge-reranker-v2-m3（交叉编码器）对融合后的文档做精排，提升 top-k 精确率。通过 SiliconFlow 在线 API 调用 /rerank 端点，传 query + documents + top_n（10），按 relevance_score 降序取前 top_n。检索用双编码器（bge-m3，快，全库），重排用交叉编码器（慢，候选集）。",
+      "key_points": ["BAAI/bge-reranker-v2-m3", "交叉编码器", "SILICONFLOW_BASE_URL", "top_n"],
+      "category": "rag-retrieval-system"
+    },
+    {
+      "question": "检索缓存是怎么做的？模糊匹配怎么实现？",
+      "ground_truth": "check_cache 节点按 thread_id + 问题查 Redis 缓存（cache_service.query_cache），模糊匹配最近 3 条相似问题，命中直接复用结果（cache_hit=True 直接输出）；未命中走完整检索流程，rerank 后由 store_cache 节点存入缓存。",
+      "key_points": ["check_cache", "query_cache", "最近 3 条相似问题直接复用结果", "cache_hit"],
+      "category": "rag-retrieval-system"
+    },
+    {
+      "question": "向量检索的距离阈值过滤是怎么做的？阈值怎么选？",
+      "ground_truth": "DISTANCE_THRESHOLD=0.5（余弦距离阈值，越小越相关），遍历原始结果，距离小于阈值才保留，并把 _distance 埋入元数据便于调试。阈值过小召回率低可能漏检，过大精确率低引入噪声，建议根据数据分布取 0.3-0.7。",
+      "key_points": ["DISTANCE_THRESHOLD = 0.5", "余弦距离阈值", "0.3-0.7", "_distance"],
+      "category": "rag-retrieval-system"
+    },
+    {
+      "question": "项目怎么集成 MCP 服务器的？",
+      "ground_truth": "通过环境变量 MCP_SERVERS（JSON 数组，含 name/type/command/args）配置；load_mcp_server_configs() 加载并校验格式，失败返回空列表不阻塞启动；lifespan 中 init_mcp_holders() 创建 holder 并取出 tools 传入图，关闭时释放；还可 app.mount(\"/mcp\", mcp.http_app()) 挂载端点供外部客户端调用。",
+      "key_points": ["MCP_SERVERS", "init_mcp_holders", "/mcp", "load_mcp_server_configs"],
+      "category": "system-architecture"
+    },
+    {
+      "question": "项目的分层架构是怎样的？依赖方向？",
+      "ground_truth": "分层：API 层（路由定义、参数校验、依赖注入、响应封装，不写业务逻辑）→ 服务层（业务逻辑编排、事务管理）→ Graph 层（LangGraph 状态图）→ 数据层（数据库、向量库、缓存）。依赖方向自上而下，API 层只调用服务层。",
+      "key_points": ["API 层 → 服务层 → Graph 层 → 数据层", "路由定义、参数校验、依赖注入", "不写业务逻辑", "业务逻辑编排、事务管理"],
+      "category": "system-architecture"
+    },
+    {
+      "question": "配置管理怎么做的？敏感信息怎么脱敏？",
+      "ground_truth": "所有配置走环境变量（config.py + .env.example 模板），启动时校验必填项（validate_config）。日志脱敏：KEY/SECRET/PASSWORD 类变量只显示前 4 后 4 位（masked = value[:4] + \"*\"*... + value[-4:]）。.env 不提交版本控制。",
+      "key_points": ["所有配置走环境变量", "敏感信息只显示前4后4位", ".env.example", "配置校验"],
+      "category": "system-architecture"
+    },
+    {
+      "question": "JWT 双 Token 机制是怎样的？",
+      "ground_truth": "Access Token 有效期 15 分钟，存前端 localStorage + Redis，用于 API 认证；Refresh Token 有效期 30 天，只存 Redis 不下发前端，access 过期时后端自动续签，用户无感知。优点：access 短期有效降低泄露风险，refresh 不下发更安全。",
+      "key_points": ["15 分钟", "30 天", "不下发前端", "自动续签"],
+      "category": "security-authentication"
+    },
+    {
+      "question": "为什么还要做会话归属校验？",
+      "ground_truth": "因为 thread_id 不是用户 ID：如果不校验，任意用户可用他人 thread_id 发消息，LangGraph 会用当前用户覆盖该会话归属 metadata，造成会话劫持。所以业务层用 get_thread_user_id 校验归属，owner 非本人且非 admin 时返回 403 无权使用该会话。历史记录、删除会话等接口也需要同样校验。",
+      "key_points": ["会话劫持", "get_thread_user_id", "无权使用该会话", "任意用户可用他人 thread_id 发消息"],
+      "category": "security-authentication"
+    },
+    {
+      "question": "密码是怎么存储的？",
+      "ground_truth": "用 passlib CryptContext 的 bcrypt 方案加密存储：hash_password() 加密、verify_password() 验证。bcrypt 自动加盐无需手动管理 salt，计算成本默认 12 轮抗暴力破解。修改密码必须验证原密码，新密码最少 6 位，改成功后清除 Redis 中的 token 使旧 token 失效。",
+      "key_points": ["bcrypt", "自动加盐", "12 轮", "最少 6 位"],
+      "category": "security-authentication"
+    },
+    {
+      "question": "RAGState 状态定义用了什么类型？为什么？",
+      "ground_truth": "RAGState 用 TypedDict（结构化字典）定义——LangGraph 状态 schema 和内部函数参数用 TypedDict，轻量、运行时可省略；LLM 输出解析用 Pydantic BaseModel（QueryRewriteResult），需要数据校验、字段别名和默认值。",
+      "key_points": ["TypedDict 用于结构化字典", "class RAGState(TypedDict)", "class QueryRewriteResult(BaseModel)", "数据校验"],
+      "category": "python-best-practices"
+    },
+    {
+      "question": "SSE 流式响应是怎么实现的？",
+      "ground_truth": "后端用 StreamingResponse + media_type=\"text/event-stream\" 流式返回（从 LangGraph stream 拿 chunk，yield data: json\\n\\n 格式，结束发 data: [DONE]）；前端用 fetch + ReadableStream 逐块读取，AbortController 中断请求实现停止生成。",
+      "key_points": ["StreamingResponse", "text/event-stream", "ReadableStream", "AbortController"],
+      "category": "fastapi-backend"
+    },
+    {
+      "question": "Redis 在项目里存了哪些东西？",
+      "ground_truth": "三类：检索缓存（Key: chat:cache:{thread_id}:{question_hash}，Value 序列化文档列表，TTL 15 秒）；JWT 登录态（Key: user:token:{user_id}，access token TTL 15 分钟 / refresh 30 天）；限流计数（Key: rate_limit:{user_id}:{api_path}，TTL 时间窗口如 60 秒）。",
+      "key_points": ["chat:cache", "user:token", "rate_limit", "TTL：15 秒"],
+      "category": "database-design"
+    },
+    {
+      "question": "全局异常处理器怎么设计的？",
+      "ground_truth": "两层：Exception 处理器捕获所有未处理异常，统一返回 500 + 结构化错误；HTTPException 处理器把 HTTPException 统一包装为 {ok, detail} 格式，与业务接口响应风格一致（HTTPException 由 FastAPI 默认处理，不会进入 Exception 处理器）。",
+      "key_points": ["捕获所有未处理异常", "HTTPException", "HTTPException 统一包装为 {ok, detail} 格式", "统一返回 500"],
+      "category": "exception-handling"
+    },
+    {
+      "question": "前端 401 时怎么处理？",
+      "ground_truth": "前端登录后把 token 存 localStorage，每次请求带 Authorization: Bearer {token} 头；收到 401（认证过期）时自动跳转登录页。",
+      "key_points": ["401", "localStorage", "Authorization: Bearer", "自动跳转登录页"],
+      "category": "frontend-vue3"
+    },
+    {
+      "question": "项目目录结构是怎么分的？",
+      "ground_truth": "src/ 后端源码（main.py 入口、config.py 配置、constant/、context/、graphs/ 含 main_graph.py 和 retrieve_graph.py、middleware/、mcp_client/、schemas/、service/、utils/）；resources/ 资源（前端、知识库、chroma_db 向量库）；docs/ 文档；tests/ 测试。原则：按职责分层、资源与代码分离、测试独立。",
+      "key_points": ["main.py", "retrieve_graph.py", "资源与代码分离", "user_profile_service.py"],
+      "category": "engineering-practices"
+    }
+  ]
+}
