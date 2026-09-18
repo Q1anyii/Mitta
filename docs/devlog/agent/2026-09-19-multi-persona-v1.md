@@ -1,4 +1,4 @@
-docs_sync: required
+docs_sync: none
 
 # 多人格 v1 落地（A+B 阶段）：五人格米塔 + persona_router + chibi hook
 

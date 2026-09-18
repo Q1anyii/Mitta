@@ -11,6 +11,7 @@
 ## 功能特性
 
 - **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
+- **多人格路由层（2026-09-19 v1）**：4 个对话人格（帽子 cappie 默认 / 善良 kind / 疯狂 crazy / 短发 manager）由每轮 `persona_router_node` 分发——前端手选短路（0 次 LLM）或未手选自动四分类（1 次小模型调用）；人格 prompt 无条件叠加进 System Prompt（语气层，不推翻事实层）；**按人格配置工具白名单**（善良 23 个纯只读 / 短发加 git 只读 4 个 / 疯狂零工具走裸模型分支）；配 chibi 袖珍分身概率性后置吐槽（30%，SSE 独立事件不进主消息流）；自建 16 条人格路由评测分流准确率 100%（乐观基线，边界用例未覆盖）
 - **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回 + BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
 - **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具，并自研本地 **mitta-tools**（git 操作/网络搜索/文件检索，12 个工具）；工具常驻事件循环，支持故障降级；**分组 + 分级启动**（方案B）：第一方 6 台常驻、第三方 context7/dbhub 懒加载（`McpLazyLoader` 闪连预热 schema → 命中触发真实连接 → `DynamicToolNode` 动态路由），节省 150-300MB 内存
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
@@ -72,14 +73,16 @@
 
 | 节点                | 职责                | 关键实现                                                                                                                |
 | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **persona_router_node** | 每轮人格分发（2026-09-19） | 手选短路（`configurable.persona_override` 合法值，0 次 LLM）/ 自动四分类（`PERSONA_ROUTER_PROMPT` 小模型），非法/失败兜底 cappie；状态 `OverAllState.persona` |
 | **classify_node** | LLM 判断问题是否需要知识库检索 | `model.invoke([CLASSIFIER_PROMPT, user_input])`，返回 yes/no                                                           |
 | **retrieve_node** | 调用 RAG 子图检索知识库    | `retrieve_graph.invoke()`，Document 转 dict 存入 state（checkpoint 反序列化兼容）                                               |
-| **llm_node**      | 核心生成节点            | 组装 System Prompt（默认+用户自定义+长期记忆）→ ToolFilter 筛选工具 → `model.bind_tools()` → `model.stream()` → 合并 chunk 提取 tool_calls |
+| **llm_node**      | 核心生成节点            | 组装 System Prompt（默认+用户自定义+长期记忆+**人格 prompt**）→ ToolFilter 筛选工具 → **按人格白名单收缩** → `model.bind_tools()` → `model.stream()` → 合并 chunk 提取 tool_calls |
 | **tool_node**     | 执行 MCP 工具         | LangGraph `ToolNode`，按工具名路由；CachePolicy 缓存同参数结果                                                                     |
 | **memory_node**   | 提取长期记忆            | LLM 从对话中提取用户档案写入 PostgresStore；idle 闲聊轮快速跳过避免阻塞 SSE                                                                 |
 
 ### 条件路由
 
+- **START → persona_router_node**：人格分发（手选短路 / 自动四分类），随后进入 classify_node
 - **classify_node → route**：`needs_retrieval=True` 走检索链路，否则直接到 llm_node
 - **llm_node → route_after_llm**：`tool_calls` 非空走 tool_node，否则走 memory_node
 - **tool_node → llm_node**：工具执行结果回到 LLM 生成最终回答（可多轮循环）
@@ -167,9 +170,10 @@ AgentProject/
 │   ├── context/
 │   │   └── user_context.py               # CtxUser 请求级用户上下文
 │   ├── graphs/                           # LangGraph 图定义
-│   │   ├── main_graph.py                 # 主对话图：classify→retrieve/llm→tool→memory
+│   │   ├── main_graph.py                 # 主对话图：persona_router→classify→retrieve/llm→tool→memory
 │   │   ├── retrieve_graph.py             # RAG 子图：cache→rewrite→retrieve→rerank
-│   │   └── tool_filter.py                # 工具筛选：规则层 + 语义层
+│   │   ├── tool_filter.py                # 工具筛选：规则层 + 语义层
+│   │   └── nodes/
 │   ├── mcp_client/                       # MCP 客户端
 │   │   ├── client.py                     # MCP 连接管理/工具同步包装/故障降级/tags 注入
 │   │   ├── mcp_tool_holder.py            # MCP 工具封装
@@ -187,7 +191,8 @@ AgentProject/
 │   │   ├── eval_tool_safety.py           # MCP 安全校验评测（E4：命令/包名/env/sse 白名单）
 │   │   ├── eval_tool_truncation.py       # 工具结果截断与异常兜底评测（E5）
 │   │   ├── eval_semantic_cache.py        # 语义缓存命中质量评测（E6：同义命中/误命中）
-│   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（E7：单路 vs 混合流水线对比）
+│   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（E7：单路 vs 混合，key_points 口径 + --diagnose）
+│   │   ├── persona_router_eval.py          # 人格路由四分类评测（E15：16/16 乐观基线）
 │   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估（E9）
 │   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测（E10）
 │   │   ├── eval_jwt.py                   # JWT 登录态校验耗时/token 自动续签成功率（E11）
@@ -246,7 +251,7 @@ AgentProject/
 │   ├── knowledge-base/                   # 编程知识库（Markdown）
 │   │   ├── ingest_knowledge.py           # 知识库入库脚本（向量库 + RedisSearch BM25 双写）
 │   │   ├── 01~10-*.md                    # 分类知识文档
-│   │   └── test-qa/                      # 测试 QA 集（eval_dataset.json）
+│   │   └── test-qa/                      # 测试 QA 集（eval_dataset.json 45 条 + eval_project_dataset.json 21 条）
 │   ├── FAQ/                              # 在线学习平台 FAQ 知识库
 │   └── chroma_db/                        # ChromaDB 持久化目录（Milvus 模式下不用）
 ├── tests/                                # 单元测试
@@ -570,7 +575,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
 | E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限 6/6 通过 |
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中 100%、无关 query 误命中 0% |
-| E7 | 混合检索 | `eval_retrieval.py` | recall@5（boolean 句级要点覆盖：单路 0.3111 / 混合 0.2667）、P95 延迟（历史 coverage 中位数 0.7732 已标注，不得混用） |
+| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 最新口径）**：基础概念 10 条试点 单路 0.7583 / 混合 0.7833；项目专属集 21 条 单路 0.5690 / 混合 0.5357（旧 boolean 0.3111/0.2667 与 coverage 0.7732 均为历史口径） |
 | E8 | RAGAS 五指标 | `ragas_eval.py` | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**） |
 | E9 | 记忆 | `eval_memory.py` | 写入 P95 ≈ 46ms（历史产物） |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存 deque |
@@ -578,8 +583,11 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 |
 | E13 | 在线实测 | `eval_online.py` | health ✓ / 登录 ✓ / SSE 首 token 1348ms 零污染 / 登出失效 401 ✓ / 限流第 30、31 次 429 ✓ |
 | E14 | CI 回归 | `tests/test_agent_regression.py` | 路由/安全/兜底/缓存 key 纯函数断言（pytest，入 CI） |
+| E15 | 人格路由 | `persona_router_eval.py` | 四分类分流准确率 16/16=100%（典型样本，乐观基线）；token 用量记录 |
 
 测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 **45 条**刁钻 QA（基础概念 10 + 代码调试 10 + 架构设计 10 + 刁钻 Badcase 15），覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
+
+**B 项目专属评测集（双轨制，2026-09-19）**：`resources/knowledge-base/test-qa/eval_project_dataset.json` 含 **21 条**，以真实入库内容 `01~10.md` 为唯一出题源（query/ground_truth/key_points 3~5 点/category），88 个 key_points 逐一在生产 405 chunks grep 反作弊验证存在原句；`eval_retrieval.py` 支持 `--dataset`/`--output` 参数分别评估。
 
 所有评估脚本输出 JSON 报告到 `src/ragas_test/`（`*_eval_report.json`），可用于版本间性能对比；E1/E6/E13 为 2026-09-18 实测，其余标注历史产物。
 
@@ -761,6 +769,7 @@ flowchart TD
 4. 引入 interrupt 功能，在涉及敏感操作时由用户确认是否继续
 5. 目前只在源码层面支持自定义模型，后续需在设置界面添加接口
 6. 引入 token 消耗检测
+7. **多人格 v1 已落地**（4 人格路由 + chibi）；后续：crazy 的 `collect_to_cassette` 工具、supervisor 多 Agent 编排（`docs/SUPERVISOR_UPGRADE_PLAN.md` 规划中）
 
 ## 许可证
 

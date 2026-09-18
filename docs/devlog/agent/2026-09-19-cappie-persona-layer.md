@@ -1,6 +1,6 @@
 # cappie 默认人格叠加 PROMPT_CAPPIE 语气层（H-20260919-03）
 
-docs_sync: required
+docs_sync: none
 
 日期：2026-09-19
 类别：agent / persona

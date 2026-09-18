@@ -1,4 +1,4 @@
-docs_sync: required
+docs_sync: none
 
 # 2026-09-19 方案A验收收尾：persona_router 实测 + 前端人格tab + chibi气泡 + 白名单校准
 
