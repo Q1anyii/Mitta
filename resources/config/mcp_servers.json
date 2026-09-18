@@ -11,14 +11,6 @@
     "cwd": "/app/user_files/user_01/AgentProject"
   },
   {
-    "name": "fetch",
-    "type": "stdio",
-    "command": "uvx",
-    "args": [
-      "mcp-server-fetch"
-    ]
-  },
-  {
     "name": "sqlite",
     "type": "stdio",
     "command": "uvx",

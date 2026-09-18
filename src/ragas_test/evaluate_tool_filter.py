@@ -72,58 +72,65 @@ def precision_at_k(selected: list[str], expected: list[str], k: int) -> float:
 
 
 async def main(max_cases: int = None):
-    mcp_holders = await init_mcp_holders(load_mcp_server_configs())
-    tools = safety_filter([t for h in mcp_holders for t in h.tools])
-    if not tools:
-        logger.error("无 MCP 工具，请先配置 MCP 服务器")
-        return
+    connections = await init_mcp_holders(load_mcp_server_configs())
+    try:
+        tools = safety_filter([t for h in connections for t in h.tools])
+        if not tools:
+            logger.error("无 MCP 工具，请先配置 MCP 服务器")
+            return
 
-    cases = TEST_CASES if max_cases is None else TEST_CASES[:max_cases]
-    tool_filter = ToolFilter()
-    table = Table(title=f"工具筛选离线评估（k={TOP_FILTER_TOOLS}，共 {len(tools)} 个工具）")
-    table.add_column("query")
-    table.add_column("期望")
-    table.add_column(f"recall@{TOP_FILTER_TOOLS}")
-    table.add_column(f"precision@{TOP_FILTER_TOOLS}")
+        cases = TEST_CASES if max_cases is None else TEST_CASES[:max_cases]
+        tool_filter = ToolFilter()
+        table = Table(title=f"工具筛选离线评估（k={TOP_FILTER_TOOLS}，共 {len(tools)} 个工具）")
+        table.add_column("query")
+        table.add_column("期望")
+        table.add_column(f"recall@{TOP_FILTER_TOOLS}")
+        table.add_column(f"precision@{TOP_FILTER_TOOLS}")
 
-    recall_sum = precision_sum = 0.0
-    zero_hit = 0
-    details = []
-    for case in cases:
-        expected = case["expected"]
-        selected = [t.name for t in tool_filter.select_tools(case["query"], tools)][:TOP_FILTER_TOOLS]
-        recall = recall_at_k(selected, expected, TOP_FILTER_TOOLS)
-        precision = precision_at_k(selected, expected, TOP_FILTER_TOOLS)
-        recall_sum += recall
-        precision_sum += precision
-        if recall == 0.0:
-            zero_hit += 1
-        table.add_row(case["query"][:30], str(expected), f"{recall:.2f}", f"{precision:.2f}")
-        details.append({
-            "query": case["query"], "expected": expected, "selected": selected,
-            "recall": round(recall, 4), "precision": round(precision, 4),
-        })
+        recall_sum = precision_sum = 0.0
+        zero_hit = 0
+        details = []
+        for case in cases:
+            expected = case["expected"]
+            selected = [t.name for t in tool_filter.select_tools(case["query"], tools)][:TOP_FILTER_TOOLS]
+            recall = recall_at_k(selected, expected, TOP_FILTER_TOOLS)
+            precision = precision_at_k(selected, expected, TOP_FILTER_TOOLS)
+            recall_sum += recall
+            precision_sum += precision
+            if recall == 0.0:
+                zero_hit += 1
+            table.add_row(case["query"][:30], str(expected), f"{recall:.2f}", f"{precision:.2f}")
+            details.append({
+                "query": case["query"], "expected": expected, "selected": selected,
+                "recall": round(recall, 4), "precision": round(precision, 4),
+            })
 
-    console.print(table)
-    n = len(cases)
-    avg_recall = recall_sum / n if n else 0
-    avg_precision = precision_sum / n if n else 0
-    console.print(
-        f"平均 recall@{TOP_FILTER_TOOLS} = {avg_recall:.2f}，"
-        f"平均 precision@{TOP_FILTER_TOOLS} = {avg_precision:.2f}，"
-        f"零命中 query 数 = {zero_hit}/{n}"
-    )
+        console.print(table)
+        n = len(cases)
+        avg_recall = recall_sum / n if n else 0
+        avg_precision = precision_sum / n if n else 0
+        console.print(
+            f"平均 recall@{TOP_FILTER_TOOLS} = {avg_recall:.2f}，"
+            f"平均 precision@{TOP_FILTER_TOOLS} = {avg_precision:.2f}，"
+            f"零命中 query 数 = {zero_hit}/{n}"
+        )
 
-    report = {
-        "config": {"top_k": TOP_FILTER_TOOLS, "total_tools": len(tools), "test_cases": n},
-        "avg_recall": round(avg_recall, 4),
-        "avg_precision": round(avg_precision, 4),
-        "zero_hit_count": zero_hit,
-        "details": details,
-    }
-    output_path = Path(__file__).parent / "tool_filter_eval_report.json"
-    output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    logger.info(f"评测报告已保存: {output_path}")
+        report = {
+            "config": {"top_k": TOP_FILTER_TOOLS, "total_tools": len(tools), "test_cases": n},
+            "avg_recall": round(avg_recall, 4),
+            "avg_precision": round(avg_precision, 4),
+            "zero_hit_count": zero_hit,
+            "details": details,
+        }
+        output_path = Path(__file__).parent / "tool_filter_eval_report.json"
+        output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info(f"评测报告已保存: {output_path}")
+    finally:
+        # 显式关闭 MCP 连接：asyncio.run 结束时事件循环先关闭，stdio_client 的
+        # async generator 被 GC 时会在已关闭/不同任务上退出 anyio cancel scope，
+        # 触发 RuntimeError 使进程以非零码中断，报告写盘可能被截断
+        for conn in connections:
+            await conn.close()
 
 
 if __name__ == "__main__":
