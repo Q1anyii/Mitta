@@ -120,7 +120,9 @@ def rerank(state: RAGState, online_rerank) -> dict:
 def filter_node(state: RAGState) -> dict:
     """按重排分数过滤低相关文档。
 
-    阈值 0.3：过滤噪声，保留中等相关以上文档。
+    阈值 0.25：过滤噪声，保留中等相关以上文档。
+    （2026-09-18 由 0.3 放宽：top5 内 0.25~0.3 的中等相关文档此前被过滤，
+    放宽后进入上下文，提升召回覆盖率；代价是引入少量低相关噪声）
     过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空，避免 LLM 无上下文可用）。
 
     Args:
@@ -131,10 +133,10 @@ def filter_node(state: RAGState) -> dict:
     """
     reranked_docs = state["reranked_docs"]
 
-    # 阈值 0.3：过滤噪声，保留中等相关以上文档
+    # 阈值 0.25：过滤噪声，保留中等相关以上文档（2026-09-18 由 0.3 放宽）
     finally_docs = [
         doc for doc in reranked_docs
-        if doc.metadata.get("relevance_score", 0.0) >= 0.3
+        if doc.metadata.get("relevance_score", 0.0) >= 0.25
     ]
 
     if finally_docs:

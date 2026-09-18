@@ -86,9 +86,14 @@ def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
     # RedisSearch 查询语法中 : ( ) - @ 等是特殊字符，中文问句直接传会 Syntax error。
     # 用 jieba 分词后以 OR（|）连接：默认英文分词器对中文按整句分词，
     # 空格 AND 会因中文词无结果而整体返回 0，OR 保证英文/专有名词能命中。
+    # 2026-09-18 修复：分词 token 含 . - _ 等字符（代码块/路径类问题如 `..`、`self._`、
+    # `UploadFile`、`...`）会触发 Syntax error，对 RedisSearch 特殊字符统一加 \ 转义。
     import jieba
+    import re as _re
+    _redis_special = _re.compile(r'([,.<>{}\[\]"\'=~!@#$%^&*();:|\-+\\])')
     tokens = [t.strip() for t in jieba.lcut(query) if t.strip() and len(t.strip()) > 1]
-    safe_query = " | ".join(tokens) if tokens else query
+    escaped = [_redis_special.sub(r"\\\1", t) for t in tokens]
+    safe_query = " | ".join(escaped) if escaped else _redis_special.sub(r"\\\1", query)
 
     try:
         result = cache_service.redis.execute_command(

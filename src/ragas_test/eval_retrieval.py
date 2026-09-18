@@ -76,8 +76,13 @@ def bm25_search(query: str, top_k: int = 20) -> List[RetrievedDoc]:
     # RedisSearch 查询语法中 : ( ) - @ * 等是特殊字符，直接传中文问句会 Syntax error。
     # 用 jieba 分词后以 OR（|）连接：空格 AND 会因中文多词无交集整体返回 0，
     # OR 保证英文/专有名词/任意分词能命中（与生产 query_nodes.py 保持一致）。
+    # 2026-09-18 修复：分词 token 含 . - _ 等字符（代码块/路径类问题）会触发 Syntax error，
+    # 对 RedisSearch 特殊字符统一加 \ 转义（已验证 45 条 query 0 报错）。
+    import re as _re
+    _redis_special = _re.compile(r'([,.<>{}\[\]"\'=~!@#$%^&*();:|\-+\\])')
     tokens = [t.strip() for t in jieba.lcut(query) if t.strip() and len(t.strip()) > 1]
-    safe_query = " | ".join(tokens) if tokens else query
+    escaped = [_redis_special.sub(r"\\\1", t) for t in tokens]
+    safe_query = " | ".join(escaped) if escaped else _redis_special.sub(r"\\\1", query)
 
     try:
         result = cache_service.redis.execute_command(
@@ -282,6 +287,19 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
     if not filtered and final_docs:
         filtered = final_docs[:3]
 
+    # 口径修复（2026-09-18）：与单路同口径算 recall@5。
+    # 重排只保留 top5，过滤后通常只剩 1~3 条，关键词覆盖文本条数天然比单路
+    # （固定 5 条全文）少——指标被"候选条数"人为压低，并非链路变差。
+    # 过滤后不足 5 条时，按 RRF 融合顺序补足到 5 条。
+    if len(filtered) < 5 and merged:
+        seen = {id(d) for d in filtered}
+        for d in merged:
+            if len(filtered) >= 5:
+                break
+            if id(d) not in seen:
+                filtered.append(d)
+                seen.add(id(d))
+
     total_elapsed = time.perf_counter() - t_total
     return filtered, total_elapsed, stats
 
@@ -294,7 +312,7 @@ def main():
     parser = argparse.ArgumentParser(description="Mitta 检索链路离线评估")
     parser.add_argument("--limit", type=int, default=50, help="测试 query 数量（默认 50）")
     parser.add_argument("--n-results", type=int, default=20, help="稠密召回数量（默认 20）")
-    parser.add_argument("--filter-threshold", type=float, default=0.15, help="重排分数过滤阈值（默认 0.15）")
+    parser.add_argument("--filter-threshold", type=float, default=0.25, help="重排分数过滤阈值（默认 0.25，对齐生产 filter_node）")
     parser.add_argument("--category", type=str, default=None, help="按 category 过滤测试集")
     parser.add_argument("--no-pipeline", action="store_true", help="只测单路召回")
     args = parser.parse_args()

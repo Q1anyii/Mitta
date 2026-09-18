@@ -104,7 +104,7 @@
 | **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
 | **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
 | **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=5，分数写入 `doc.metadata["relevance_score"]` |
-| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.3` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                            |
+| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.25` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                          |
 | **store_cache** | 写入 Redis     | 缓存键 `retrieve_cache:{thread_id}:{bucket_id}`，动态 TTL，命中自动续期                                                 |
 
 ### 关键参数
@@ -115,7 +115,7 @@
 | BM25 召回 top_k  | 20                                    | `graphs/retrieve_graph.py` bm25_search |
 | RRF_K          | 60                                    | `constant/retrieval_constants.py`      |
 | 重排 top_n       | 5                                     | `graphs/retrieve_graph.py` rerank      |
-| 过滤阈值           | 0.3（relevance_score ≥ 0.3，空则兜底 top 3） | `graphs/retrieve_graph.py` filter_node |
+| 过滤阈值           | 0.25（relevance_score ≥ 0.25，空则兜底 top 3；2026-09-18 由 0.3 放宽） | `graphs/nodes/retrieve/fusion_nodes.py` filter_node |
 | 缓存 TTL         | 动态（默认 900s，命中续期）                      | `constant/cache_constant.py`           |
 | Embedding 模型   | BAAI/bge-m3（1024 维）                   | `constant/embedding_constants.py`      |
 | 重排模型           | BAAI/bge-reranker-v2-m3               | `init.py`                              |
@@ -129,7 +129,7 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
 - **BM25**：擅长精确关键词匹配（"可变默认参数""bcrypt""WebSocket" 直接命中）
 - **RRF 融合**：只看排名不看绝对分数，统一两路量纲差异
 - **rerank 精排**：交叉编码器对 query-doc 对做注意力计算，最终排序依据
-- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.3 以下视为噪声丢弃；过滤后为空时兜底返回原始 top 3
+- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.25 以下视为噪声丢弃（由 0.3 放宽，提升中等相关文档召回）；过滤后为空时兜底返回原始 top 3
 
 ### 工具筛选机制
 
