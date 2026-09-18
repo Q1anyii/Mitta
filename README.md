@@ -12,7 +12,7 @@
 
 - **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
 - **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回 + BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
-- **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、fetch、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具；工具常驻事件循环，支持故障降级
+- **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具，并自研本地 **mitta-tools**（git 操作/网络搜索/文件检索，12 个工具）；工具常驻事件循环，支持故障降级
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
 - **双通道记忆**：
   - 短期记忆：PostgresSaver 按 `thread_id` 恢复多轮对话
@@ -175,13 +175,14 @@ AgentProject/
 │   │   ├── mcp_tool_holder.py            # MCP 工具封装
 │   │   ├── demo.py                       # MCP 调试示例
 │   │   └── mcp_server/
-│   │       └── agent_server.py           # 内置 FastMCP 服务器（chat/get_user/summarize）
+│   │       ├── agent_server.py           # 内置 FastMCP 服务器（chat/get_user/summarize）
+│   │       └── mitta_tools_server.py     # 本地实用工具集 FastMCP 服务器（git/搜索/文件，12 工具）
 │   ├── middleware/
 │   │   └── rate_limit_middleware.py      # 基于 Redis 的请求限流中间件
 │   ├── ragas_test/                       # Agent 系统评测（评测矩阵 E1–E14，见 docs/AGENT_EVAL_MATRIX.md）
 │   │   ├── ragas_eval.py                 # RAGAS 五项指标评估（E8，LLM-as-judge，不进 CI）
 │   │   ├── eval_routing.py               # 动态路由评测（E1：意图分类准确率/检索召回）
-│   │   ├── evaluate_tool_filter.py       # 工具筛选规则层+语义层准确率评估（E2，需真实 MCP）
+│   │   ├── evaluate_tool_filter.py       # 工具筛选规则层+语义层准确率评估（E2，22 条用例 recall 0.89）
 │   │   ├── eval_tool_assembly.py         # 工具装配并集/降级/熔断评测（E3）
 │   │   ├── eval_tool_safety.py           # MCP 安全校验评测（E4：命令/包名/env/sse 白名单）
 │   │   ├── eval_tool_truncation.py       # 工具结果截断与异常兜底评测（E5）
@@ -354,7 +355,7 @@ docker-compose up -d etcd minio milvus
 | 服务器                 | 启动方式                                                   | 作用                                              |
 | ------------------- | ------------------------------------------------------ | ----------------------------------------------- |
 | filesystem          | `npx @modelcontextprotocol/server-filesystem`          | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录            |
-| fetch               | `uvx mcp-server-fetch`                                 | 网页抓取：按 URL 拉取网页内容并转 Markdown，供 RAG 引用实时网页信息     |
+| mittatools          | `python src/mcp_client/mcp_server/mitta_tools_server.py` | 本地实用工具集：Bing 搜索（无 key）/网页抓取/git 系列/文件搜索与安全读取/项目结构 |
 | sqlite              | `uvx mcp-server-sqlite`                                | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db`  |
 | sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析              |
 | memory              | `npx @modelcontextprotocol/server-memory`              | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好               |
@@ -362,7 +363,7 @@ docker-compose up -d etcd minio milvus
 | context7            | `npx @upstash/context7-mcp`                            | 最新技术文档检索：拉取 API / SDK 官方文档（含版本、参数）              |
 | dbhub               | `npx @bytebase/dbhub --demo`                           | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构 |
 
-能力分工：**filesystem / fetch / context7** 负责获取内容，**sqlite / dbhub** 负责存储与查询，**memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。Dockerfile 额外内置 `@modelcontextprotocol/server-github` 等 npm 包，供用户级 MCP 配置按需启用。
+能力分工：**filesystem / mittatools / context7** 负责获取内容（网页抓取由 mittatools 的 `fetch_url` 承接，原 `fetch` 因仅兼容 OpenAI MCP 客户端已移除），**sqlite / dbhub** 负责存储与查询，**memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。Dockerfile 额外内置 `@modelcontextprotocol/server-github` 等 npm 包，供用户级 MCP 配置按需启用。
 
 ### 6. 知识库入库（可选）
 
@@ -477,7 +478,7 @@ MCP 工具通过 `langchain_mcp_adapters` 加载为 async 工具，闭包捕获�
 - 启动时创建专用守护线程运行独立事件循环（`mcp-tool-loop`），MCP 连接建立与工具调用全部提交到该循环（`asyncio.run_coroutine_threadsafe`）
 - `make_sync_tool` 将 async 工具包装为同步 StructuredTool，含 30 秒调用超时，超时由 ToolNode 转错误消息，不中断对话链路
 - 单个 MCP 服务器连接失败不影响其他服务器（120 秒连接超时 + 故障降级跳过；冷启动时 uvx/npx 首次需下载依赖，超时过短易导致全部服务器被跳过，故取较大值）
-- MCP 工具按服务器名注入 tags（`SERVER_TAGS` 映射），供工具筛选规则层命中
+- MCP 工具按服务器名注入 tags（`SERVER_TAGS` 映射）、按工具名注入精准 tags（`TOOL_TAGS`，2026-09-18 新增），供工具筛选规则层命中并按强弱排序
 - 关闭时按序在工具循环内释放 MCP 子进程连接，避免资源泄漏
 
 ### 智能工具筛选
@@ -564,7 +565,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | 编号 | 维度 | 脚本 | 关键指标 |
 | --- | --- | --- | --- |
 | E1 | 动态路由 | `eval_routing.py` | 意图分类准确率 100%（17/17）、检索召回 100%、误报 0% |
-| E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k（需真实 MCP，待跑） |
+| E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k（22 条用例，avg_recall=0.8939 / zero_hit=0，已实测） |
 | E3 | 工具装配 | `eval_tool_assembly.py` | 并集召回/降级/熔断 6/6 通过 |
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
 | E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限 6/6 通过 |
@@ -739,7 +740,7 @@ flowchart TD
 **全局默认**：
 
 1. 在 `resources/config/mcp_servers.json` 添加服务器配置
-2. 如需规则层命中，在 `src/mcp_client/client.py` 的 `SERVER_TAGS` 中添加关键词
+2. 如需规则层命中，在 `src/mcp_client/client.py` 的 `SERVER_TAGS`（server 级）或 `TOOL_TAGS`（工具级，更精准）中添加关键词
 3. 重启后端，日志会显示加载的工具数量
 
 ### 切换向量库
