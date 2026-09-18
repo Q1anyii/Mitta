@@ -1,0 +1,37 @@
+{
+  "total": 16,
+  "accuracy": 1.0,
+  "confusion": {
+    "cappie": {
+      "cappie": 4,
+      "kind": 0,
+      "crazy": 0,
+      "manager": 0
+    },
+    "kind": {
+      "cappie": 0,
+      "kind": 4,
+      "crazy": 0,
+      "manager": 0
+    },
+    "crazy": {
+      "cappie": 0,
+      "kind": 0,
+      "crazy": 4,
+      "manager": 0
+    },
+    "manager": {
+      "cappie": 0,
+      "kind": 0,
+      "crazy": 0,
+      "manager": 4
+    }
+  },
+  "errors": [],
+  "samples_per_class": {
+    "cappie": 4,
+    "kind": 4,
+    "crazy": 4,
+    "manager": 4
+  }
+}

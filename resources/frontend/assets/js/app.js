@@ -377,7 +377,7 @@
             return ok ? (data.data ?? null) : null;
         }
 
-        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId) {
+        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId, persona, onChibi) {
             const body = { query, thread_id: threadId };
             if (fileIds && fileIds.length > 0) {
                 body.file_ids = fileIds;
@@ -385,6 +385,10 @@
             // 深度思考设置：随每次请求传入，后端 llm_node 动态 bind
             body.thinking_mode = thinkingMode;
             body.reasoning_effort = reasoningEffort;
+            // 人格手选：auto/未传 = 后端 persona_router 自动分发；传具体 key = 短路不调分类模型
+            if (persona && persona !== 'auto') {
+                body.persona = persona;
+            }
             // 消息唯一 ID：后端按 (user_id, client_message_id) 幂等去重，
             // 刷新重试/多标签页重复 POST 时后端不重复创建生成任务
             if (clientMessageId) {
@@ -456,6 +460,10 @@
                     // 深度思考内容：DeepSeek 推理模型的思考过程，前端折叠展示，不混入正文
                     if (chunk.reasoning && onReasoning) {
                         onReasoning(chunk.reasoning);
+                    }
+                    // chibi 小气泡吐槽：不进主消息流，右侧独立浮动展示（30s 自动收起）
+                    if (chunk.chibi && onChibi) {
+                        onChibi(chunk.chibi);
                     }
                     const text = extractContentText(chunk.content);
                     if (text) {
@@ -1133,6 +1141,13 @@
         const ChatApp = {
             template: `
                 <div class="chat-layout">
+                    <!-- chibi 浮动气泡层（fixed 定位右侧，不影响主对话布局） -->
+                    <div class="chibi-dock">
+                        <div v-for="b in chibiBubbles" :key="b.id" class="chibi-bubble">
+                            <span class="chibi-text">{{ b.text }}</span>
+                            <button class="chibi-close" @click="dismissChibi(b.id)" aria-label="关闭">×</button>
+                        </div>
+                    </div>
                     <!-- ══════════ 侧边栏 ══════════ -->
                     <aside class="sidebar" :class="{ open: sidebarOpen }" role="navigation" aria-label="会话列表">
                         <div class="sidebar-vert-deco">MITTA</div>
@@ -1385,6 +1400,20 @@
                                                 :class="{ selected: reasoningEffort === effort }"
                                                 @click="setEffort(effort)"
                                             >{{ effort === 'low' ? '低' : effort === 'high' ? '高' : 'max' }}</span>
+                                        </div>
+                                    </div>
+                                    <!-- 人格手选 -->
+                                    <div class="persona-select-wrapper">
+                                        <button class="persona-btn" :class="{ active: personaMode !== 'auto' }"
+                                                @click.stop="personaMenuOpen = !personaMenuOpen"
+                                                :title="personaMode === 'auto' ? '自动分发人格' : '当前人格：' + personaLabel">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21v-1a8 8 0 0 1 16 0v1"></path></svg>
+                                            <span>{{ personaLabel }}</span>
+                                        </button>
+                                        <div v-if="personaMenuOpen" class="persona-menu" @click.stop>
+                                            <div v-for="p in PERSONA_OPTIONS" :key="p.key" class="persona-option"
+                                                 :class="{ selected: personaMode === p.key }"
+                                                 @click="setPersonaMode(p.key)">{{ p.label }}</div>
                                         </div>
                                     </div>
                                     <!-- 上传 -->
@@ -1650,6 +1679,36 @@
                 const thinkingMode = ref(localStorage.getItem('thinkingMode') === 'true');
                 const reasoningEffort = ref(localStorage.getItem('reasoningEffort') || 'low');
                 const thinkingPanelOpen = ref(false);  // 思考设置面板展开状态
+                // 人格 tab：auto=路由自动分发；其余=手选（后端 persona_override 短路）
+                const PERSONA_OPTIONS = [
+                    { key: 'auto', label: '自动' },
+                    { key: 'cappie', label: '帽子' },
+                    { key: 'kind', label: '善良' },
+                    { key: 'crazy', label: '疯狂' },
+                    { key: 'manager', label: '短发' },
+                ];
+                const personaMode = ref(localStorage.getItem('personaMode') || 'auto');
+                const personaMenuOpen = ref(false);
+                function setPersonaMode(mode) {
+                    personaMode.value = mode;
+                    localStorage.setItem('personaMode', mode);
+                    personaMenuOpen.value = false;
+                }
+                const personaLabel = computed(() => {
+                    const p = PERSONA_OPTIONS.find(o => o.key === personaMode.value);
+                    return p ? p.label : '自动';
+                });
+                // chibi 浮动气泡：右侧独立窗口，不进主消息流、不影响主对话
+                const chibiBubbles = ref([]);
+                function handleChibi(text) {
+                    const id = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                    chibiBubbles.value.push({ id, text });
+                    setTimeout(() => dismissChibi(id), 30000);
+                }
+                function dismissChibi(id) {
+                    const i = chibiBubbles.value.findIndex(b => b.id === id);
+                    if (i >= 0) chibiBubbles.value.splice(i, 1);
+                }
                 // 封装方法：Vue 模板不能直接访问全局 localStorage，必须通过 setup 方法调用
                 function toggleThinkingMode() {
                     thinkingMode.value = !thinkingMode.value;
@@ -2569,7 +2628,7 @@
                                     if (shouldScroll) scrollToBottom();
                                 }, 100);
                             }
-                        }, thinkingMode.value, reasoningEffort.value, clientMessageId);
+                        }, thinkingMode.value, reasoningEffort.value, clientMessageId, personaMode.value, handleChibi);
 
                         // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染。
                         // 若已切换到其他会话，跳过 UI 更新（后台 checkpoint 已提交，
@@ -3168,6 +3227,9 @@
                     editingSessionId, renameInput, startRenameSession, saveSessionTitle, cancelRenameSession,
                     // 深度思考
                     thinkingMode, reasoningEffort, thinkingPanelOpen,
+                    // 人格 tab + chibi 气泡
+                    PERSONA_OPTIONS, personaMode, personaMenuOpen, personaLabel,
+                    setPersonaMode, chibiBubbles, dismissChibi,
                     toggleThinkingMode, setEffort, toggleEffortPanel,
                     // 消息操作
                     copyMessage, shareMessage, regenerateMessage,

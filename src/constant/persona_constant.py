@@ -158,13 +158,17 @@ PERSONAS = {
     "kind": {
         "label": "善良米塔",
         "prompt": PROMPT_KIND,
-        # 只读：网页搜索/抓取、读文件、列目录、查时间
+        # 只读：网络搜索/抓取、读文件、列目录、查时间、只读 SQL/图谱节点
+        # （已按运行时真实工具名校准：scripts/list_runtime_tools.py 输出 + mitta_tools_server.py 注册名）
         "allowed_tools": [
             "web_search", "fetch_url",
-            "read_local_file", "read_text_file", "read_file",
-            "list_directory", "get_file_info",
-            "search_project_files", "search_files",
-            "get_current_time", "get_project_info",
+            "read_local_file", "search_project_files", "get_project_info",
+            "read_file", "read_text_file", "read_media_file", "read_multiple_files",
+            "list_directory", "list_directory_with_sizes", "directory_tree",
+            "search_files", "get_file_info", "list_allowed_directories",
+            "read_query", "list_tables", "describe_table",
+            "read_graph", "search_nodes", "open_nodes",
+            "get_current_time", "convert_time",
         ],
     },
     "crazy": {
@@ -175,14 +179,18 @@ PERSONAS = {
     "manager": {
         "label": "短发米塔",
         "prompt": PROMPT_MANAGER,
-        # 只读技术工具：读文件/搜代码/查 git（不含 add/commit/checkout 等写操作）
+        # 只读技术工具：kind 全部只读 + git 只读（不含 add/commit/checkout 写操作）
+        # （已按运行时真实工具名校准：scripts/list_runtime_tools.py 输出 + mitta_tools_server.py 注册名）
         "allowed_tools": [
-            "read_local_file", "read_text_file", "read_file",
-            "list_directory", "get_file_info",
-            "search_project_files", "search_files",
             "web_search", "fetch_url",
+            "read_local_file", "search_project_files", "get_project_info",
+            "read_file", "read_text_file", "read_media_file", "read_multiple_files",
+            "list_directory", "list_directory_with_sizes", "directory_tree",
+            "search_files", "get_file_info", "list_allowed_directories",
+            "read_query", "list_tables", "describe_table",
+            "read_graph", "search_nodes", "open_nodes",
+            "get_current_time", "convert_time",
             "git_status", "git_log", "git_diff", "git_branch",
-            "get_project_info",
         ],
     },
 }
