@@ -85,6 +85,9 @@ coverage.xml
 
 # ---- 临时脚本 / 个人配置 ----
 *.local.py
+# ---- Agent 治理文件（本地多 Agent 工作流，不入库）----
+.agent/
+
 config.local.py
 src/ragas_eval/
 /deploy/nginx/nginx-dev.conf
