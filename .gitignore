@@ -105,3 +105,4 @@ resources/chroma.sqlite3
 
 # TLS 证书/私钥：绝不进 git，手动上传服务器 /opt/mitta/deploy/ssl/
 /deploy/ssl/
+/AGENTS.md

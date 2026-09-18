@@ -19,6 +19,16 @@ from service.cache_service import cache_service
 from constant.cache_constant import DOC_PREFIX
 from vector.embedding import meta_to_dict
 from vector.vector_store import create_vector_store
+import redis as _redis
+
+# 注入含 RedisSearch 的 Redis（覆盖 .env 指向的无 RediSearch 端口）
+cache_service.db_url = "redis://:sorts_dev@localhost:6379"
+cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
+cache_service.redis = _redis.Redis(
+    host=cache_service.host, port=cache_service.port,
+    password=cache_service.password,
+    socket_timeout=5, socket_connect_timeout=5,
+)
 
 # 确保 src 目录在 Python 路径中
 SCRIPT_DIR = Path(__file__).resolve().parent

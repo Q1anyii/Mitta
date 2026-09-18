@@ -28,6 +28,8 @@ import sys
 import time
 from pathlib import Path
 
+import redis
+
 # 必须在 import 项目模块前把 src 加入 sys.path
 SRC_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SRC_DIR))
@@ -144,10 +146,14 @@ def rrf_fusion(results: list[list[RetrievedDoc]], k: int = RRF_K) -> list[Retrie
 
 
 def bm25_search(query: str, top_k: int = 20) -> list[RetrievedDoc]:
-    """BM25 稀疏检索（RedisSearch），jieba 分词避免特殊字符语法错误。"""
+    """BM25 稀疏检索（RedisSearch），jieba 分词避免特殊字符语法错误。
+
+    注意：RedisSearch 默认英文分词器对中文按整句分词，多词 AND 会因中文词
+    无结果而整体返回 0，故用 OR（|）连接 token，保证英文/专有名词能命中。
+    """
     import jieba
     tokens = [t.strip() for t in jieba.lcut(query) if t.strip() and len(t.strip()) > 1]
-    safe_query = " ".join(tokens) if tokens else query
+    safe_query = " | ".join(tokens) if tokens else query
     try:
         result = cache_service.redis.execute_command(
             "FT.SEARCH", SPARSE_INDEX_NAME,
@@ -157,6 +163,27 @@ def bm25_search(query: str, top_k: int = 20) -> list[RetrievedDoc]:
     except Exception as e:
         logger.warning(f"  BM25 检索失败，降级为空: {e}")
         return []
+    # 兼容两种返回格式：新版 redis-py 返回 dict（键为 bytes 或 str）；旧版返回扁平 list
+    def _get(d, name):
+        return d.get(name) if name in d else d.get(name.encode("utf-8"))
+    if isinstance(result, dict):
+        items = _get(result, "results") or []
+        docs = []
+        for it in items:
+            try:
+                raw_id = _get(it, "id") or b""
+                if isinstance(raw_id, bytes):
+                    raw_id = raw_id.decode("utf-8")
+                doc_id = raw_id.replace(DOC_PREFIX, "")
+                attrs = _get(it, "extra_attributes") or {}
+                content = _get(attrs, "content") or b""
+                text = content.decode("utf-8") if isinstance(content, bytes) else (content or "")
+                score = _get(it, "score") or 0.0
+                docs.append(RetrievedDoc(id=doc_id, text=text, distance=0.0,
+                                         metadata={"source": "bm25", "bm25_score": float(score)}))
+            except Exception:
+                continue
+        return docs
     if not isinstance(result, (list, tuple)) or len(result) < 2:
         return []
     docs = []
@@ -245,10 +272,12 @@ def main():
                         help="按分类过滤: basic/debug/architecture/badcase")
     parser.add_argument("--threshold", type=float, default=0.3,
                         help="向量检索距离阈值（默认0.5，越小越严格；生产环境用0.3）")
+    parser.add_argument("--redis-url", type=str, default="",
+                        help="覆盖 RedisSearch 地址（默认用 .env 的 REDIS_DB_URL）")
     args = parser.parse_args()
 
     # 1. 加载测试集
-    test_data = load_test_dataset(limit=3, category=args.category)
+    test_data = load_test_dataset(limit=args.limit, category=args.category)
     if not test_data:
         logger.error("测试集为空，退出")
         return
@@ -257,6 +286,17 @@ def main():
     cfg = load_vector_db_config()
     vector_store = create_vector_store(cfg)
     try:
+        # 支持用 --redis-url 覆盖 .env 指向（如 .env 指向的端口无 RedisSearch 时，BM25 路会降级）
+        if args.redis_url:
+            cache_service.db_url = args.redis_url
+            cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(args.redis_url)
+            cache_service.redis = redis.Redis(
+                host=cache_service.host,
+                port=cache_service.port,
+                password=cache_service.password,
+                socket_timeout=3,
+                socket_connect_timeout=3,
+            )
         cache_service.open()
         logger.info(f"向量库: {cfg.get('type')}, 集合: {cfg.get('collection')}, BM25 索引就绪")
     except Exception as e:

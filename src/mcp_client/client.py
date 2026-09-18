@@ -53,6 +53,22 @@ SERVER_TAGS = {
     "crawl4ai": ["爬虫", "网页", "pdf", "抓取", "crawl", "爬取"],
     "chroma": ["向量", "知识库", "检索", "chroma", "相似", "embedding", "集合"],
     "basic-memory": ["记忆", "笔记", "知识", "实体", "markdown", "关系", "memory"],
+    "mitta-tools": ["网络搜索", "搜索", "网页", "抓取", "git", "提交", "分支", "commit", "diff", "log", "文件", "项目", "search", "web", "代码", "版本"],
+}
+
+# 工具级 tags：对特定工具做个性化关键词注入（优先于 server 级 tags）。
+# MCP 服务器按 server 注入同一组 tags 时粒度太粗，git_status/git_diff 等
+# 难以被"哪些文件被修改"这类 query 命中；按工具补充语义关键词提升规则层召回。
+TOOL_TAGS: dict[str, list[str]] = {
+    "git_status": ["修改", "变更", "状态", "工作区", "未提交", "改动", "changed", "modified"],
+    "git_diff": ["差异", "改动", "变更", "对比", "diff", "修改内容"],
+    "git_log": ["提交历史", "日志", "commit history", "log"],
+    "git_branch": ["分支", "branch", "新分支", "创建分支"],
+    "git_checkout": ["切换", "checkout", "分支", "switch"],
+    "web_search": ["搜索", "查询", "搜一下", "查找", "最新", "search", "web", "网络", "新闻"],
+    "fetch_url": ["抓取", "网页", "url", "链接", "内容", "页面", "fetch", "抓"],
+    "search_project_files": ["搜索文件", "文件", "检索", "查找文件", "todo", "search files", "文件名"],
+    "get_project_info": ["项目结构", "代码结构", "目录结构", "项目概览", "模块", "project info"],
 }
 
 
@@ -79,6 +95,10 @@ def make_sync_tool(async_tool: BaseTool, loop: asyncio.AbstractEventLoop, timeou
 
     # 基于服务器名注入 tags：规则层 rule_based_filter 靠 tags 命中，MCP 工具原生无 tags
     tags = list(SERVER_TAGS.get(server_name, []))
+    # 工具级个性化 tags 优先（按工具名覆盖），提升"哪些文件被修改"等弱关键词 query 的规则命中
+    tool_tags = TOOL_TAGS.get(async_tool.name)
+    if tool_tags:
+        tags = list(set(tags + tool_tags))
     # 合并原工具的 tags（如有）
     if getattr(async_tool, "tags", None):
         tags = list(set(tags + list(async_tool.tags)))

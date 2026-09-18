@@ -70,5 +70,14 @@
       "@bytebase/dbhub",
       "--demo"
     ]
+  },
+  {
+    "name": "mitta-tools",
+    "type": "stdio",
+    "command": "python",
+    "args": [
+      "src/mcp_client/mcp_server/mitta_tools_server.py"
+    ],
+    "cwd": "/app/user_files/user_01/AgentProject"
   }
 ]

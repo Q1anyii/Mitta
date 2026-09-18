@@ -38,13 +38,27 @@ class ToolFilter:
         self.vector_store = vector_store
     @staticmethod
     def rule_based_filter(query, tools: list[BaseTool]):
+        """规则层 tags 筛选，并按命中强度排序（强 > 弱）。
+
+        强命中：工具级 TOOL_TAGS 注入的关键词命中（如 git_status 的"修改/变更"）；
+        弱命中：server 级 SERVER_TAGS 注入的宽泛关键词命中（如 filesystem 的"文件/目录"）。
+        排序保证截断（TOP_FILTER_TOOLS）时优先保留语义最相关的工具，
+        避免 filesystem 等宽泛 server 的 12 个工具占满名额挤掉精确工具。
+        """
         query_lower = query.lower()
-        selected = []
+        strong, weak = [], []
         for t in tools:
-            # 检查 tags 或 keywords（tags 可能为 None，防御性判空）
-            if any(tag in query_lower for tag in (t.tags or [])):
-                selected.append(t)
-        return selected  # 可空：无 tags 命中时不再兜底全量，由 select_tools 统一决策
+            tags = t.tags or []
+            if any(tag in query_lower for tag in tags):
+                (strong if ToolFilter._is_strong_hit(t, query_lower) else weak).append(t)
+        return strong + weak  # 强相关在前，弱相关在后；可空：由 select_tools 统一决策
+
+    @staticmethod
+    def _is_strong_hit(t: BaseTool, query_lower: str) -> bool:
+        """判断规则命中是否为强相关：工具级 TOOL_TAGS 关键词命中。"""
+        from mcp_client.client import TOOL_TAGS
+        tool_tags = TOOL_TAGS.get(t.name)
+        return bool(tool_tags and any(tag in query_lower for tag in tool_tags))
 
     def query_available_tools(self, query: str, tools: list[BaseTool], top_k: int = 5) -> list[BaseTool]:
         """语义检索候选工具：命中返回对应 BaseTool，失败降级返回空列表。"""

@@ -84,10 +84,11 @@ def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
     rank_list = state["rank_list"]
 
     # RedisSearch 查询语法中 : ( ) - @ 等是特殊字符，中文问句直接传会 Syntax error。
-    # 用 jieba 分词后空格拼接，去除标点和特殊字符。
+    # 用 jieba 分词后以 OR（|）连接：默认英文分词器对中文按整句分词，
+    # 空格 AND 会因中文词无结果而整体返回 0，OR 保证英文/专有名词能命中。
     import jieba
     tokens = [t.strip() for t in jieba.lcut(query) if t.strip() and len(t.strip()) > 1]
-    safe_query = " ".join(tokens) if tokens else query
+    safe_query = " | ".join(tokens) if tokens else query
 
     try:
         result = cache_service.redis.execute_command(
@@ -100,6 +101,34 @@ def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
     except Exception:
         # 索引不存在或查询异常，降级：仅保留稠密检索结果（保持二维结构）
         return {"rank_list": rank_list + [[]]}
+
+    # 兼容两种返回格式：新版 redis-py 返回 dict（键为 bytes 或 str）；旧版返回扁平 list
+    def _get(d, name):
+        return d.get(name) if name in d else d.get(name.encode("utf-8"))
+    if isinstance(result, dict):
+        docs = []
+        for it in (_get(result, "results") or []):
+            try:
+                raw_id = _get(it, "id") or b""
+                if isinstance(raw_id, bytes):
+                    raw_id = raw_id.decode("utf-8")
+                doc_id = raw_id.replace(DOC_PREFIX, "")  # 去掉文档前缀，得到纯 id
+                attrs = _get(it, "extra_attributes") or {}
+                content = _get(attrs, "content") or b""
+                if not content:
+                    # NOCONTENT 模式下 extra_attributes 不含正文，需从 Hash 读取
+                    content = cache_service.redis.hget(raw_id, "content") or b""
+                text = content.decode("utf-8") if isinstance(content, bytes) else (content or "")
+                score = _get(it, "score") or 0.0
+                docs.append(RetrievedDoc(
+                    id=doc_id,
+                    text=text,
+                    distance=0.0,  # BM25 没有向量距离，用 0 占位，实际分数存 metadata
+                    metadata={"source": "bm25", "bm25_score": float(score)},
+                ))
+            except Exception:
+                continue
+        return {"rank_list": rank_list + [docs]}
 
     if not isinstance(result, (list, tuple)) or len(result) < 2:
         return {"rank_list": rank_list + [[]]}
