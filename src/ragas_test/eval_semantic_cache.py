@@ -35,8 +35,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_core.documents import Document
 
-from service.cache_service import cache_service
+from service.cache_service import CacheService
 from init import embed_model, online_rerank
+
+# 语义缓存评测默认使用 redis-stack（RedisSearch）6379；
+# 生产 .env 的 REDIS_DB_URL 由 load_dotenv(override=True) 强制注入，无法用环境变量覆盖，
+# 因此这里直接构造 CacheService 实例并显式传入 URL。
+DEFAULT_REDIS_URL = "redis://:sorts_dev@localhost:6379"
+
+
+def make_cache_service(redis_url: str) -> CacheService:
+    """构造指向目标 Redis 的 CacheService 实例。"""
+    return CacheService(redis_db_url=redis_url)
 
 
 def make_docs(tag: str = "sem") -> List[Document]:
@@ -140,12 +150,16 @@ def test_exact_duplicate(cache, thread_id: str) -> Dict:
 def main():
     parser = argparse.ArgumentParser(description="Mitta 语义缓存评测")
     parser.add_argument("--thread", type=str, default="eval_sem_cache", help="测试 thread 前缀")
+    parser.add_argument("--redis-url", type=str, default=DEFAULT_REDIS_URL,
+                        help=f"redis-stack URL（默认 {DEFAULT_REDIS_URL}）")
     args = parser.parse_args()
 
     logger.info("=" * 60)
     logger.info("Mitta 语义缓存评测（LSH+KNN+reranker 两级判定）")
+    logger.info(f"Redis: {args.redis_url}")
     logger.info("=" * 60)
 
+    cache_service = make_cache_service(args.redis_url)
     cache_service.open(embed_model=embed_model, online_rerank=online_rerank)
     logger.success("Redis + embed + rerank 就绪")
 

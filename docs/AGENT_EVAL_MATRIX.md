@@ -53,12 +53,11 @@
 | E3 工具装配 | 6/6 通过（100%） | 并集/去重/降级/熔断均符合预期 |
 | E4 MCP 安全 | 11/11 通过（100%） | 命令/包名/env/sse-url/type 白名单拦截率 100%，合法配置放行不误伤 |
 | E5 工具兜底 | 6/6 通过（100%） | 异常→提示转换、ENOTDIR 纠正方向、描述截断 200、文档截断、轮次上限 |
-| E14 CI 回归 | 19/19 通过 | pytest tests/test_agent_regression.py，可入 CI |
-| E13 在线实测 | health 200 ✓；错误凭证拒绝 ✓；登录 ✗ | 内置候选账号（user_01/zhangsan/admin）线上全部失效（HTTP 400），需有效账号才能完成对话/登出/限流实测 |
-| E1 动态路由 | 分类准确率 47.1%、检索召回 0% | **发现**：`constant/prompt_constants.py` 的 `CLASSIFIER_PROMPT` 仍为「在线学习平台」业务路由文案，与实际知识库（Mitta 技术文档 01-10 篇）主题不一致，导致技术概念题全部被判 `needs_retrieval=False`。建议确认是否更新路由 prompt 匹配实际知识库主题 |
+| E14 CI 回归 | 73/73 通过 | pytest 四个测试文件（19 项 Agent 新增 + 54 项既有），可入 CI |
+| E13 在线实测 | health ✓ / 登录 ✓ / SSE ✓ / 登出失效 ✓ / 限流 429 ✓ | 账号 qianyi 实测：SSE 首 token 1348ms、总耗时 2.88s、流纯净无污染；登出后旧 token 401；限流第 30/31 次命中 429 |
+| E1 动态路由 | 分类准确率 100%、检索召回 100%、误报 0% | 已重写 `CLASSIFIER_PROMPT`：改为按「是否需要外部知识」通用判定（知识库可自定义入库，不绑定主题），18/18 用例全对 |
+| E6 语义缓存 | 同义命中率 100%（3/3）、误命中率 0%（0/3）、原文命中 100% | 真实 redis-stack（RedisSearch 容器 6379）+ embed + bge-reranker 全链路实测；查询平均 345ms |
 
-### 待完成（需有效测试账号 / 用户确认）
+### 待完成（需真实 MCP 工具环境）
 
-- E13 对话链路（SSE 首 token 延迟、流纯净度）、登出即时失效、限流 429 实测：需要线上有效账号（可 `--username/--password` 指定）。
-- E6 语义缓存命中率实测：需要真实 Redis + embed + reranker 可用（`init.embed_model` / `init.online_rerank`）。
 - E2 工具筛选 22 用例离线评估：需要真实 MCP 工具（本地启动内置 8 台 MCP Server）。

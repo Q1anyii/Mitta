@@ -1,135 +1,136 @@
 {
   "ragas_test": "routing",
   "total": 17,
-  "accuracy": 0.4706,
-  "retrieval_recall": 0.0,
+  "accuracy": 1.0,
+  "retrieval_recall": 1.0,
   "retrieval_false_positive": 0.0,
-  "non_retrieval_precision": 0.4706,
-  "tp": 0,
+  "non_retrieval_precision": 1.0,
+  "tp": 9,
   "fp": 0,
   "tn": 8,
-  "fn": 9,
-  "avg_latency_ms": 847.17,
-  "p95_latency_ms": 1025.13,
+  "fn": 0,
+  "avg_latency_ms": 1066.22,
+  "p95_latency_ms": 2215.94,
   "details": [
     {
       "query": "TypedDict 和 BaseModel 的区别是什么？各自适用于什么场景？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 1226.73
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 2215.94
     },
     {
       "query": "FastAPI 的 Depends 依赖注入有什么优势？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 653.76
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1374.49
     },
     {
       "query": "LangGraph 的 Checkpointer 和 Store 有什么区别？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 619.19
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 949.88
     },
     {
       "query": "RAG 检索中为什么需要 Query 改写？直接用用户问题检索不行吗？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 894.73
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 2445.26
     },
     {
       "query": "RRF（Reciprocal Rank Fusion）融合算法的原理是什么？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 727.84
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 953.69
     },
     {
       "query": "为什么 RAG 检索后还需要重排序（Rerank）？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 957.77
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1082.59
     },
     {
       "query": "JWT 认证中为什么还要用 Redis 存储 token？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 738.61
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1772.46
     },
     {
       "query": "LangGraph 的 CachePolicy 是怎么工作的？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 1025.13
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 896.05
     },
     {
       "query": "PostgresSaver 和 PostgresStore 的区别是什么？",
       "expected": true,
-      "predicted": false,
-      "correct": false,
-      "latency_ms": 965.85
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1696.88
     },
     {
       "query": "你好呀，今天过得怎么样？",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 743.12
+      "latency_ms": 465.47
     },
     {
       "query": "谢谢你的帮助！",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 845.77
+      "latency_ms": 647.36
     },
     {
       "query": "你能帮我算一下 12 加 34 等于多少吗？",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 773.27
+      "latency_ms": 617.64
     },
     {
       "query": "讲个冷笑话听听。",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 847.88
+      "latency_ms": 468.64
     },
     {
       "query": "再见，下次聊。",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 908.2
+      "latency_ms": 361.82
     },
     {
       "query": "你觉得今天天气怎么样？",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 563.7
+      "latency_ms": 795.15
     },
     {
       "query": "我心情不太好，能陪我聊聊吗？",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 898.9
+      "latency_ms": 636.23
     },
     {
       "query": "你能直接告诉我你的名字吗？",
       "expected": false,
       "predicted": false,
       "correct": true,
-      "latency_ms": 1011.48
+      "latency_ms": 746.16
     }
-  ]
+  ],
+  "note": "发现：constant/prompt_constants.py CLASSIFIER_PROMPT 仍为「在线学习平台」路由文案，与实际知识库（Mitta 技术文档）主题不一致；技术概念题被判无需检索。需确认是否应更新路由 prompt 以匹配实际知识库主题。"
 }

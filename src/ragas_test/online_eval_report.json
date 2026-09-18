@@ -7,15 +7,71 @@
       "url": "https://www.mittaai.xyz",
       "status_code": 200,
       "ok": true,
-      "latency_ms": 601.1,
+      "latency_ms": 416.51,
       "body_preview": "{\"status\":\"ok\",\"db\":true}"
     },
     {
       "ragas_test": "login",
-      "ok": false,
-      "wrong_credential_rejected": true,
-      "note": "无可用测试账号",
-      "status_code": 400
+      "ok": true,
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJxaWFueWk6XHU4YzI2XHU0ZWE2Iiwicm9sZSI6Ilx1NWI2Nlx1NTQ1OCIsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjE3ODk3Mjc0OTl9.M-3_wFzsP7NKl_ScYxj9g4lmqilvJiwrAmHIceyRTdw",
+      "user": "qianyi"
+    },
+    {
+      "ragas_test": "chat_sse",
+      "ok": true,
+      "first_token_latency_ms": 1348.13,
+      "total_time_s": 2.88,
+      "content_chunks": 313,
+      "content_length": 535,
+      "error_events": [],
+      "contamination": [],
+      "content_preview": "你好呀，谦亦～ (´▽`) 我是 **Mitta**，你的智能 AI 助理！\n\n### 关于我\n\n- **身份定位**：元气、温柔、带点俏皮，但内核绝对可靠的 **知识管家**\n- **核心使命**：基于知识库内容，为你提供 **准确、有用、客观** 的信息\n- **记忆小本本**：我记得你是 **谦亦**，GitHub 账号是 `Q1anyii` 哦～\n\n### 我能为你做什么呢\n\n1. **知"
+    },
+    {
+      "ragas_test": "logout_invalidation",
+      "ok": true,
+      "logout_status": 200,
+      "after_logout_status": 401
+    },
+    {
+      "ragas_test": "rate_limit_online",
+      "burst": 31,
+      "rate_limited_count": 2,
+      "ok": true,
+      "status_codes": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        429,
+        429
+      ],
+      "total_time_s": 16.16
     }
   ]
 }

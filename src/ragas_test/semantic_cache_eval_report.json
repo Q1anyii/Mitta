@@ -1,0 +1,58 @@
+{
+  "ragas_test": "semantic_cache",
+  "thread_prefix": "eval_sem_cache",
+  "results": [
+    {
+      "ragas_test": "semantic_hit_rate",
+      "thread_id": "eval_sem_cache_hit",
+      "synonym_count": 3,
+      "hit_count": 3,
+      "hit_rate": 1.0,
+      "store_latency_ms": 589.7,
+      "avg_query_latency_ms": 798.55,
+      "details": [
+        {
+          "query": "LangGraph 的 Checkpointer 是干什么用的？",
+          "hit": true,
+          "latency_ms": 1360.35
+        },
+        {
+          "query": "Checkpointer 在 LangGraph 里起什么作用？",
+          "hit": true,
+          "latency_ms": 703.67
+        },
+        {
+          "query": "langgraph checkpoint 有什么作用",
+          "hit": true,
+          "latency_ms": 331.64
+        }
+      ]
+    },
+    {
+      "ragas_test": "unrelated_false_hit_rate",
+      "thread_id": "eval_sem_cache_miss",
+      "unrelated_count": 3,
+      "false_hit_count": 0,
+      "false_hit_rate": 0.0,
+      "details": [
+        {
+          "query": "今天中午吃什么比较好？",
+          "false_hit": false
+        },
+        {
+          "query": "帮我写一首关于秋天的诗",
+          "false_hit": false
+        },
+        {
+          "query": "什么是二叉树的先序遍历？",
+          "false_hit": false
+        }
+      ]
+    },
+    {
+      "ragas_test": "exact_duplicate_hit",
+      "hit": true,
+      "hit_rate": 1.0
+    }
+  ]
+}
