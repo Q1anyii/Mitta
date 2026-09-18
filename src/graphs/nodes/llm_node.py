@@ -116,6 +116,8 @@ def llm_node(
     # 长期记忆在前，人格 prompt 在后（语气层不推翻事实层、隐私铁律）。
     persona_key = state.get("persona") or DEFAULT_PERSONA
     persona = get_persona(persona_key)
+    # is_default_persona 供 194 行"默认人格 + 主动无工具"裸模型分支判断，勿删
+    is_default_persona = persona_key == DEFAULT_PERSONA
     system_content += f"\n\n{persona['prompt']}"
     if long_term and long_term != "（暂无档案）":
         system_content += f"\n\n【用户长期记忆】\n{long_term}"

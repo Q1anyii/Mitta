@@ -26,6 +26,10 @@ docs_sync: required
 - 所有默认回答多一层人设语气；kind/crazy/manager 行为不变。
 - 回答风格变化 → 需文档 Agent 同步（项目详解/README 中关于"默认人格回答风格"的描述）。
 
+## 回归修复（同日）
+
+并行会话提交 `7bb4e2d` 删除门控时**一并删除了 `is_default_persona` 变量定义**，但 `llm_node.py:194` 裸模型分支 `elif not is_default_persona and allowed == []:`（同函数作用域）仍引用该变量 → 在"无可用工具/工具达上限"路径下会 NameError。修复：恢复 `is_default_persona = persona_key == DEFAULT_PERSONA` 定义（仅保留变量，无条件叠加门控不回退）。静态验证：定义存在 / 无条件叠加语句存在 / `if not is_default_persona:` 门控已删（elif 保留）/ `ast.parse` 通过。
+
 ## 遗留
 
 - 现网验证叠加后语气浓度；必要时加兜底克制度。
