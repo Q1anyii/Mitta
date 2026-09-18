@@ -201,25 +201,68 @@ def percentile(data: List[float], p: float) -> float:
     return s[f] + (s[c] - s[f]) * (k - f)
 
 
-def evaluate_recall(retrieved_docs: List[RetrievedDoc], ground_truth: str, k: int = 5) -> float:
-    """Top-K 召回率：检索结果文本覆盖 ground_truth 关键词的比例。"""
+_STOP_WORDS = {"的", "了", "是", "在", "和", "与", "或", "等", "也", "都", "就", "要", "会", "能", "可以", "这", "那", "有", "无", "不", "没", "为", "从", "到", "对", "中", "上", "下", "用", "做", "使", "让", "把", "被", "给", "向", "按", "因", "所", "以", "之", "其", "此", "该", "每", "各", "某", "一", "二", "三", "the", "a", "an", "is", "are", "of", "to", "in", "on", "for", "and", "or", "with", "by", "as", "at", "be", "this", "that", "it", "its"}
+
+
+def _split_sentences(text: str) -> list:
+    """按句末标点切分答案。"""
+    import re
+    parts = re.split(r"[。！？；\n]+", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _sentence_keywords(sentence: str) -> set:
+    """提取句子核心关键词：英文词原样保留；中文连续串用 jieba 切词（消除超长整串惩罚），
+    过滤停用词与单字。"""
+    import re
+    words = []
+    for piece in re.findall(r"[a-zA-Z][a-zA-Z0-9_]+|[\u4e00-\u9fa5]+", sentence):
+        if re.fullmatch(r"[\u4e00-\u9fa5]+", piece):
+            import jieba
+            words.extend(t for t in jieba.lcut(piece) if len(t) >= 2)
+        else:
+            words.append(piece)
+    return set(w for w in words if w.lower() not in _STOP_WORDS)
+
+
+def evaluate_recall(retrieved_docs: List[RetrievedDoc], ground_truth: str, k: int = 5, metric: str = "boolean") -> float:
+    """Top-K 召回判定。
+
+    metric="boolean"（默认）：**布尔命中率**——ground_truth 的核心要点句是否被 top-k 文档覆盖。
+      每句的全部核心关键词（AND）完整出现在 top-k 文本中 = 该句被覆盖；
+      query 命中 = 覆盖句占比 >= 0.5（过半答案要点有文档支撑，贴近生产体验）。
+      返回 0.0 / 1.0，avg 即布尔命中率。
+    metric="coverage"：旧关键词覆盖率——关键词子串命中比例（长答案整串匹配惩罚重，已非默认）。
+    """
     if not retrieved_docs or not ground_truth:
         return 0.0
 
-    # 从 ground_truth 提取关键词：中文按 2-gram，英文按单词，过滤常见停用词
-    stop_words = {"的", "了", "是", "在", "和", "与", "或", "等", "也", "都", "就", "要", "会", "能", "可以", "这", "那", "有", "无", "不", "没", "为", "从", "到", "对", "中", "上", "下", "用", "做", "使", "让", "把", "被", "给", "向", "按", "因", "所", "以", "之", "其", "此", "该", "每", "各", "某", "一", "二", "三", "the", "a", "an", "is", "are", "of", "to", "in", "on", "for", "and", "or", "with", "by", "as", "at", "be", "this", "that", "it", "its"}
-
-    # 提取有意义的关键词：长度>=2 且非停用词
-    import re
-    words = re.findall(r'[\u4e00-\u9fa5]{2,}|[a-zA-Z][a-zA-Z0-9_]+', ground_truth)
-    keywords = list(set(w for w in words if w.lower() not in stop_words and len(w) >= 2))
-
-    if not keywords:
-        return 0.0
-
     top_k_text = " ".join(doc.text for doc in retrieved_docs[:k])
-    hit = sum(1 for kw in keywords if kw in top_k_text)
-    return hit / len(keywords)
+
+    if metric == "coverage":
+        import re
+        words = re.findall(r"[\u4e00-\u9fa5]{2,}|[a-zA-Z][a-zA-Z0-9_]+", ground_truth)
+        keywords = list(set(w for w in words if w.lower() not in _STOP_WORDS and len(w) >= 2))
+        if not keywords:
+            return 0.0
+        hit = sum(1 for kw in keywords if kw in top_k_text)
+        return hit / len(keywords)
+
+    # boolean：句级要点覆盖
+    # - 句子覆盖 = 该句核心关键词命中 top-k 文本的比例 >= 0.6（允许个别词字面差异，如“用于/支持”）
+    # - query 命中 = 覆盖句占比 >= 0.5（过半答案要点有文档支撑，贴近生产体验）
+    sentences = _split_sentences(ground_truth)
+    if not sentences:
+        return 0.0
+    covered = 0
+    for sentence in sentences:
+        kws = _sentence_keywords(sentence)
+        if not kws:
+            continue
+        hit = sum(1 for kw in kws if kw in top_k_text)
+        if hit / len(kws) >= 0.6:
+            covered += 1
+    return 1.0 if covered / len(sentences) >= 0.5 else 0.0
 
 
 # ============================================================
@@ -314,6 +357,7 @@ def main():
     parser.add_argument("--n-results", type=int, default=20, help="稠密召回数量（默认 20）")
     parser.add_argument("--filter-threshold", type=float, default=0.25, help="重排分数过滤阈值（默认 0.25，对齐生产 filter_node）")
     parser.add_argument("--category", type=str, default=None, help="按 category 过滤测试集")
+    parser.add_argument("--metric", type=str, default="boolean", choices=["boolean", "coverage"], help="recall 口径：boolean 布尔命中率（默认）| coverage 旧关键词覆盖率")
     parser.add_argument("--no-pipeline", action="store_true", help="只测单路召回")
     args = parser.parse_args()
 
@@ -367,7 +411,7 @@ def main():
     for i, item in enumerate(test_queries):
         query = item["question"]
         docs, elapsed = single_path_retrieve(vector_store, query, args.n_results)
-        recall = evaluate_recall(docs, item["ground_truth"], k=5)
+        recall = evaluate_recall(docs, item["ground_truth"], k=5, metric=args.metric)
         single_recalls.append(recall)
         single_latencies.append(elapsed)
         if not docs:
@@ -389,7 +433,7 @@ def main():
         for i, item in enumerate(test_queries):
             query = item["question"]
             docs, elapsed, stats = hybrid_retrieve(vector_store, query, args.n_results, args.filter_threshold)
-            recall = evaluate_recall(docs, item["ground_truth"], k=5)
+            recall = evaluate_recall(docs, item["ground_truth"], k=5, metric=args.metric)
             pipeline_recalls.append(recall)
             pipeline_latencies.append(elapsed)
             pipeline_stats_all.append(stats)
@@ -406,6 +450,7 @@ def main():
     logger.info(f"测试 query 数: {len(test_queries)}")
     logger.info(f"稠密召回 n_results: {args.n_results}")
     logger.info(f"过滤阈值: {args.filter_threshold}")
+    logger.info(f"recall 口径: {args.metric}（boolean=句级要点覆盖布尔命中率 | coverage=旧关键词覆盖率）")
     logger.info("")
 
     def fmt(val, suffix=""):
@@ -449,6 +494,7 @@ def main():
             "n_results": args.n_results,
             "filter_threshold": args.filter_threshold,
             "category": args.category,
+            "metric": args.metric,
         },
         "single_path": {
             "avg_recall": round(statistics.mean(single_recalls), 4),

@@ -3,28 +3,29 @@
     "limit": 50,
     "n_results": 20,
     "filter_threshold": 0.25,
-    "category": null
+    "category": null,
+    "metric": "boolean"
   },
   "single_path": {
-    "avg_recall": 0.2774,
-    "median_recall": 0.2,
-    "avg_latency_ms": 309.6,
-    "p95_latency_ms": 1772.0,
-    "p99_latency_ms": 2298.2,
+    "avg_recall": 0.3111,
+    "median_recall": 0.0,
+    "avg_latency_ms": 987.9,
+    "p95_latency_ms": 3159.1,
+    "p99_latency_ms": 11545.7,
     "zero_result_ratio": 0.0
   },
   "hybrid_pipeline": {
-    "avg_recall": 0.257,
-    "median_recall": 0.1753,
-    "avg_latency_ms": 4578.1,
-    "p95_latency_ms": 7794.3,
-    "p99_latency_ms": 16322.3,
+    "avg_recall": 0.2667,
+    "median_recall": 0.0,
+    "avg_latency_ms": 4400.3,
+    "p95_latency_ms": 6917.8,
+    "p99_latency_ms": 14190.2,
     "zero_result_ratio": 0.0,
     "stage_breakdown_ms": {
-      "rewrite": 3326.8,
-      "dense_retrieve": 374.6,
-      "bm25": 56.2,
-      "rerank": 820.4
+      "rewrite": 2744.2,
+      "dense_retrieve": 952.1,
+      "bm25": 15.6,
+      "rerank": 688.4
     }
   }
 }
