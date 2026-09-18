@@ -74,9 +74,10 @@ def bm25_search(query: str, top_k: int = 20) -> List[RetrievedDoc]:
     """BM25 稀疏检索（RedisSearch），返回 RetrievedDoc 列表。"""
     import jieba
     # RedisSearch 查询语法中 : ( ) - @ * 等是特殊字符，直接传中文问句会 Syntax error。
-    # 用 jieba 分词后空格拼接，自然去除标点和特殊字符，同时提升中文 BM25 匹配效果。
+    # 用 jieba 分词后以 OR（|）连接：空格 AND 会因中文多词无交集整体返回 0，
+    # OR 保证英文/专有名词/任意分词能命中（与生产 query_nodes.py 保持一致）。
     tokens = [t.strip() for t in jieba.lcut(query) if t.strip() and len(t.strip()) > 1]
-    safe_query = " ".join(tokens) if tokens else query
+    safe_query = " | ".join(tokens) if tokens else query
 
     try:
         result = cache_service.redis.execute_command(
@@ -89,7 +90,37 @@ def bm25_search(query: str, top_k: int = 20) -> List[RetrievedDoc]:
         logger.warning(f"BM25 检索失败，降级返回空: {e}")
         return []
 
-    # 健壮性校验：result 必须是非空列表，第一个元素是总数
+    # 兼容两种返回格式：新版 redis-py（8.x）返回 dict（键为 bytes 或 str）；旧版返回扁平 list
+    def _get(d, name):
+        return d.get(name) if name in d else d.get(name.encode("utf-8"))
+
+    if isinstance(result, dict):
+        docs = []
+        for it in (_get(result, "results") or []):
+            try:
+                raw_id = _get(it, "id") or b""
+                if isinstance(raw_id, bytes):
+                    raw_id = raw_id.decode("utf-8")
+                doc_id = raw_id.replace(DOC_PREFIX, "")
+                attrs = _get(it, "extra_attributes") or {}
+                content = _get(attrs, "content") or b""
+                if not content:
+                    # NOCONTENT 模式下 extra_attributes 不含正文，需从 Hash 读取
+                    content = cache_service.redis.hget(raw_id, "content") or b""
+                text = content.decode("utf-8") if isinstance(content, bytes) else (content or "")
+                score = _get(it, "score") or 0.0
+                docs.append(RetrievedDoc(
+                    id=doc_id,
+                    text=text,
+                    distance=0.0,
+                    metadata={"source": "bm25", "bm25_score": float(score)},
+                ))
+            except Exception as e:
+                logger.warning(f"BM25 dict 结果解析跳过: {e}")
+                continue
+        return docs
+
+    # 旧版扁平 list：[总数, doc_id1, score1, doc_id2, score2, ...]
     if not isinstance(result, (list, tuple)) or len(result) < 2:
         return []
 
@@ -278,6 +309,26 @@ def main():
     logger.info("初始化向量库...")
     vector_store = create_vector_store(load_vector_db_config())
     logger.info(f"向量库就绪，collection 文档数: {vector_store.count()}")
+
+    # 注入含 RedisSearch 的 Redis（6379 WSL sorts-redis；.env 的 6380 无 RedisSearch，BM25 无法工作）
+    import redis as _redis
+    cache_service.db_url = "redis://:sorts_dev@localhost:6379"
+    cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
+    cache_service.redis = _redis.Redis(
+        host=cache_service.host, port=cache_service.port,
+        password=cache_service.password,
+        socket_timeout=3, socket_connect_timeout=3,
+    )
+
+    # 注入含 RedisSearch 的 Redis（6379 WSL sorts-redis；.env 的 6380 无 RedisSearch，BM25 无法工作）
+    import redis as _redis
+    cache_service.db_url = "redis://:sorts_dev@localhost:6379"
+    cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
+    cache_service.redis = _redis.Redis(
+        host=cache_service.host, port=cache_service.port,
+        password=cache_service.password,
+        socket_timeout=3, socket_connect_timeout=3,
+    )
 
     # 初始化 cache_service（创建 BM25 稀疏索引，已存在则跳过）
     try:
