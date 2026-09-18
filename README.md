@@ -1,6 +1,6 @@
 # Mitta AI 智能助理（米塔）
 
-基于 **LangGraph + RAG + MCP + 流式 SSE** 的智能助理系统。系统内置完整的知识库检索链路（查询改写 → 多路召回 → RRF 融合 → 在线重排），支持短期记忆（多轮对话恢复）与长期记忆（用户档案），通过 MCP 协议接入外部工具（文件系统、Git、数据库等），并通过 SSE 流式输出实现打字机效果。
+基于 **LangGraph + RAG + MCP + 流式 SSE** 的智能助理系统。系统内置完整的知识库检索链路（查询改写 → 多路召回 → RRF 融合 → 在线重排），支持短期记忆（多轮对话恢复）与长期记忆（用户档案），通过 MCP 协议接入外部工具（文件系统、数据库、网页抓取、时间服务等），并通过 SSE 流式输出实现打字机效果。
 
 ## UI演示
 
@@ -12,7 +12,7 @@
 
 - **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
 - **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回 + BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
-- **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、git、fetch、sqlite、sequential-thinking、memory 等外部工具；工具常驻事件循环，支持故障降级
+- **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、fetch、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具；工具常驻事件循环，支持故障降级
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
 - **双通道记忆**：
   - 短期记忆：PostgresSaver 按 `thread_id` 恢复多轮对话
@@ -21,25 +21,25 @@
 - **文件上传与解析**：支持上传多种格式文件，上传后立即解析文本内容，发送消息时与用户输入一并送入 LLM
 - **知识库增量更新 API**：通过 HTTP 接口向知识库增量上传文档（Chroma 向量 + RedisSearch BM25 双通道自动入库），支持文档列表查询、按来源/按文档删除，无需登录服务器跑脚本
 - **流式输出**：`stream_mode="messages"` 逐 token 输出，前端打字机效果；工具调用时实时显示加载状态
-- **断点续传（刷新不中断）**：聊天任务与 SSE 连接解耦，每个思考/工具/正文事件按序号落 Redis；刷新或重连时携带 `last_event_id`，先重放缺失的历史事件、再续推新事件，强刷也能恢复思考过程与流式输出，且不会因重发而重复累积对话
+- **断点续传（刷新不中断）**：聊天任务与 SSE 连接解耦，每个思考/工具/正文事件按序号落 Redis List（TTL 7 天）；前端刷新或重连时先 `GET events?after=已消费序号` 重放缺失的增量事件重建界面，再续推新事件，强刷也能恢复思考过程与流式输出，且不会因重发而重复累积对话
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
 - **现代化前端**：Vue 3 SPA（CDN 单文件，多主题 + 响应式移动端 + 高对比几何切角动效），工具调用记录穿插展示、复制/分享/重新生成
 - **安全认证**：JWT（access 15 分钟 + 隐式 refresh 30 天自动续签）+ bcrypt + 登出即时失效（Redis 删除 token）+ 请求限流
-- **节点级缓存**：LangGraph CachePolicy + Redis，检索/工具/记忆节点结果按 TTL 缓存，降低 API 消耗
+- **节点级缓存**：LangGraph CachePolicy + Redis，memory_node 结果按 TTL 缓存（retrieve/tool 节点缓存已移除，原因见「核心设计说明 → 节点级缓存」）
 
 ## 技术栈
 
 | 层次        | 技术                                                                                     |
 | --------- | -------------------------------------------------------------------------------------- |
-| 语言/环境     | Python 3.13                                                                            |
+| 语言/环境     | Python 3.12（容器 `python:3.12-slim`，AI 生态兼容性最好；本地开发可用 3.12+）                                   |
 | Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）             |
 | LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                              |
 | 大模型       | DeepSeek（deepseek-v4-flash），OpenAI 兼容协议，支持 reasoning_content 深度思考                      |
 | Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                      |
 | 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                             |
 | 向量库       | ChromaDB（默认，免部署）/ Milvus（可插拔，Protocol 抽象，零业务改动切换）                                      |
-| 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store + 用户表 userinfo / user_profile / user_files） |
+| 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store + 用户表 userinfo / user_profile / user_files / user_mcp_servers） |
 | 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                     |
 | MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                         |
 | Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                            |
@@ -49,6 +49,14 @@
 | 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                       |
 
 ## 系统架构
+
+### 整体架构图
+
+<p align="center">
+  <img src="docs/figures/architecture.svg" alt="Mitta 整体架构图" width="95%">
+  <br/>
+  <em>整体架构图（点击图片查看原图）</em>
+</p>
 
 ### Mitta AI 流程图
 
@@ -96,7 +104,7 @@
 | **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
 | **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
 | **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=5，分数写入 `doc.metadata["relevance_score"]` |
-| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.15` 的噪声文档；过滤后为空时兜底返回 top 3                                                         |
+| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.3` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                 |
 | **store_cache** | 写入 Redis     | 缓存键 `retrieve_cache:{thread_id}:{bucket_id}`，动态 TTL，命中自动续期                                                 |
 
 ### 关键参数
@@ -107,7 +115,7 @@
 | BM25 召回 top_k  | 20                      | `graphs/retrieve_graph.py` bm25_search |
 | RRF_K          | 60                      | `constant/retrieval_constants.py`      |
 | 重排 top_n       | 5                       | `graphs/retrieve_graph.py` rerank      |
-| 过滤阈值           | 0.15（relevance_score）   | `graphs/retrieve_graph.py` filter_node |
+| 过滤阈值           | 0.3（relevance_score ≥ 0.3，空则兜底 top 3） | `graphs/retrieve_graph.py` filter_node |
 | 缓存 TTL         | 动态（默认 900s，命中续期）        | `constant/cache_constant.py`           |
 | Embedding 模型   | BAAI/bge-m3（1024 维）     | `constant/embedding_constants.py`      |
 | 重排模型           | BAAI/bge-reranker-v2-m3 | `init.py`                              |
@@ -121,7 +129,7 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
 - **BM25**：擅长精确关键词匹配（"可变默认参数""bcrypt""WebSocket" 直接命中）
 - **RRF 融合**：只看排名不看绝对分数，统一两路量纲差异
 - **rerank 精排**：交叉编码器对 query-doc 对做注意力计算，最终排序依据
-- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.15 以下视为噪声丢弃
+- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.3 以下视为噪声丢弃；过滤后为空时兜底返回原始 top 3
 
 ### 工具筛选机制
 
@@ -249,7 +257,7 @@ AgentProject/
 
 ### 环境要求
 
-- Python 3.13+
+- Python 3.12+（容器镜像为 3.12-slim；部分包暂无 3.13 wheel）
 - PostgreSQL 16+
 - Redis 7+
 - 向量库：默认 ChromaDB（免部署，api 服务不硬依赖 Milvus）；如需 Milvus 2.x 另行部署
@@ -335,23 +343,20 @@ docker-compose up -d etcd minio milvus
 
 #### 系统默认 MCP 服务器
 
-项目内置 11 台开箱即用的 MCP 服务器（`resources/config/mcp_servers.json`，启动时加载、所有用户共享），覆盖内容获取、数据存储、记忆推理与基础工具四类能力：
+项目内置 8 台开箱即用的 MCP 服务器（`resources/config/mcp_servers.json`，启动时加载、所有用户共享），覆盖内容获取、数据存储、记忆推理与基础工具四类能力：
 
 | 服务器                 | 启动方式                                                   | 作用                                                  |
 | ------------------- | ------------------------------------------------------ | --------------------------------------------------- |
 | filesystem          | `npx @modelcontextprotocol/server-filesystem`          | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录                |
 | fetch               | `uvx mcp-server-fetch`                                 | 网页抓取：按 URL 拉取网页内容并转 Markdown，供 RAG 引用实时网页信息         |
 | sqlite              | `uvx mcp-server-sqlite`                                | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db`      |
-| markitdown          | `uvx markitdown-mcp`                                   | 文档转 Markdown：PDF / Word / Excel / 图片等转纯文本，供知识库切分    |
+| sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析                  |
+| memory              | `npx @modelcontextprotocol/server-memory`              | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好                   |
+| time                | `uvx mcp-server-time`                                  | 时间服务：获取当前时间、时区换算、日期计算                               |
 | context7            | `npx @upstash/context7-mcp`                            | 最新技术文档检索：拉取 API / SDK 官方文档（含版本、参数）                  |
 | dbhub               | `npx @bytebase/dbhub --demo`                           | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构     |
-| chroma              | `uvx chroma-mcp`                                       | Chroma 向量数据库：持久化知识库（`chroma_data`），语义相似度检索，RAG 核心存储 |
-| memory              | `npx @modelcontextprotocol/server-memory`              | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好                   |
-| basic-memory        | `uvx basic-memory mcp`                                 | 个人知识库：管理 Markdown 笔记与实体关系，为 Agent 提供可检索长期记忆         |
-| sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析                  |
-| time                | `uvx mcp-server-time`                                  | 时间服务：获取当前时间、时区换算、日期计算                               |
 
-能力分工：**filesystem / markitdown / fetch / context7** 负责获取内容，**chroma / sqlite / dbhub** 负责存储与查询，**memory / basic-memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。
+能力分工：**filesystem / fetch / context7** 负责获取内容，**sqlite / dbhub** 负责存储与查询，**memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。Dockerfile 额外内置 `@modelcontextprotocol/server-github` 等 npm 包，供用户级 MCP 配置按需启用。
 
 ### 6. 知识库入库（可选）
 
@@ -675,7 +680,7 @@ flowchart TD
     SKIP --> RSYNC
     RSYNC[④ rsync 增量同步前端/配置到 /opt/mitta]
     RSYNC --> SSH[⑤ SSH 部署：清残留+登录 ACR+pull+up -d]
-    SSH --> HEALTH{⑥ 健康检查<br/>curl /health × 8}
+    SSH --> HEALTH{⑥ 健康检查<br/>curl /health × 24}
     HEALTH -->|200| OK[✅ 部署成功<br/>清理悬空镜像]
     HEALTH -->|全失败| FAIL[❌ docker logs --tail 50<br/>exit 1]
 ```
