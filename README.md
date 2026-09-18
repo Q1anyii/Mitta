@@ -12,7 +12,7 @@
 
 - **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
 - **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回 + BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
-- **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具，并自研本地 **mitta-tools**（git 操作/网络搜索/文件检索，12 个工具）；工具常驻事件循环，支持故障降级
+- **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具，并自研本地 **mitta-tools**（git 操作/网络搜索/文件检索，12 个工具）；工具常驻事件循环，支持故障降级；**分组 + 分级启动**（方案B）：第一方 6 台常驻、第三方 context7/dbhub 懒加载（`McpLazyLoader` 闪连预热 schema → 命中触发真实连接 → `DynamicToolNode` 动态路由），节省 150-300MB 内存
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
 - **双通道记忆**：
   - 短期记忆：PostgresSaver 按 `thread_id` 恢复多轮对话
@@ -570,7 +570,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
 | E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限 6/6 通过 |
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中 100%、无关 query 误命中 0% |
-| E7 | 混合检索 | `eval_retrieval.py` | top-5 recall 中位数 0.7732（历史产物）、P95 延迟 |
+| E7 | 混合检索 | `eval_retrieval.py` | recall@5（boolean 句级要点覆盖：单路 0.3111 / 混合 0.2667）、P95 延迟（历史 coverage 中位数 0.7732 已标注，不得混用） |
 | E8 | RAGAS 五指标 | `ragas_eval.py` | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**） |
 | E9 | 记忆 | `eval_memory.py` | 写入 P95 ≈ 46ms（历史产物） |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存 deque |

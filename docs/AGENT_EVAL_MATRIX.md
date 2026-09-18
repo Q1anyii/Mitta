@@ -14,7 +14,7 @@
 | E4 | MCP 安全校验 | `eval_tool_safety.py` | 命令白名单拦截率、包名校验拦截率、敏感 env 拦截率、内网 url 拦截率 | 命令白名单、包名校验、敏感变量拦截 | 纯函数离线 |
 | E5 | 工具结果兜底 | `eval_tool_truncation.py` | 异常→ToolMessage 转换率、描述截断生效、文档截断生效 | 工具返回结果长度截断与异常兜底 | 纯函数离线 |
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中率、误命中率、embedding 调用降低、延迟对比 | LSH+KNN+reranker 两级判定、embedding 减少 67%、573→350ms | 离线白盒（真实 Redis） |
-| E7 | 混合检索 | `eval_retrieval.py` | top-5 recall 中位数、P95 延迟、单路 vs 混合 | 混合链路 top-5 recall 中位数 0.77 | 离线白盒 |
+| E7 | 混合检索 | `eval_retrieval.py` | recall@5（boolean 句级要点覆盖，默认）、P95 延迟、单路 vs 混合 | 单路 0.3111 / 混合 0.2667（boolean）；历史 coverage 中位数 0.77 已标注 | 离线白盒 |
 | E8 | RAGAS 五指标 | `ragas_eval.py` | context_precision/recall、faithfulness、answer_relevancy、answer_correctness | RAG 检索增强五大指标 | 离线（LLM 评分，**不入 CI**） |
 | E9 | 记忆 | `eval_memory.py` | 写入 P95、重复写入减少 | 长期记忆写入 P95 ≈ 46ms | 离线白盒 |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存、路径过滤 | 30 次/60s、Redis 异常降级内存 deque | 离线白盒 |
@@ -25,7 +25,7 @@
 
 ## 指标与项目描述的对应关系
 
-- 混合链路 top-5 recall 中位数 0.77 → E7 `eval_retrieval.py`
+- 混合检索 recall@5（boolean 口径：单路 0.3111 / 混合 0.2667）→ E7 `eval_retrieval.py`；历史 coverage 口径（中位数 0.77）已标注为历史产物，不得混用
 - 第三方 MCP 免改代码接入（JSON 配置注册）→ E4 `eval_tool_safety.py`（配置校验）+ E2/E3（装配）
 - 命令白名单、包名校验、敏感变量拦截 → E4
 - 工具返回长度截断与异常兜底 → E5
@@ -43,7 +43,7 @@
 3. 在线实测脚本需要服务器在线（默认 `https://www.mittaai.xyz`）。
 4. **RAGAS 五指标（E8）耗时大，只做线下评估，不接入 CI。**
 5. 每个脚本输出 `*_eval_report.json` 到 `ragas_test/` 目录，可与历史报告对比。
-6. 评测阈值校准基准（与代码现状一致）：重排过滤 `>= 0.3`（`fusion_nodes.py`）、
+6. 评测阈值校准基准（与代码现状一致）：重排过滤 `>= 0.25`（`fusion_nodes.py`，2026-09-18 由 0.3 放宽）、
    缓存 rerank 命中 `CACHE_RERANK_HIT_SCORE=0.5`、限流 30 次/60s、工具语义阈值 `TOOL_DISTANCE_THRESHOLD=0.6`、`TOP_FILTER_TOOLS=12`。
 
 ## 实测记录（2026-09-18）
@@ -58,6 +58,7 @@
 | E1 动态路由 | 分类准确率 100%、检索召回 100%、误报 0% | 已重写 `CLASSIFIER_PROMPT`：改为按「是否需要外部知识」通用判定（知识库可自定义入库，不绑定主题），17/17 用例全对（9 检索 + 8 非检索） |
 | E6 语义缓存 | 同义命中率 100%（3/3）、误命中率 0%（0/3）、原文命中 100% | 真实 redis-stack（RedisSearch 容器 6379）+ embed + bge-reranker 全链路实测；查询平均 345ms |
 
-### 待完成（需真实 MCP 工具环境）
+### 实测记录补充（2026-09-18 晚）
 
-- E2 工具筛选 22 用例离线评估：需要真实 MCP 工具（本地启动内置 8 台 MCP Server）。
+- **E7 检索 recall 口径已改 boolean**：`eval_retrieval.py` 新增 `--metric boolean|coverage`（默认 boolean，句级要点覆盖：句子关键词命中≥60%、覆盖句占比≥50% 即 1），并修复过滤后不足 5 条按 RRF 顺序补足的口径问题；实测 45 条：单路 avg **0.3111** / 混合 avg **0.2667**（阈值 0.25）。
+- **E2 工具筛选已实测**：22 条用例 / 41 工具 / top_k=12，`avg_recall=0.8939`、`avg_precision=0.1406`、`zero_hit=0`；脚本含本地化 MCP 配置适配（`_localize_mcp_configs`）与显式关连接修复，`cd src && python -m ragas_test.evaluate_tool_filter --max-cases 22` 可复现。
