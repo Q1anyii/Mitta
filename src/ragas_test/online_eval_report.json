@@ -1,0 +1,21 @@
+{
+  "ragas_test": "online",
+  "base_url": "https://www.mittaai.xyz",
+  "results": [
+    {
+      "ragas_test": "health",
+      "url": "https://www.mittaai.xyz",
+      "status_code": 200,
+      "ok": true,
+      "latency_ms": 601.1,
+      "body_preview": "{\"status\":\"ok\",\"db\":true}"
+    },
+    {
+      "ragas_test": "login",
+      "ok": false,
+      "wrong_credential_rejected": true,
+      "note": "无可用测试账号",
+      "status_code": 400
+    }
+  ]
+}

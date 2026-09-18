@@ -1,0 +1,136 @@
+{
+  "ragas_test": "tool_safety",
+  "total": 11,
+  "passed": 11,
+  "pass_rate": 1.0,
+  "dimension_stats": {
+    "command_whitelist": {
+      "total": 2,
+      "reject": 2,
+      "pass": 0,
+      "intercept_rate": 1.0
+    },
+    "package_whitelist": {
+      "total": 2,
+      "reject": 2,
+      "pass": 0,
+      "intercept_rate": 1.0
+    },
+    "env_filter": {
+      "total": 1,
+      "reject": 0,
+      "pass": 1,
+      "intercept_rate": 0.0
+    },
+    "sse_url": {
+      "total": 3,
+      "reject": 3,
+      "pass": 0,
+      "intercept_rate": 1.0
+    },
+    "type_whitelist": {
+      "total": 1,
+      "reject": 1,
+      "pass": 0,
+      "intercept_rate": 1.0
+    },
+    "legit": {
+      "total": 2,
+      "reject": 0,
+      "pass": 2,
+      "intercept_rate": 0.0
+    }
+  },
+  "results": [
+    {
+      "case": "非法命令白名单拦截",
+      "dimension": "command_whitelist",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "bash 命令拦截",
+      "dimension": "command_whitelist",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "非白名单 npm 包拦截",
+      "dimension": "package_whitelist",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "带版本后缀的非白名单包拦截",
+      "dimension": "package_whitelist",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "敏感 env 过滤",
+      "dimension": "env_filter",
+      "expect_reject": false,
+      "rejected": false,
+      "correct": true,
+      "cleaned_env": {
+        "API_KEY": "ok"
+      }
+    },
+    {
+      "case": "sse 内网 localhost 拦截",
+      "dimension": "sse_url",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "sse 内网 127.0.0.1 拦截",
+      "dimension": "sse_url",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "sse 非 http 协议拦截",
+      "dimension": "sse_url",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "非法 type 拦截",
+      "dimension": "type_whitelist",
+      "expect_reject": true,
+      "rejected": true,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "合法配置放行",
+      "dimension": "legit",
+      "expect_reject": false,
+      "rejected": false,
+      "correct": true,
+      "cleaned_env": null
+    },
+    {
+      "case": "合法公网 sse 放行",
+      "dimension": "legit",
+      "expect_reject": false,
+      "rejected": false,
+      "correct": true,
+      "cleaned_env": null
+    }
+  ]
+}

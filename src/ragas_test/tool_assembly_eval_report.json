@@ -1,0 +1,39 @@
+{
+  "ragas_test": "tool_assembly",
+  "total": 6,
+  "passed": 6,
+  "pass_rate": 1.0,
+  "top_filter_tools": 12,
+  "results": [
+    {
+      "test": "rule_based_filter",
+      "desc": "规则层 tags 命中",
+      "passed": true
+    },
+    {
+      "test": "rule_empty_when_no_tag",
+      "desc": "规则层无命中返回空",
+      "passed": true
+    },
+    {
+      "test": "semantic_merge_union",
+      "desc": "并集合并去重",
+      "passed": true
+    },
+    {
+      "test": "semantic_failure_degrades_to_rule",
+      "desc": "语义异常降级规则层",
+      "passed": true
+    },
+    {
+      "test": "circuit_breaker_skips_semantic",
+      "desc": "熔断跳过语义检索",
+      "passed": true
+    },
+    {
+      "test": "select_empty_on_no_hit",
+      "desc": "两路未命中返回空",
+      "passed": true
+    }
+  ]
+}

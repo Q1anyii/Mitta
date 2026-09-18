@@ -1,0 +1,66 @@
+{
+  "ragas_test": "tool_truncation",
+  "total": 6,
+  "passed": 6,
+  "pass_rate": 1.0,
+  "dimension_stats": {
+    "exception_to_message": {
+      "total": 3,
+      "pass": 3,
+      "pass_rate": 1.0
+    },
+    "desc_truncation": {
+      "total": 1,
+      "pass": 1,
+      "pass_rate": 1.0
+    },
+    "doc_truncation": {
+      "total": 1,
+      "pass": 1,
+      "pass_rate": 1.0
+    },
+    "loop_protection": {
+      "total": 1,
+      "pass": 1,
+      "pass_rate": 1.0
+    }
+  },
+  "results": [
+    {
+      "case": "普通异常转 ToolMessage 提示",
+      "dimension": "exception_to_message",
+      "passed": true,
+      "value_preview": "工具执行失败：RuntimeError('disk full')"
+    },
+    {
+      "case": "ENOTDIR 给出纠正方向",
+      "dimension": "exception_to_message",
+      "passed": true,
+      "value_preview": "工具参数错误：path 必须是目录，不能是文件。请改为目录路径，或改用 read_file 工具读取该文件。原始错误：path is a file, ENOTDIR"
+    },
+    {
+      "case": "ToolException 转提示",
+      "dimension": "exception_to_message",
+      "passed": true,
+      "value_preview": "工具执行失败：invalid args"
+    },
+    {
+      "case": "工具描述截断到 200",
+      "dimension": "desc_truncation",
+      "passed": true,
+      "value_preview": "- stub: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "case": "检索文档截断常量",
+      "dimension": "doc_truncation",
+      "passed": true,
+      "value_preview": "(2000, 5)"
+    },
+    {
+      "case": "工具轮次上限常量",
+      "dimension": "loop_protection",
+      "passed": true,
+      "value_preview": "8"
+    }
+  ]
+}

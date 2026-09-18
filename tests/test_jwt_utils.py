@@ -106,8 +106,8 @@ class TestJWTCreation:
         payload = jwt.decode(token, "test_secret_key_for_unit_testing_only", algorithms=["HS256"])
         exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
 
-        # 过期时间应在 before+15min 和 after+15min 之间
-        assert before + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES) <= exp <= after + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        # 过期时间应在 before+15min 和 after+15min 之间（exp 按整秒截断，允许 2s 容差）
+        assert before + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES) - timedelta(seconds=2) <= exp <= after + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES) + timedelta(seconds=2)
 
     def test_custom_expiration(self):
         """自定义过期时间应生效。"""

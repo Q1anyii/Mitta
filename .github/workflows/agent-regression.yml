@@ -1,0 +1,56 @@
+name: Agent Regression Tests
+
+# ============================================================
+# Agent 系统回归测试（评测矩阵 E14）
+# 定位：
+#   - 纯函数/无外部依赖的确定性回归（路由、MCP 安全校验、工具兜底、
+#     记忆缓存 key、工具名解析、安全过滤）
+#   - 与主 CI/CD（acr-cicd.yml 部署链路）解耦，独立 workflow
+# 明确排除：
+#   - RAGAS 五指标评测（ragas_eval.py）——耗时且依赖 LLM 评分，只做线下评估
+#   - 依赖 Redis/Postgres/LLM/向量库的离线白盒评测（eval_*.py）——本地评估
+# 触发：main 分支 push 或手动
+# ============================================================
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/agent-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Run Agent regression tests
+        run: |
+          python -m pytest tests/test_agent_regression.py tests/test_config.py tests/test_jwt_utils.py tests/test_rand_id_util.py -v --tb=short
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: |
+            tests/*.xml
+            **/pytest-report.txt
+          if-no-files-found: ignore
