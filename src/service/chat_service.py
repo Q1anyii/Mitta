@@ -478,7 +478,7 @@ class ChatService:
             for k in keys_to_remove:
                 del self._file_content_cache[k]
 
-    def _build_stream_config(self, user_id, thread_id, user_info, thinking_mode=False, reasoning_effort="low") -> dict:
+    def _build_stream_config(self, user_id, thread_id, user_info, thinking_mode=False, reasoning_effort="low", persona_override=None) -> dict:
         """构建流式对话的 LangGraph config。
 
         请求级用户上下文随 config 传入图（工具通过 RunnableConfig 参数读取），
@@ -489,6 +489,9 @@ class ChatService:
             user_id: 用户 ID
             thread_id: 会话 ID
             user_info: 用户上下文信息
+            thinking_mode: 是否开启深度思考
+            reasoning_effort: 推理强度
+            persona_override: 前端手选人格（None=未手选，由 persona_router_node 自动分类）
 
         Returns:
             LangGraph config dict
@@ -501,9 +504,46 @@ class ChatService:
                 # 深度思考配置：随 config 传入图，llm_node 中读取并动态 bind
                 "thinking_mode": thinking_mode,
                 "reasoning_effort": reasoning_effort,
+                # 人格手选值：persona_router_node 读取，合法值短路不调 LLM
+                "persona_override": persona_override,
             },
             "metadata": {"user_id": user_id},  # 随 checkpoint 写入 metadata
         }
+
+    def _maybe_add_chibi(self, ai_content: str) -> str:
+        """袖珍米塔（Chibi）后置 hook：主 Agent 回答完后 30% 概率补一句短吐槽。
+
+        不进 LangGraph 主循环，是 SSE 流结束后的轻量步骤；失败静默，绝不影响主回答。
+        复用 deps.model（与 router 同一实例；后续可换便宜小模型）。
+
+        Args:
+            ai_content: 本轮主回答全文（截断到 300 字喂给 chibi）
+
+        Returns:
+            吐槽文本（≤30 字）；未触发/失败时返回空串
+        """
+        import random
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from constant.persona_constant import PROMPT_CHIBI
+
+        # 30% 随机触发；主回答太短不吐槽
+        if random.random() > 0.3 or not ai_content or len(ai_content) < 20:
+            return ""
+        model = getattr(self, "_deps", None) and getattr(self._deps, "model", None)
+        if model is None:
+            return ""
+        try:
+            resp = model.invoke([
+                SystemMessage(content=PROMPT_CHIBI),
+                HumanMessage(content=f"姐姐刚回答了：\n{ai_content[:300]}"),
+            ])
+            text = (resp.content or "").strip()
+            if text:
+                logger.info(f"[chibi] 袖珍米塔吐槽: {text}")
+            return text
+        except Exception as e:
+            logger.debug(f"[chibi] 吐槽生成失败（静默）: {e}")
+            return ""
 
     def _append_thread_event(self, thread_id: str, event: dict):
         """将单个流式事件追加到 Redis List（key=chat:events:{thread_id}），带全局序号。
@@ -551,7 +591,7 @@ class ChatService:
         except Exception:
             pass
 
-    def stream(self, user_id, thread_id, input_str, user_info=None, file_ids: list[int] = None, thinking_mode: bool = False, reasoning_effort: str = "low"):
+    def stream(self, user_id, thread_id, input_str, user_info=None, file_ids: list[int] = None, thinking_mode: bool = False, reasoning_effort: str = "low", persona: str = None):
         """流式对话生成（SSE）。
 
         编排逻辑：拼接文件内容 → 构建 config → 后台线程遍历图 → 队列转发 → 过滤节点 → 格式化 SSE 事件。
@@ -570,6 +610,7 @@ class ChatService:
             file_ids: 上传文件 ID 列表，解析内容会拼接到 input_str 传入 llm_node
             thinking_mode: 是否开启深度思考模式（前端用户选择）
             reasoning_effort: 推理强度 low/high/max（仅 thinking_mode=True 时生效）
+            persona: 前端手选人格（cappie/kind/crazy/manager）；None=自动路由
 
         Yields:
             SSE 事件字符串（"data: ...\n\n" 格式）
@@ -585,7 +626,7 @@ class ChatService:
             for fid in file_ids:
                 self._file_content_cache.pop(f"{user_id}:{fid}", None)
 
-        config = self._build_stream_config(user_id, thread_id, user_info, thinking_mode, reasoning_effort)
+        config = self._build_stream_config(user_id, thread_id, user_info, thinking_mode, reasoning_effort, persona_override=persona)
 
         # 2. 后台线程跑图：chunk → SSE 事件字符串 → 队列
         #    图必须走 _get_user_graph（用户专属图，含自定义 MCP 工具），
@@ -595,6 +636,7 @@ class ChatService:
         _SENTINEL = object()
 
         def _run_graph():
+            ai_content_parts: list[str] = []  # 累积主回答正文，供 chibi 吐槽 hook
             try:
                 graph = self._get_user_graph(user_id)
                 for chunk, meta in graph.stream(
@@ -607,8 +649,17 @@ class ChatService:
                     if not events:  # None 表示该 chunk 被过滤（classify/memory 节点）
                         continue
                     for ev in events:
+                        # 累积主回答正文（llm_node 的 content 增量），供 chibi hook
+                        if "content" in ev and isinstance(ev["content"], str):
+                            ai_content_parts.append(ev["content"])
                         self._append_thread_event(thread_id, ev)
                         event_queue.put(_format_sse(ev))
+                # 图正常跑完：袖珍米塔后置 hook（30% 随机，失败静默）
+                chibi_text = self._maybe_add_chibi("".join(ai_content_parts))
+                if chibi_text:
+                    chibi_event = {"chibi": chibi_text}
+                    self._append_thread_event(thread_id, chibi_event)
+                    event_queue.put(_format_sse(chibi_event))
                 event_queue.put(_SENTINEL)
             except Exception as e:
                 # 图执行异常：记录完整堆栈并推送错误事件（同样落库，刷新后可见），

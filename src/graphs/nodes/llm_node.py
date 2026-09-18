@@ -16,6 +16,7 @@ from loguru import logger
 
 from graphs.state import OverAllState
 from graphs.tool_filter import ToolFilter
+from constant.persona_constant import DEFAULT_PERSONA, get_persona
 from graphs.utils.history_repair import _repair_history, _trim_history
 from graphs.utils.user_profile import _ensure_username_profile, _get_username
 
@@ -105,9 +106,18 @@ def llm_node(
     # 且保证 tool_calls/ToolMessage 配对完整，早期消息直接丢弃。
     history = _trim_history(list(state.get("messages", [])))
 
-    # ── 4. 组装 system prompt：基础默认 + 用户自定义 + 长期记忆 ──
+    # ── 4. 组装 system prompt：基础默认 + 用户自定义 + 人格 prompt + 长期记忆 ──
     # get_user_system_prompt 内部从 MySQL user_profile 表按 user_id 读取用户自定义内容
     system_content = get_user_system_prompt(user_id, system_prompt)
+
+    # ── 4.1 人格注入：按 state.persona 选人格 prompt + 工具白名单 ──
+    # cappie（帽子米塔）= 现状基线：不拼人格 prompt（= 现有 Mitta system_prompt 行为），
+    # 不过滤工具。只有非默认人格才追加人格 prompt，保证"不传 persona = 现状行为完全一致"。
+    persona_key = state.get("persona") or DEFAULT_PERSONA
+    persona = get_persona(persona_key)
+    is_default_persona = persona_key == DEFAULT_PERSONA
+    if not is_default_persona:
+        system_content += f"\n\n{persona['prompt']}"
     if long_term and long_term != "（暂无档案）":
         system_content += f"\n\n【用户长期记忆】\n{long_term}"
 
@@ -139,6 +149,19 @@ def llm_node(
             if lazy_loader.trigger(server_name):
                 # 工具池已扩充：重新筛选，本轮即可使用新工具
                 selected_tools = tool_filter.select_tools(filter_query, tools)
+    # ── 5.2 人格白名单：套在 tool_filter 结果之上，不动 ToolFilter 本身 ──
+    # cappie(None) 不过滤；kind/crazy/manager 按 allowed_tools 收缩；[] 表示完全不给工具。
+    # 注：白名单按 name 精确匹配；name 与真实工具名不符时过滤结果变少（安全方向，不会误调写工具）。
+    allowed = persona["allowed_tools"]
+    if allowed is not None:
+        allowed_set = set(allowed)
+        selected_tools = [t for t in selected_tools if t.name in allowed_set]
+    logger.info(
+        f"[persona] key={persona_key} label={persona['label']} "
+        f"tools_in={len(tools)} tools_filtered={len(selected_tools)} "
+        f"white_list={'none(全量)' if allowed is None else f'{len(allowed)}个'}"
+    )
+
     # 工具调用死循环防护（两道防线）：
     # (a) 轮次上限：历史中 ToolMessage 数量即已执行工具轮次，达到 MAX_TOOL_ROUNDS
     #     后本轮不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）；
@@ -169,6 +192,10 @@ def llm_node(
                 content="注意：本轮请求中工具调用次数已达上限，请不要再调用任何工具，"
                         "直接基于你已有的上下文信息回答用户的问题。"
             ))
+        elif not is_default_persona and allowed == []:
+            # 人格主动无工具（如 crazy）：人格 prompt 已自带能力边界说明，
+            # 不注入"当前没有可用的工具"系统提示，避免与人格台词层设定冲突
+            logger.info(f"[persona] {persona_key} 人格主动无工具，裸模型对话")
         else:
             messages.append(SystemMessage(
                 content="注意：当前没有可用的工具。若用户的请求依赖工具能力（如查文件、查数据库、"

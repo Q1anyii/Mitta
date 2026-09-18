@@ -22,6 +22,11 @@ class OverAllState(MessagesState):
     节点返回 {"messages": [msg]} 时会追加而非覆盖。
     """
     input_str: Annotated[str, Field(description="用户输入")]
+    # 当前对话人格标识（cappie/kind/crazy/manager）。
+    # 默认 None：persona_router_node 每轮执行（手选短路/自动分类）后写入；
+    # llm_node 读取时兜底 DEFAULT_PERSONA。None 而非 cappie，是为了让首轮/旧 checkpoint
+    # 没有该字段时 router 仍会跑（默认 cappie 会导致 B.1 手选短路永远命中、router 形同虚设）。
+    persona: Annotated[Optional[str], Field(description="当前对话人格标识")] = None
     retrieve_res: Annotated[
         Optional[list[Any] | dict[str, Any] | Any],
         "检索结果（retrieve_graph 返回，Document 已转 dict 序列化）",

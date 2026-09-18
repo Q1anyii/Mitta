@@ -49,6 +49,7 @@ from loguru import logger
 from graphs.state import OverAllState
 from graphs.tool_filter import ToolFilter
 from graphs.nodes.classify_node import classify_node
+from graphs.nodes.persona_router_node import persona_router_node
 from graphs.nodes.retrieve_node import retrieve_node
 from graphs.nodes.llm_node import llm_node
 from graphs.nodes.memory_node import memory_node, _memory_cache_key
@@ -126,6 +127,7 @@ def build_main_graph(
 
     # ── 用 partial 绑定依赖，得到符合 LangGraph 节点签名 (state, config) -> state 的函数 ──
     classify_node_bound = partial(classify_node, model=model)
+    persona_router_bound = partial(persona_router_node, model=model)
     retrieve_node_bound = partial(retrieve_node, retrieve_graph=retrieve_graph)
     llm_node_bound = partial(
         llm_node,
@@ -138,6 +140,7 @@ def build_main_graph(
 
     # ── 图构建 ──
     builder = StateGraph(state_schema=OverAllState)
+    builder.add_node("persona_router_node", persona_router_bound)
     builder.add_node("classify_node", classify_node_bound)
     # retrieve_node：CachePolicy 已停用，检索结果缓存由 retrieve_graph 内部
     # CacheService（Redis + RediSearch）按 thread_id + 问题语义管理
@@ -155,7 +158,8 @@ def build_main_graph(
         cache_policy=CachePolicy(ttl=CACHE_MEMORY_NODE_TTL, key_func=_memory_cache_key),
     )
 
-    builder.add_edge(START, "classify_node")
+    builder.add_edge(START, "persona_router_node")
+    builder.add_edge("persona_router_node", "classify_node")
     builder.add_conditional_edges(
         "classify_node",
         route,

@@ -10,3 +10,4 @@ class ChatRequest(BaseModel):
     thinking_mode: Optional[bool] = False  # 是否开启深度思考模式
     reasoning_effort: Optional[str] = "low"  # 推理强度：low/high/max（仅 thinking_mode=True 时生效）
     client_message_id: Optional[str] = None  # 前端生成的消息唯一 ID：后端按 (user_id, client_message_id) 幂等去重
+    persona: Optional[str] = None  # 前端手选人格（cappie/kind/crazy/manager）；None=未手选，由 persona_router_node 自动分类
