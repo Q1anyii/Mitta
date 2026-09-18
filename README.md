@@ -30,27 +30,27 @@
 
 ## 技术栈
 
-| 层次        | 技术                                                                                     |
-| --------- | -------------------------------------------------------------------------------------- |
-| 语言/环境     | Python 3.12（容器 `python:3.12-slim`，AI 生态兼容性最好；本地开发可用 3.12+）                                   |
-| Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）             |
-| LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                              |
-| 大模型       | DeepSeek（deepseek-v4-flash），OpenAI 兼容协议，支持 reasoning_content 深度思考                      |
-| Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                      |
-| 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                             |
-| 向量库       | ChromaDB（默认，免部署）/ Milvus（可插拔，Protocol 抽象，零业务改动切换）                                      |
+| 层次        | 技术                                                                                                        |
+| --------- | --------------------------------------------------------------------------------------------------------- |
+| 语言/环境     | Python 3.12（容器 `python:3.12-slim`，AI 生态兼容性最好；本地开发可用 3.12+）                                                |
+| Agent 编排  | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store）                                |
+| LLM 框架    | LangChain 1.x / langchain-openai / langchain-mcp-adapters                                                 |
+| 大模型       | DeepSeek（deepseek-v4-flash），OpenAI 兼容协议，支持 reasoning_content 深度思考                                         |
+| Embedding | SiliconFlow `BAAI/bge-m3`（1024 维）                                                                         |
+| 重排        | SiliconFlow `BAAI/bge-reranker-v2-m3` 在线重排                                                                |
+| 向量库       | ChromaDB（默认，免部署）/ Milvus（可插拔，Protocol 抽象，零业务改动切换）                                                         |
 | 关系数据库     | PostgreSQL 16（LangGraph Checkpointer/Store + 用户表 userinfo / user_profile / user_files / user_mcp_servers） |
-| 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                     |
-| MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                         |
-| Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                            |
-| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写设计系统 + 多主题 + 响应式移动端                                   |
-| 反向代理      | Nginx（静态托管 + API 代理 + SSE 缓冲关闭）                                                        |
-| 认证        | JWT（PyJWT）+ bcrypt 密码哈希                                                                |
-| 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                       |
+| 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                                        |
+| MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                            |
+| Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                                               |
+| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写设计系统 + 多主题 + 响应式移动端                                                      |
+| 反向代理      | Nginx（静态托管 + API 代理 + SSE 缓冲关闭）                                                                           |
+| 认证        | JWT（PyJWT）+ bcrypt 密码哈希                                                                                   |
+| 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                                          |
 
 ## 系统架构
 
-### 整体架构图
+### 整体架构
 
 <p align="center">
   <img src="docs/figures/architecture.svg" alt="Mitta 整体架构图" width="95%">
@@ -104,22 +104,22 @@
 | **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
 | **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
 | **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=5，分数写入 `doc.metadata["relevance_score"]` |
-| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.3` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                 |
+| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.3` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                            |
 | **store_cache** | 写入 Redis     | 缓存键 `retrieve_cache:{thread_id}:{bucket_id}`，动态 TTL，命中自动续期                                                 |
 
 ### 关键参数
 
-| 参数             | 值                       | 位置                                     |
-| -------------- | ----------------------- | -------------------------------------- |
-| 稠密召回 n_results | 20                      | `graphs/retrieve_graph.py` dense_query |
-| BM25 召回 top_k  | 20                      | `graphs/retrieve_graph.py` bm25_search |
-| RRF_K          | 60                      | `constant/retrieval_constants.py`      |
-| 重排 top_n       | 5                       | `graphs/retrieve_graph.py` rerank      |
+| 参数             | 值                                     | 位置                                     |
+| -------------- | ------------------------------------- | -------------------------------------- |
+| 稠密召回 n_results | 20                                    | `graphs/retrieve_graph.py` dense_query |
+| BM25 召回 top_k  | 20                                    | `graphs/retrieve_graph.py` bm25_search |
+| RRF_K          | 60                                    | `constant/retrieval_constants.py`      |
+| 重排 top_n       | 5                                     | `graphs/retrieve_graph.py` rerank      |
 | 过滤阈值           | 0.3（relevance_score ≥ 0.3，空则兜底 top 3） | `graphs/retrieve_graph.py` filter_node |
-| 缓存 TTL         | 动态（默认 900s，命中续期）        | `constant/cache_constant.py`           |
-| Embedding 模型   | BAAI/bge-m3（1024 维）     | `constant/embedding_constants.py`      |
-| 重排模型           | BAAI/bge-reranker-v2-m3 | `init.py`                              |
-| BM25 索引名       | kb_bm25                 | `constant/cache_constant.py`           |
+| 缓存 TTL         | 动态（默认 900s，命中续期）                      | `constant/cache_constant.py`           |
+| Embedding 模型   | BAAI/bge-m3（1024 维）                   | `constant/embedding_constants.py`      |
+| 重排模型           | BAAI/bge-reranker-v2-m3               | `init.py`                              |
+| BM25 索引名       | kb_bm25                               | `constant/cache_constant.py`           |
 
 ### 混合检索设计思路
 
@@ -178,16 +178,22 @@ AgentProject/
 │   │       └── agent_server.py           # 内置 FastMCP 服务器（chat/get_user/summarize）
 │   ├── middleware/
 │   │   └── rate_limit_middleware.py      # 基于 Redis 的请求限流中间件
-│   ├── ragas_test/                       # RAGAS 评估与性能测试脚本
-│   │   ├── ragas_eval.py                 # RAGAS 五项指标评估（context_precision/recall/faithfulness/answer_relevancy/correctness）
-│   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（单路 vs 三级流水线对比）
+│   ├── ragas_test/                       # Agent 系统评测（评测矩阵 E1–E14，见 docs/AGENT_EVAL_MATRIX.md）
+│   │   ├── ragas_eval.py                 # RAGAS 五项指标评估（E8，LLM-as-judge，不进 CI）
+│   │   ├── eval_routing.py               # 动态路由评测（E1：意图分类准确率/检索召回）
+│   │   ├── evaluate_tool_filter.py       # 工具筛选规则层+语义层准确率评估（E2，需真实 MCP）
+│   │   ├── eval_tool_assembly.py         # 工具装配并集/降级/熔断评测（E3）
+│   │   ├── eval_tool_safety.py           # MCP 安全校验评测（E4：命令/包名/env/sse 白名单）
+│   │   ├── eval_tool_truncation.py       # 工具结果截断与异常兜底评测（E5）
+│   │   ├── eval_semantic_cache.py        # 语义缓存命中质量评测（E6：同义命中/误命中）
+│   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（E7：单路 vs 混合流水线对比）
+│   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估（E9）
+│   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测（E10）
+│   │   ├── eval_jwt.py                   # JWT 登录态校验耗时/token 自动续签成功率（E11）
+│   │   ├── eval_sse.py                   # SSE 首 token 延迟/流纯净度评估（E12）
+│   │   ├── eval_online.py                # 线上全链路实测（E13：health/登录/SSE/登出失效/限流 429）
 │   │   ├── eval_cache.py                 # 缓存命中率/Embedding 调用降低/污染率评估
 │   │   ├── eval_cache_ttl.py             # 固定 TTL vs 动态 TTL 命中率对比
-│   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估
-│   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测
-│   │   ├── eval_jwt.py                   # JWT 登录态校验耗时/token 自动续签成功率
-│   │   ├── eval_sse.py                   # SSE 首 token 延迟/流纯净度评估
-│   │   ├── evaluate_tool_filter.py       # 工具筛选规则层+语义层准确率评估
 │   │   └── *_report.json/csv             # 各评估脚本输出的报告
 │   ├── routers/                          # FastAPI 路由（按模块拆分）
 │   │   ├── deps.py                       # 公共依赖（require_self_or_admin）
@@ -345,16 +351,16 @@ docker-compose up -d etcd minio milvus
 
 项目内置 8 台开箱即用的 MCP 服务器（`resources/config/mcp_servers.json`，启动时加载、所有用户共享），覆盖内容获取、数据存储、记忆推理与基础工具四类能力：
 
-| 服务器                 | 启动方式                                                   | 作用                                                  |
-| ------------------- | ------------------------------------------------------ | --------------------------------------------------- |
-| filesystem          | `npx @modelcontextprotocol/server-filesystem`          | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录                |
-| fetch               | `uvx mcp-server-fetch`                                 | 网页抓取：按 URL 拉取网页内容并转 Markdown，供 RAG 引用实时网页信息         |
-| sqlite              | `uvx mcp-server-sqlite`                                | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db`      |
-| sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析                  |
-| memory              | `npx @modelcontextprotocol/server-memory`              | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好                   |
-| time                | `uvx mcp-server-time`                                  | 时间服务：获取当前时间、时区换算、日期计算                               |
-| context7            | `npx @upstash/context7-mcp`                            | 最新技术文档检索：拉取 API / SDK 官方文档（含版本、参数）                  |
-| dbhub               | `npx @bytebase/dbhub --demo`                           | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构     |
+| 服务器                 | 启动方式                                                   | 作用                                              |
+| ------------------- | ------------------------------------------------------ | ----------------------------------------------- |
+| filesystem          | `npx @modelcontextprotocol/server-filesystem`          | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录            |
+| fetch               | `uvx mcp-server-fetch`                                 | 网页抓取：按 URL 拉取网页内容并转 Markdown，供 RAG 引用实时网页信息     |
+| sqlite              | `uvx mcp-server-sqlite`                                | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db`  |
+| sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析              |
+| memory              | `npx @modelcontextprotocol/server-memory`              | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好               |
+| time                | `uvx mcp-server-time`                                  | 时间服务：获取当前时间、时区换算、日期计算                           |
+| context7            | `npx @upstash/context7-mcp`                            | 最新技术文档检索：拉取 API / SDK 官方文档（含版本、参数）              |
+| dbhub               | `npx @bytebase/dbhub --demo`                           | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构 |
 
 能力分工：**filesystem / fetch / context7** 负责获取内容，**sqlite / dbhub** 负责存储与查询，**memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。Dockerfile 额外内置 `@modelcontextprotocol/server-github` 等 npm 包，供用户级 MCP 配置按需启用。
 
@@ -551,34 +557,30 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 - 思考过程以折叠面板展示在 AI 回复上方，点击展开/收起，流式更新时自动滚动到底部
 - 思考内容不参与最终回答，但可帮助用户理解模型推理链路
 
-### RAGAS 质量评估
+### Agent 系统评测（评测矩阵 E1–E14）
 
-项目内置完整的 RAGAS 评估体系（`src/ragas_test/`），覆盖检索质量、生成质量、系统性能三大维度：
+项目把 `src/ragas_test/` 从「RAG 检索评测」升级为**覆盖整个 Agent 系统的评测矩阵**，完整定义见 `docs/AGENT_EVAL_MATRIX.md`——项目描述中的每条指标都有对应评测，没有指标的维度也为其定义了指标测试：
 
-**检索质量（ragas_eval.py）**：五项 RAGAS 指标自动化评估
+| 编号 | 维度 | 脚本 | 关键指标 |
+| --- | --- | --- | --- |
+| E1 | 动态路由 | `eval_routing.py` | 意图分类准确率 100%（17/17）、检索召回 100%、误报 0% |
+| E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k（需真实 MCP，待跑） |
+| E3 | 工具装配 | `eval_tool_assembly.py` | 并集召回/降级/熔断 6/6 通过 |
+| E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
+| E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限 6/6 通过 |
+| E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中 100%、无关 query 误命中 0% |
+| E7 | 混合检索 | `eval_retrieval.py` | top-5 recall 中位数 0.7732（历史产物）、P95 延迟 |
+| E8 | RAGAS 五指标 | `ragas_eval.py` | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**） |
+| E9 | 记忆 | `eval_memory.py` | 写入 P95 ≈ 46ms（历史产物） |
+| E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存 deque |
+| E11 | 认证 | `eval_jwt.py` | 续签成功率、校验耗时 |
+| E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 |
+| E13 | 在线实测 | `eval_online.py` | health ✓ / 登录 ✓ / SSE 首 token 1348ms 零污染 / 登出失效 401 ✓ / 限流第 30、31 次 429 ✓ |
+| E14 | CI 回归 | `tests/test_agent_regression.py` | 路由/安全/兜底/缓存 key 纯函数断言（pytest，入 CI） |
 
-- `context_precision`：检索上下文的精确率（相关文档占比）
-- `context_recall`：检索上下文的召回率（ground_truth 被覆盖比例）
-- `faithfulness`：回答与上下文的一致性（幻觉率反向指标）
-- `answer_relevancy`：回答与问题的相关性
-- `answer_correctness`：回答与 ground_truth 的正确率
+测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 **45 条**刁钻 QA（基础概念 10 + 代码调试 10 + 架构设计 10 + 刁钻 Badcase 15），覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
 
-测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 50 条刁钻 QA，覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
-
-**性能基准（eval_*.py）**：
-
-| 脚本                        | 评估指标                              |
-| ------------------------- | --------------------------------- |
-| `eval_retrieval.py`       | Top5 召回率、检索 P95 延迟、单路 vs 混合检索对比   |
-| `eval_cache.py`           | 缓存命中率、Embedding 调用降低比例、污染率        |
-| `eval_cache_ttl.py`       | 固定 TTL vs 动态 TTL 命中率提升百分点         |
-| `eval_memory.py`          | PostgresStore 读写延迟、重复写入减少率、对话画像生成 |
-| `eval_rate_limit.py`      | 限流拦截准确率、Redis 断连降级切换耗时、并发压测       |
-| `eval_jwt.py`             | 登录态校验平均耗时、token 过期自动续签成功率         |
-| `eval_sse.py`             | 首 token 延迟、流纯净度（无分类器/记忆提取混入）      |
-| `evaluate_tool_filter.py` | 工具筛选规则层+语义层准确率                    |
-
-所有评估脚本输出 JSON 报告到 `src/ragas_test/`，可用于 CI 回归或性能对比。
+所有评估脚本输出 JSON 报告到 `src/ragas_test/`（`*_eval_report.json`），可用于版本间性能对比；E1/E6/E13 为 2026-09-18 实测，其余标注历史产物。
 
 ## 测试
 
@@ -588,9 +590,10 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 | 测试文件                         | 覆盖模块                      | 用例数 |
 | ---------------------------- | ------------------------- | --- |
-| `tests/test_config.py`       | 环境变量加载/校验/布尔解析            | 18  |
-| `tests/test_jwt_utils.py`    | JWT 签发/验证/过期/密码哈希(bcrypt) | 14  |
-| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/int 范围       | 11  |
+| `tests/test_config.py`       | 环境变量加载/校验/布尔解析            | 32  |
+| `tests/test_jwt_utils.py`    | JWT 签发/验证/过期/密码哈希(bcrypt) | 12  |
+| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/int 范围       | 10  |
+| `tests/test_agent_regression.py` | 动态路由/MCP 安全/工具兜底/记忆缓存 key/工具名解析 | 19  |
 
 **运行方式**：
 
@@ -599,17 +602,20 @@ cd src
 pytest ../tests/ -v
 ```
 
-**最新结果**（2026-09-06）：53 passed / 1 failed（98.1%）。失败项为 `test_access_token_expiration` 的微秒级精度断言（JWT exp 仅精确到秒），非业务逻辑问题。
+**最新结果**（2026-09-18）：**73 passed**（32+12+10+19），覆盖配置/JWT/ID 生成/Agent 回归；此前 `test_access_token_expiration` 秒级精度断言已加 2s 容差修复。该 4 文件组合被 `agent-regression.yml`（E14）纳入 CI 门禁（不含 RAGAS）。
 
-### RAGAS 质量评估
+### 评测运行方式
 
-`src/ragas_test/` 目录包含完整的 RAGAS 评估体系，覆盖检索质量、生成质量、系统性能三大维度，详见上文「RAGAS 质量评估」节。运行方式：
+评测矩阵脚本统一约定：`conda activate langchain1.2`，`cd src`，`python -m ragas_test.<script>`；离线白盒脚本需 Redis/PostgreSQL/在线 LLM/Embedding 可用，纯函数脚本无外部依赖。运行示例：
 
 ```bash
 cd src
-python ragas_test/ragas_eval.py          # RAGAS 五项指标
-python ragas_test/eval_retrieval.py      # 检索召回率/延迟
-python ragas_test/eval_cache.py          # 缓存命中率
+python -m ragas_test.eval_routing         # E1 动态路由（需 LLM）
+python -m ragas_test.eval_tool_safety     # E4 MCP 安全（纯函数）
+python -m ragas_test.eval_semantic_cache  # E6 语义缓存（需 WSL RedisSearch + embed + reranker）
+python -m ragas_test.eval_online --username qianyi --password xxx  # E13 线上实测（默认 https://www.mittaai.xyz）
+python -m ragas_test.ragas_eval           # E8 RAGAS 五项指标（LLM-as-judge，耗时大，仅线下评估，不进 CI）
+pytest ../tests/ -v                       # E14 CI 回归（73 用例，含 test_agent_regression.py）
 ```
 
 ## Docker 部署
@@ -650,7 +656,9 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 ### 工作流文件
 
-`.github/workflows/acr-cicd.yml`，触发条件：push 到 `main` 分支。
+`.github/workflows/acr-cicd.yml`，触发条件：push 到 `main` 分支（构建镜像→推 ACR→rsync→部署→健康检查）。
+
+`.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——push 到 `main` 且路径命中 `src/**`、`tests/**`、`requirements.txt` 或 workflow 本身时触发；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest（`tests/test_agent_regression.py` + `test_config.py` + `test_jwt_utils.py` + `test_rand_id_util.py`，73 用例，无外部依赖），失败上传 pytest 报告 artifact。**明确排除**：RAGAS 五指标（耗时+LLM 评分）与依赖 Redis/Postgres/LLM/向量库的离线白盒评测（本地评估）。
 
 ### 部署架构
 
