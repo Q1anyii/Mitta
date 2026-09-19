@@ -1,7 +1,9 @@
-"""persona_router 四分类准确率离线评测（H-20260919-01 任务①）。
+"""persona_router 四分类准确率离线评测（H-20260919-01 任务①，H-20260919-11 合并后回归）。
 
-绕过手选短路，直接复用 PERSONA_ROUTER_PROMPT 调生产同款分类模型
-（container.py 的 deepseek-v4-flash），输出准确率 + 混淆矩阵 + 错分 case。
+绕过手选短路，直接复用 ROUTER_PROMPT（合并后的统一路由 prompt，人格判定规则
+与原 PERSONA_ROUTER_PROMPT 语义等价）调生产同款分类模型
+（container.py 的 deepseek-v4-flash），只取 JSON 里的 persona 字段，
+输出准确率 + 混淆矩阵 + 错分 case。
 
 用法: D:\\Develop\\conda_envs\\langchain1.2\\python.exe src\\ragas_test\\persona_router_eval.py
 产物: src/ragas_test/persona_router_eval_report.json
@@ -53,7 +55,7 @@ def main() -> None:
     from langchain.chat_models.base import init_chat_model
 
     from constant.persona_constant import DEFAULT_PERSONA, VALID_PERSONAS
-    from graphs.nodes.persona_router_node import PERSONA_ROUTER_PROMPT
+    from graphs.nodes.router_node import ROUTER_PROMPT, _parse_router_output
 
     model = init_chat_model(
         model="deepseek-v4-flash",
@@ -70,11 +72,11 @@ def main() -> None:
     for expected, queries in SAMPLES.items():
         for q in queries:
             resp = model.invoke([
-                SystemMessage(content=PERSONA_ROUTER_PROMPT),
+                SystemMessage(content=ROUTER_PROMPT),
                 HumanMessage(content=q),
             ])
-            raw = resp.content.strip().lower()
-            pred = next((k for k in raw.split() if k in VALID_PERSONAS), DEFAULT_PERSONA)
+            raw = resp.content.strip()
+            pred, _ = _parse_router_output(raw, DEFAULT_PERSONA)
             if pred not in confusion[expected]:
                 confusion[expected][pred] = confusion[expected].get(pred, 0)
             confusion[expected][pred] = confusion[expected].get(pred, 0) + 1

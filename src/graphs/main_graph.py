@@ -4,7 +4,7 @@
 所有节点逻辑在 graphs/nodes/ 下，工具函数在 graphs/utils/ 下，状态在 graphs/state.py。
 
 图流程：
-    START → classify_node → (route) → retrieve_node → llm_node → (route_after_llm)
+    START → router_node → (route) → retrieve_node → llm_node → (route_after_llm)
                                                           ↓              ↓
                                                       memory_node    tool_node
                                                           ↓              ↓
@@ -35,7 +35,11 @@ class DynamicToolNode(ToolNode):
         super().__init__(tool_provider(), handle_tool_errors=handle_tool_errors)
 
     def _refresh_tools(self):
-        self.tools_by_name = {t.name: t for t in self._tool_provider()}
+        # ToolNode.tools_by_name 是只读 property（backing field: self._tools_by_name），
+        # 直接赋值抛 "property has no setter"（线上阻断，H-20260919-11）；
+        # _inject_tool_args 对 _injected_args 缺失的工具会按需动态计算注入参数
+        # （tool_node.py:1320-1324），因此只需重建私有映射表即可。
+        self._tools_by_name = {t.name: t for t in self._tool_provider()}
 
     def _run_one(self, call, input_type, tool_runtime):
         self._refresh_tools()
@@ -48,8 +52,7 @@ from loguru import logger
 
 from graphs.state import OverAllState
 from graphs.tool_filter import ToolFilter
-from graphs.nodes.classify_node import classify_node
-from graphs.nodes.persona_router_node import persona_router_node
+from graphs.nodes.router_node import router_node
 from graphs.nodes.retrieve_node import retrieve_node
 from graphs.nodes.llm_node import llm_node
 from graphs.nodes.memory_node import memory_node, _memory_cache_key
@@ -126,8 +129,9 @@ def build_main_graph(
     from init import get_user_system_prompt
 
     # ── 用 partial 绑定依赖，得到符合 LangGraph 节点签名 (state, config) -> state 的函数 ──
-    classify_node_bound = partial(classify_node, model=model)
-    persona_router_bound = partial(persona_router_node, model=model)
+    # router_node：统一路由（一次 LLM 调用出 persona + need_retrieval），
+    # 替代原 persona_router_node → classify_node 两步链路（H-20260919-11 任务C）
+    router_node_bound = partial(router_node, model=model)
     retrieve_node_bound = partial(retrieve_node, retrieve_graph=retrieve_graph)
     llm_node_bound = partial(
         llm_node,
@@ -140,8 +144,7 @@ def build_main_graph(
 
     # ── 图构建 ──
     builder = StateGraph(state_schema=OverAllState)
-    builder.add_node("persona_router_node", persona_router_bound)
-    builder.add_node("classify_node", classify_node_bound)
+    builder.add_node("router_node", router_node_bound)
     # retrieve_node：CachePolicy 已停用，检索结果缓存由 retrieve_graph 内部
     # CacheService（Redis + RediSearch）按 thread_id + 问题语义管理
     builder.add_node("retrieve_node", retrieve_node_bound)
@@ -158,10 +161,9 @@ def build_main_graph(
         cache_policy=CachePolicy(ttl=CACHE_MEMORY_NODE_TTL, key_func=_memory_cache_key),
     )
 
-    builder.add_edge(START, "persona_router_node")
-    builder.add_edge("persona_router_node", "classify_node")
+    builder.add_edge(START, "router_node")
     builder.add_conditional_edges(
-        "classify_node",
+        "router_node",
         route,
         ["retrieve_node", "llm_node"],
     )
