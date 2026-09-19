@@ -368,22 +368,11 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
     stats["rerank_time"] = time.perf_counter() - t0
 
     # Step 6: 过滤（relevance_score >= threshold），空则兜底 top3
+    # 口径对齐生产 filter_node（2026-09-19 H-20260919-06）：只兜底 top3，不补到 5。
+    # 旧口径"按 RRF 补到 5"会把 MMR 选的多样性文档用 RRF 旧顺序覆盖，测不出 MMR 增益。
     filtered = [d for d in final_docs if d.metadata.get("relevance_score", 0) >= filter_threshold]
     if not filtered and final_docs:
         filtered = final_docs[:3]
-
-    # 口径修复（2026-09-18）：与单路同口径算 recall@5。
-    # 重排只保留 top5，过滤后通常只剩 1~3 条，关键词覆盖文本条数天然比单路
-    # （固定 5 条全文）少——指标被"候选条数"人为压低，并非链路变差。
-    # 过滤后不足 5 条时，按 RRF 融合顺序补足到 5 条。
-    if len(filtered) < 5 and merged:
-        seen = {id(d) for d in filtered}
-        for d in merged:
-            if len(filtered) >= 5:
-                break
-            if id(d) not in seen:
-                filtered.append(d)
-                seen.add(id(d))
 
     total_elapsed = time.perf_counter() - t_total
     return filtered, total_elapsed, stats
