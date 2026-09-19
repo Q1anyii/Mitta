@@ -398,7 +398,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 /* ---------- 消息滚动区 ---------- */
 .messages-container { flex: 1; overflow-y: auto; scroll-behavior: smooth; position: relative; }
 .scroll-to-bottom-btn {
-    position: absolute; left: 50%; bottom: 24px; z-index: 10; transform: translateX(-50%);
+    position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 10; transform: translateX(-50%);
     width: 36px; height: 36px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     background: var(--violet); color: #fff;
@@ -407,6 +407,13 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     transition: transform .15s ease, box-shadow .15s ease;
 }
 .scroll-to-bottom-btn:hover { transform: translateX(-50%) translateY(-2px); box-shadow: var(--shadow-hard); }
+/* 输出中加载环：粗描边圆环围绕按钮旋转，贴合 Neo-Brutalism 主题 */
+.scroll-to-bottom-btn.is-generating::after {
+    content: ''; position: absolute; inset: -5px; border-radius: 50%;
+    border: 3px solid var(--ink); border-top-color: transparent;
+    animation: btn-spin .9s linear infinite; pointer-events: none;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 .messages-wrapper { max-width: 920px; margin: 0 auto; padding: 28px 24px 12px; }
 
 /* 欢迎态 */
@@ -654,7 +661,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     font-family: var(--font-mono); font-size: 13px; line-height: 1.7; padding: 0; }
 
 /* ---------- 输入区 ---------- */
-.input-area { flex-shrink: 0; padding: 12px 24px 18px; background: linear-gradient(to top, var(--paper) 70%, transparent); }
+.input-area { flex-shrink: 0; position: relative; padding: 12px 24px 18px; background: linear-gradient(to top, var(--paper) 70%, transparent); }
 .uploaded-files { max-width: 920px; margin: 0 auto 10px; display: flex; flex-wrap: wrap; gap: 8px; }
 .uploaded-file-card { display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 8px;
     background: var(--surface); border: 2px solid var(--ink); border-radius: var(--r-sm);

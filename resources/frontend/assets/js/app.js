@@ -1355,16 +1355,16 @@
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- 跳底按钮：距底 > 200px 显示，点击平滑滚底（absolute 定位，不随内容滚动） -->
-                            <button v-if="showScrollToBottom" class="scroll-to-bottom-btn"
-                                    @click="jumpToBottom" title="跳到最新消息" aria-label="跳到最新消息">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </button>
                         </div>
 
                         <!-- ══════════ 输入区 ══════════ -->
                         <div class="input-area">
+                            <!-- 跳底按钮：钉在输入框正上方；输出中始终显示并带加载环 -->
+                            <button v-if="showScrollToBottom || isLoading" class="scroll-to-bottom-btn"
+                                    :class="{ 'is-generating': isLoading }"
+                                    @click="jumpToBottom" title="跳到最新消息" aria-label="跳到最新消息">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
                             <div v-if="uploadedFiles.length > 0" class="uploaded-files">
                                 <div v-for="(file, idx) in uploadedFiles" :key="idx" class="uploaded-file-card">
                                     <div class="file-icon">
