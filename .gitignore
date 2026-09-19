@@ -110,3 +110,4 @@ resources/chroma.sqlite3
 /deploy/ssl/
 /AGENTS.md
 /temp.md
+/src/ragas_test/resources/chroma_db/chroma.sqlite3

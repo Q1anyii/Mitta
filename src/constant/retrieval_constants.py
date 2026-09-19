@@ -14,6 +14,15 @@ DISTANCE_THRESHOLD = 0.3
 # RRF（Reciprocal Rank Fusion）融合参数 k：控制排名权重的衰减
 RRF_K = 60
 
+# ── MMR（Maximal Marginal Relevance）多样性重排 ──
+# rerank 后从 top20 候选里贪心选 5 篇"相关且彼此不语义扎堆"的文档，
+# 解决多点分散题 key_points 覆盖低的问题（同章节相邻段落语义重复）。
+# 公式：score = λ × rerank_score - (1-λ) × max_cosine_sim(doc, 已选集合)
+MMR_ENABLED = True          # 一键开关：False 时回退为纯 rerank top5（现状基线）
+MMR_LAMBDA = 0.5            # 相关性 vs 多样性权重：1=只看相关，0=只看多样
+MMR_TOP_CANDIDATES = 20     # rerank 候选数（从 bge-reranker 拿多少篇）
+MMR_TOP_SELECT = 5          # MMR 最终选篇数（与 MAX_RETRIEVAL_DOCS=5 对齐）
+
 # 查询改写提示词：LLM 根据对话历史将用户问题改写成适合向量检索的独立查询
 # 要求：解决指代、补全限定词、生成主查询+子查询+关键词
 REWRITE_PROMPT = """你是一名查询改写专家。根据给定的对话历史，将用户当前问题改写成适合向量检索的独立查询，并生成相关子查询和关键词。

@@ -36,10 +36,17 @@ from config import load_vector_db_config
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from constant.retrieval_constants import RRF_K
+from constant.retrieval_constants import (
+    RRF_K,
+    MMR_ENABLED,
+    MMR_LAMBDA,
+    MMR_TOP_CANDIDATES,
+    MMR_TOP_SELECT,
+)
 from constant.cache_constant import SPARSE_INDEX_NAME, DOC_PREFIX
 from vector.vector_store import create_vector_store
 from vector.retrieve_doc import RetrievedDoc
+from graphs.nodes.retrieve.fusion_nodes import _mmr_select, _mmr_embed
 from init import embed_model, online_rerank, model
 from service.cache_service import cache_service
 
@@ -330,19 +337,32 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
     merged = dedup_by_text(merged)
     stats["num_candidates"] = len(merged)
 
-    # Step 5: 重排
+    # Step 5: 重排 + MMR 多样性选择（与生产 fusion_nodes.rerank 对齐）
     t0 = time.perf_counter()
     if merged:
         try:
-            rerank_results = online_rerank(queries[0], [d.text for d in merged], top_n=5)
-            final_docs = []
+            rerank_results = online_rerank(
+                queries[0], [d.text for d in merged],
+                top_n=MMR_TOP_CANDIDATES if MMR_ENABLED else MMR_TOP_SELECT,
+            )
+            top_docs = []
             for r in rerank_results:
                 doc = merged[r["index"]]
                 doc.metadata["relevance_score"] = r["relevance_score"]
-                final_docs.append(doc)
+                top_docs.append(doc)
+            # MMR 多样性选择：从 topN 候选里选 k 篇"相关且彼此不语义扎堆"
+            if MMR_ENABLED and len(top_docs) > MMR_TOP_SELECT:
+                try:
+                    embeddings = _mmr_embed([d.text for d in top_docs])
+                    final_docs = _mmr_select(top_docs, embeddings)
+                except Exception as e:
+                    logger.warning(f"[mmr] 评测脚本 MMR 失败，回退纯 rerank top{MMR_TOP_SELECT}: {e}")
+                    final_docs = top_docs[:MMR_TOP_SELECT]
+            else:
+                final_docs = top_docs[:MMR_TOP_SELECT]
         except Exception as e:
             logger.warning(f"重排失败，使用 RRF 结果: {e}")
-            final_docs = merged[:5]
+            final_docs = merged[:MMR_TOP_SELECT]
     else:
         final_docs = []
     stats["rerank_time"] = time.perf_counter() - t0

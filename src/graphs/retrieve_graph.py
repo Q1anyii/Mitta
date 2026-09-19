@@ -57,7 +57,7 @@ def build_retrieve_graph(vector_store: VectorStore, model=None, online_rerank=No
     dense_query_bound = partial(dense_query, vector_store=vector_store)
     bm25_search_bound = partial(bm25_search, cache_service=cache_service)
     rewrite_query_bound = partial(rewrite_query, model=model)
-    rerank_bound = partial(rerank, online_rerank=online_rerank)
+    rerank_bound = partial(rerank, online_rerank=online_rerank, vector_store=vector_store)
 
     # ── 图构建 ──
     builder = StateGraph(state_schema=RAGState, output_schema=OutputState)

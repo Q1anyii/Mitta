@@ -1,12 +1,18 @@
-"""融合与重排节点：RRF 融合 + 去重 + 在线重排 + 阈值过滤。
+"""融合与重排节点：RRF 融合 + 去重 + 在线重排 + MMR 多样性选择 + 阈值过滤。
 
 拆分自原 retrieve_graph.py 的 rrf_fusion、dedup_by_text、retrieve、rerank、filter_node。
-依赖：online_rerank（在线重排函数），通过参数注入。
+依赖：online_rerank（在线重排函数），通过参数注入；MMR 需要 vector_store 做文本向量化。
 """
 
 from loguru import logger
 
-from constant.retrieval_constants import RRF_K
+from constant.retrieval_constants import (
+    RRF_K,
+    MMR_ENABLED,
+    MMR_LAMBDA,
+    MMR_TOP_CANDIDATES,
+    MMR_TOP_SELECT,
+)
 from graphs.state import RAGState
 from vector.retrieve_doc import RetrievedDoc
 
@@ -88,33 +94,123 @@ def retrieve(state: RAGState) -> dict:
     return {"merged_docs": merged_docs}
 
 
-def rerank(state: RAGState, online_rerank) -> dict:
-    """在线重排：用 SiliconFlow bge-reranker-v2-m3 API 对候选文档重新排序。
+def _mmr_embed(texts: list[str]) -> list[list[float]]:
+    """对候选文本批量编码并 L2 归一化（dot product 即 cosine）。
 
-    重排是 RAG 质量的关键：向量检索只保证语义粗召回，
-    重排模型用交叉编码器（Cross-Encoder）精确计算 query-doc 相关性，
-    显著提升 top-k 准确率。
+    直接用全局 embed_model（bge-m3），不依赖 vector_store 实现差异
+    （Chroma 实现无 _embed_texts，Milvus 有；统一走 embed_model 最稳）。
+    """
+    from init import embed_model  # 延迟 import 避免循环依赖
+    raw = embed_model.embed_documents(texts)
+    out = []
+    for v in raw:
+        norm = sum(x * x for x in v) ** 0.5 or 1.0
+        out.append([x / norm for x in v])
+    return out
+
+
+def _mmr_select(
+    candidates: list[RetrievedDoc],
+    embeddings: list[list[float]],
+    k: int = MMR_TOP_SELECT,
+    lambda_: float = MMR_LAMBDA,
+) -> list[RetrievedDoc]:
+    """MMR（Maximal Marginal Relevance）贪心多样性选择。
+
+    从 rerank topN 候选里选 k 篇"相关且彼此不语义扎堆"的文档：
+      score(doc) = λ × rerank_score - (1-λ) × max_cosine_sim(doc, 已选集合)
+
+    向量已归一化（vector_store._embed_texts 输出），dot product 即 cosine similarity。
+
+    Args:
+        candidates: 已按 rerank_score 降序排列的候选文档（metadata 含 relevance_score）
+        embeddings: 与 candidates 对齐的归一化向量
+        k: 最终选篇数
+        lambda_: 相关性 vs 多样性权重
+
+    Returns:
+        MMR 选出的 k 篇文档（按选择顺序，首篇即 rerank 分最高者）
+    """
+    if len(candidates) <= k:
+        return candidates
+
+    selected_idx = [0]  # 初始选 rerank 分最高的第 0 篇
+    # 预取每篇的 relevance_score
+    rel_scores = [float(c.metadata.get("relevance_score", 0.0)) for c in candidates]
+    # 归一化分：rerank_score 本身量纲不固定（bge-reranker 输出 logit），用 min-max 归一化到 [0,1]
+    smin, smax = min(rel_scores), max(rel_scores)
+    span = smax - smin if smax > smin else 1.0
+    norm_rel = [(s - smin) / span for s in rel_scores]
+
+    while len(selected_idx) < k:
+        best_idx = None
+        best_score = -float("inf")
+        selected_vecs = [embeddings[i] for i in selected_idx]
+        for i in range(len(candidates)):
+            if i in selected_idx:
+                continue
+            # 与已选集合的最大 cosine 相似度（向量已归一化，dot 即 cosine）
+            cur = embeddings[i]
+            max_sim = max(
+                sum(a * b for a, b in zip(cur, sv))
+                for sv in selected_vecs
+            )
+            score = lambda_ * norm_rel[i] - (1 - lambda_) * max_sim
+            if score > best_score:
+                best_score = score
+                best_idx = i
+        if best_idx is None:
+            break
+        selected_idx.append(best_idx)
+
+    return [candidates[i] for i in selected_idx]
+
+
+def rerank(state: RAGState, online_rerank, vector_store=None) -> dict:
+    """在线重排 + MMR 多样性选择。
+
+    用 SiliconFlow bge-reranker-v2-m3 API 对候选文档重新排序，
+    然后（MMR_ENABLED 时）从 topN 候选里贪心选 k 篇"相关且彼此不语义扎堆"的文档。
+    MMR 解决多点分散题 key_points 覆盖低的问题：同章节相邻段落语义重复，
+    rerank 只按相关度排序会把扎堆段落都排前面，挤掉其他关键点的文档。
 
     Args:
         state: 含 merged_docs（候选文档）和 rewritten_queries（用主查询做重排）
         online_rerank: 在线重排函数（依赖注入）
+        vector_store: 向量存储（依赖注入，用于 MMR 阶段对候选文本批量编码；
+                      None 或 MMR_ENABLED=False 时回退为纯 rerank topK）
 
     Returns:
-        {"reranked_docs": [重排后的 top 5 文档，metadata 含 relevance_score]}
+        {"reranked_docs": [选出的 top K 文档，metadata 含 relevance_score]}
     """
     docs = state["merged_docs"]
     if not docs:
         return {"reranked_docs": []}
     # 用改写后的主查询做重排（比原始问题更精确）
     query = state["rewritten_queries"][0]
-    # online_rerank 内部调用 SiliconFlow API，返回 [{"index": int, "relevance_score": float}, ...]
-    results = online_rerank(query, [doc.text for doc in docs], top_n=5)
+    # 拿 MMR_TOP_CANDIDATES 篇候选（MMR 阶段再从中选 MMR_TOP_SELECT 篇）
+    results = online_rerank(query, [doc.text for doc in docs], top_n=MMR_TOP_CANDIDATES)
     top_docs = []
     for r in results:
         doc = docs[r["index"]]
         doc.metadata["relevance_score"] = r["relevance_score"]  # 分数落 metadata，filter_node 用
         top_docs.append(doc)
-    return {"reranked_docs": top_docs}
+
+    # MMR 多样性选择：开关开启且候选数>MMR_TOP_SELECT 时执行；否则纯 rerank topK
+    if MMR_ENABLED and len(top_docs) > MMR_TOP_SELECT:
+        try:
+            embeddings = _mmr_embed([d.text for d in top_docs])
+            selected = _mmr_select(top_docs, embeddings)
+            logger.info(
+                f"[mmr] λ={MMR_LAMBDA} candidates={len(top_docs)} selected={len(selected)} "
+                f"ids={[d.id[:8] for d in selected]}"
+            )
+            return {"reranked_docs": selected}
+        except Exception as e:
+            logger.warning(f"[mmr] 多样性选择失败，回退纯 rerank top{MMR_TOP_SELECT}: {e}")
+
+    # 默认 / MMR 失败 / 开关关闭：纯 rerank topK
+    return {"reranked_docs": top_docs[:MMR_TOP_SELECT]}
 
 
 def filter_node(state: RAGState) -> dict:
