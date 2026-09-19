@@ -25,11 +25,28 @@ from graphs.utils.user_profile import _ensure_username_profile, _get_username
 MAX_RETRIEVAL_DOCS = 8
 # 单篇检索文档最大字符数：超出截断，防止超长文档撑爆单次请求 token
 MAX_DOC_CHARS = 2000
-# 单轮请求内工具执行轮次上限：超过后强制停止继续调用工具，避免
-# "随便调用一个工具" 等开放指令或模型行为异常导致的工具调用死循环。
+# 单轮请求内工具调用次数上限（per-turn，不是 per-session）：
+# 只统计「本次用户请求」内的工具调用，用户发新消息即重新计数。
 # 取 8 而非 4：正常复杂任务（多步查询/分析）可能需 5-7 次工具调用，
 # 上限只作兜底，真正的死循环由下方"连续重复调用检测"提前截停。
 MAX_TOOL_ROUNDS = 8
+
+
+def _turn_anchor(history: list) -> int:
+    """本轮起点：最后一条 HumanMessage 的索引 + 1；无 HumanMessage 返回 0。
+
+    ★ 计数器必须从这里切开，不能从整个 history 数。
+    checkpointer 恢复的 history 是**整个会话记录**（跨轮累积），
+    早先版本直接 sum(ToolMessage) 会误判为「会话累计用量」：
+    聊到第 5-6 轮时历史里已积满 8 条 ToolMessage，本轮一次工具还没调
+    就被 force_stop 拦下（用户可见症状：「本轮的工具调用次数已经用满，我没法再重试」）。
+    轮次上限的语义是「单轮最多调几次」，会话级累计不构成死循环风险——
+    用户每发一条新消息都是一次重试机会，不存在跨轮死循环。
+    """
+    for i in range(len(history) - 1, -1, -1):
+        if isinstance(history[i], HumanMessage):
+            return i + 1
+    return 0
 
 
 def llm_node(
@@ -169,16 +186,27 @@ def llm_node(
         f"white_list={'none(全量)' if allowed is None else f'{len(allowed)}个'}"
     )
 
-    # 工具调用死循环防护（两道防线）：
-    # (a) 轮次上限：历史中 ToolMessage 数量即已执行工具轮次，达到 MAX_TOOL_ROUNDS
-    #     后本轮不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）；
+    # 工具调用死循环防护（两道防线，均只统计**本轮**）：
+    # (a) 次数上限：本轮起点之后的工具执行次数（ToolMessage 或同轮内 tool_calls）
+    #     达到 MAX_TOOL_ROUNDS 后不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）；
     # (b) 连续重复调用检测：最近两次工具调用（name+args 完全相同）说明模型在同
-    #     一动作上空转（无新信息产生），立即判定死循环提前截停，不必等满 8 轮。
-    tool_rounds = sum(1 for m in history if isinstance(m, ToolMessage))
+    #     一动作上空转（无新信息产生），立即判定死循环提前截停，不必等满 8 次。
+    # 注意：起点之后的 ToolMessage 覆盖 tool_node 已执行的调用；起点之后 AI 的
+    # tool_calls 计入尚未执行的那批（两者不会重叠：本节点返回后 tool_node 才执行）。
+    # 两者取 max 而非相加，避免同一批调用被重复计数——一次误计就可能让第 8 次调用被拒。
+    turn_start = _turn_anchor(history)
+    turn_tools = [m for m in history[turn_start:] if isinstance(m, ToolMessage)]
+    pending_calls = sum(
+        len(m.tool_calls) for m in history[turn_start:]
+        if isinstance(m, AIMessage) and m.tool_calls
+    )
+    tool_rounds = max(len(turn_tools), pending_calls)
 
     def _is_repeating() -> bool:
+        # 只看本轮调用序列：连续两次同名同参调用才是死循环信号。
+        # 跨轮不算——用户完全可能在新一轮重复上一轮的同一请求（那就是重试）。
         calls = []
-        for m in history:
+        for m in history[turn_start:]:
             if isinstance(m, AIMessage) and m.tool_calls:
                 for tc in m.tool_calls:
                     calls.append((
@@ -194,7 +222,7 @@ def llm_node(
         # 两路均未命中（或已达工具轮次上限）：不 bind 空列表（OpenAI 兼容 API 会 400），
         # 改用裸模型并注入对应提示
         if force_stop:
-            logger.warning(f"工具调用轮次达上限（{tool_rounds}），本轮强制停止调用工具")
+            logger.warning(f"本轮工具调用次数达上限（{tool_rounds}/{MAX_TOOL_ROUNDS}），本轮强制停止调用工具")
             messages.append(SystemMessage(
                 content="注意：本轮请求中工具调用次数已达上限，请不要再调用任何工具，"
                         "直接基于你已有的上下文信息回答用户的问题。"

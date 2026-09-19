@@ -90,9 +90,13 @@ langchain-mcp-adapters>=0.2
 # 实际使用：
 #   numpy(3文件) — cache_service.py 相似度计算、lsh_util.py
 #   jieba(3文件) — BM25 中文分词（retrieve_graph.py, eval_retrieval.py）
+#   beautifulsoup4 — mitta_tools_server.py 的 web_search / fetch_url 解析 HTML
+#     （按需 import 在函数体内，缺包时启动不报错，调用才抛 ModuleNotFoundError
+#      → 线上表现为「组件缺少依赖模块 No module named 'bs4'」，曾致两个联网工具全废）
 # =========================================================
 numpy>=2.2,<2.5
 jieba==0.42.1
+beautifulsoup4>=4.14,<5
 
 
 # =========================================================

@@ -8,7 +8,8 @@ Mitta 工具结果兜底评测（E5）
   - ENOTDIR 专项：路径参数错误的错误提示是否给出纠正方向
   - 描述截断生效：format_tools_for_prompt 对超长 description 截断到 200 字符
   - 文档截断生效：llm_node 检索资料单篇截断到 MAX_DOC_CHARS、最多 MAX_RETRIEVAL_DOCS 篇
-  - 工具轮次上限防护：MAX_TOOL_ROUNDS=8 的硬性上限存在且生效逻辑可测
+  - 工具轮次上限防护：MAX_TOOL_ROUNDS=8 的硬性上限存在且生效逻辑可测，
+    且计数为**按轮**（新 HumanMessage 归零），非会话累计
 
 用法：
     conda activate langchain1.2
@@ -28,10 +29,13 @@ from loguru import logger
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import ToolException
 
 from graphs.main_graph import _tool_error_message
-from graphs.nodes.llm_node import MAX_RETRIEVAL_DOCS, MAX_DOC_CHARS, MAX_TOOL_ROUNDS
+from graphs.nodes.llm_node import (
+    MAX_RETRIEVAL_DOCS, MAX_DOC_CHARS, MAX_TOOL_ROUNDS, _turn_anchor,
+)
 from utils.tools_util import format_tools_for_prompt
 from graphs.tool_filter import ToolFilter
 
@@ -76,7 +80,8 @@ def build_cases() -> List[Dict]:
     cases.append({
         "name": "检索文档截断常量",
         "fn": lambda: (MAX_DOC_CHARS, MAX_RETRIEVAL_DOCS),
-        "assert": lambda v: v[0] == 2000 and v[1] == 5,
+        # 2026-09-19 随 MAX_RETRIEVAL_DOCS 5→8 同步（H-20260919-07 P1 放宽，与 rerank/filter 对齐）
+        "assert": lambda v: v[0] == 2000 and v[1] == 8,
         "dimension": "doc_truncation",
     })
     # 6. 工具轮次上限常量
@@ -84,6 +89,63 @@ def build_cases() -> List[Dict]:
         "name": "工具轮次上限常量",
         "fn": lambda: MAX_TOOL_ROUNDS,
         "assert": lambda v: v == 8,
+        "dimension": "loop_protection",
+    })
+
+    # 7-10. 轮次上限的「按轮」语义：计数必须从最后一条 HumanMessage 之后开始，
+    # 不能统计整个会话记录。回归 bug：旧实现 sum(全会话 ToolMessage)，
+    # 会话聊到第 5-6 轮时历史已积满 8 条 ToolMessage，本轮一次工具都没调就被拦。
+    def _turn_count(history):
+        """复刻 llm_node 的 per-turn 计数：max(本轮 ToolMessage, 本轮 tool_calls)。"""
+        start = _turn_anchor(history)
+        executed = sum(1 for m in history[start:] if isinstance(m, ToolMessage))
+        pending = sum(
+            len(m.tool_calls) for m in history[start:]
+            if isinstance(m, AIMessage) and m.tool_calls
+        )
+        return max(executed, pending)
+
+    def _multi_turn_history(turns: int, calls_per_turn: int):
+        h = []
+        for t in range(turns):
+            h.append(HumanMessage(content=f"q{t}"))
+            for k in range(calls_per_turn):
+                i = t * calls_per_turn + k
+                h.append(AIMessage(content="", tool_calls=[
+                    {"name": "fetch_url", "args": {"url": f"u{i}"}, "id": f"c{i}"},
+                ]))
+                h.append(ToolMessage(content="ok", tool_call_id=f"c{i}"))
+        return h
+
+    # 7. 跨多轮、每轮 2 次工具调用 → 新开一轮时本轮计数归零
+    _hist = _multi_turn_history(6, 2) + [HumanMessage(content="q6")]
+    cases.append({
+        "name": "新轮起点计数归零（6 轮各调 2 次后，新轮仍可调工具）",
+        "fn": lambda: _turn_count(_hist),
+        "assert": lambda v: v == 0,
+        "dimension": "loop_protection",
+    })
+    # 8. 同一轮内（工具循环中间态，无新 HumanMessage）累计到 8 次才封顶
+    _hist2 = _multi_turn_history(1, MAX_TOOL_ROUNDS)
+    cases.append({
+        "name": f"轮内累计达上限（同轮 {MAX_TOOL_ROUNDS} 次调用 -> {MAX_TOOL_ROUNDS}）",
+        "fn": lambda: _turn_count(_hist2),
+        "assert": lambda v: v == MAX_TOOL_ROUNDS,
+        "dimension": "loop_protection",
+    })
+    # 9. 两代口径的差异锁死：**会话累计**（旧口径）与**本轮**（新口径）必须分道扬镳。
+    #     同一份「6 轮×2 调用 + 收尾新轮」历史，旧口径已积 12 次、早该被拦；
+    #     新口径必须读到 0（本轮还没动手）。将来谁把计数改回全会话累计，本用例立刻变红。
+    #     注：末条 HumanMessage 是列表最后一个元素，故 anchor == len（切片为空）。
+    _hist3 = _multi_turn_history(6, 2) + [HumanMessage(content="q6")]
+    cases.append({
+        "name": "按轮计数 vs 会话累计（防回退）",
+        "fn": lambda: (
+            _turn_count(_hist3),                                   # 新：本轮
+            sum(1 for m in _hist3 if isinstance(m, ToolMessage)),  # 旧：全会话
+            _turn_anchor(_hist3) == len(_hist3),                   # 本轮起点 = 末尾（切片为空）
+        ),
+        "assert": lambda v: v[0] == 0 and v[1] >= MAX_TOOL_ROUNDS and v[2] is True,
         "dimension": "loop_protection",
     })
     return cases

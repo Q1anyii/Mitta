@@ -1,7 +1,7 @@
 {
   "ragas_test": "tool_truncation",
-  "total": 6,
-  "passed": 6,
+  "total": 9,
+  "passed": 9,
   "pass_rate": 1.0,
   "dimension_stats": {
     "exception_to_message": {
@@ -20,8 +20,8 @@
       "pass_rate": 1.0
     },
     "loop_protection": {
-      "total": 1,
-      "pass": 1,
+      "total": 4,
+      "pass": 4,
       "pass_rate": 1.0
     }
   },
@@ -54,13 +54,31 @@
       "case": "检索文档截断常量",
       "dimension": "doc_truncation",
       "passed": true,
-      "value_preview": "(2000, 5)"
+      "value_preview": "(2000, 8)"
     },
     {
       "case": "工具轮次上限常量",
       "dimension": "loop_protection",
       "passed": true,
       "value_preview": "8"
+    },
+    {
+      "case": "新轮起点计数归零（6 轮各调 2 次后，新轮仍可调工具）",
+      "dimension": "loop_protection",
+      "passed": true,
+      "value_preview": "0"
+    },
+    {
+      "case": "轮内累计达上限（同轮 8 次调用 -> 8）",
+      "dimension": "loop_protection",
+      "passed": true,
+      "value_preview": "8"
+    },
+    {
+      "case": "按轮计数 vs 会话累计（防回退）",
+      "dimension": "loop_protection",
+      "passed": true,
+      "value_preview": "(0, 12, True)"
     }
   ]
 }
