@@ -7,6 +7,21 @@
 *.env
 # 注意：.env.example 是模板文件，必须提交（不匹配 *.env，因为不以 .env 结尾）
 
+# ---- SSH 凭据与 known_hosts（严禁提交）----
+.ssh/
+known_hosts
+*known_hosts*
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+id_ecdsa
+id_ecdsa.*
+*.pem
+*.p12
+*.pfx
+*.ppk
+
 # ---- Python 缓存 ----
 __pycache__/
 *.py[cod]
@@ -99,6 +114,9 @@ src/ragas_eval/
 # 本地路径残留（容器内会解析错误，禁止提交）
 resources/config/.mcp_config_path
 resources/config/.vector_config_path
+# 路径被压平成单个文件名的产物
+# 例：C:\Users\Qianyi\.ssh\known_hosts 曾被提交成 CUsersQianyi.sshknown_hosts
+*UsersQianyi*
 
 
 # ---- Mitta 本地运行时数据（测试生成，不入库）----
