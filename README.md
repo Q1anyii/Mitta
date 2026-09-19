@@ -10,8 +10,8 @@
 
 ## 功能特性
 
-- **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟；**闲聊/自我介绍快速短路**（9/19 H-09）：正则命中直接判不需要检索、跳过 LLM 分类调用，进一步压低首 token 延迟
-- **多人格路由层（2026-09-19 v1）**：4 个对话人格（帽子 cappie 默认 / 善良 kind / 疯狂 crazy / 短发 manager）由每轮 `persona_router_node` 分发——前端手选短路（0 次 LLM）或未手选自动四分类（1 次小模型调用）；人格 prompt 无条件叠加进 System Prompt（语气层，不推翻事实层）；**按人格配置工具白名单**（善良 23 个纯只读 / 短发加 git 只读 4 个 / 疯狂零工具走裸模型分支）；配 chibi 袖珍分身概率性后置吐槽（30%，SSE 独立事件不进主消息流）；自建 16 条人格路由评测分流准确率 100%（乐观基线，边界用例未覆盖）；**H-09 修复手选路由失效 bug**（`Send` 不继承父 state、payload 漏带 persona 致手选全部兜底 cappie，补 `"persona"` 后手选真正生效）
+- **意图路由**：LLM 路由节点判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟；**闲聊/自我介绍快速短路**（9/19 H-09）：正则命中直接判不需要检索、跳过 LLM 调用，进一步压低首 token 延迟
+- **多人格路由层（2026-09-19 v1，H-11 已合并路由）**：4 个对话人格（帽子 cappie 默认 / 善良 kind / 疯狂 crazy / 短发 manager）由每轮 `router_node` 分发——**一次 LLM 同时输出 persona + need_retrieval**（H-11 `a42e5e3` 由原 `persona_router_node` + `classify_node` 两次串行调用合并，首 token 前路由调用最多 2 次→1 次、闲聊 0 次）；前端手选时 persona 直接用用户值（同一次调用只判 need_retrieval）；人格 prompt 无条件叠加进 System Prompt（语气层，不推翻事实层）；**按人格配置工具白名单**（善良 23 个纯只读 / 短发加 git 只读 4 个 / 疯狂零工具走裸模型分支）；配 chibi 袖珍分身概率性后置吐槽（30%，SSE 独立事件不进主消息流）；自建 16 条人格路由评测分流准确率 100%（合并后重跑仍 16/16；合并首跑曾 93.8%，补齐 crazy「打破第四面墙」判据后恢复）；**H-09 修复手选路由失效 bug**（`Send` 不继承父 state、payload 漏带 persona 致手选全部兜底 cappie，补 `"persona"` 后手选真正生效）；**H-11 修复疯狂人格元层自曝**（原 prompt 含「你伪装成/可打破第四面墙/你知道自己是谁」被模型当回答输出，改为第一人称身份断言 + 显式禁语）
 - **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回 + BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
 - **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具，并自研本地 **mitta-tools**（git 操作/网络搜索/文件检索，12 个工具）；工具常驻事件循环，支持故障降级；**分组 + 分级启动**（方案B）：第一方 6 台常驻、第三方 context7/dbhub 懒加载（`McpLazyLoader` 闪连预热 schema → 命中触发真实连接 → `DynamicToolNode` 动态路由），节省 150-300MB 内存
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
@@ -73,8 +73,7 @@
 
 | 节点                | 职责                | 关键实现                                                                                                                |
 | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **persona_router_node** | 每轮人格分发（2026-09-19） | 手选短路（`configurable.persona_override` 合法值，0 次 LLM）/ 自动四分类（`PERSONA_ROUTER_PROMPT` 小模型），非法/失败兜底 cappie；状态 `OverAllState.persona` |
-| **classify_node** | LLM 判断问题是否需要知识库检索 | `model.invoke([CLASSIFIER_PROMPT, user_input])` 返回 yes/no；**闲聊/自我介绍快速短路**（`_QUICK_NO_PATTERNS` 正则 + `_quick_no_retrieval`，命中直接 needs_retrieval=False、跳过 LLM 分类，25 边界用例） |
+| **router_node** | 统一路由（2026-09-19 H-11 合并） | 一次 LLM 调用输出 `{persona, need_retrieval}`（`ROUTER_PROMPT`）；闲聊/自我介绍强模式短路 0 次 LLM；前端手选 `configurable.persona_override` 时 persona 直接采用、同调用只判 need_retrieval；解析失败兜底 persona=默认/手选、need_retrieval 保守 True；**替代原 `persona_router_node` + `classify_node` 两步链路**（两文件保留未删、不再引用） |
 | **retrieve_node** | 调用 RAG 子图检索知识库    | `retrieve_graph.invoke()`，Document 转 dict 存入 state（checkpoint 反序列化兼容）                                               |
 | **llm_node**      | 核心生成节点            | 组装 System Prompt（默认+用户自定义+长期记忆+**人格 prompt**）→ ToolFilter 筛选工具 → **按人格白名单收缩** → `model.bind_tools()` → `model.stream()` → 合并 chunk 提取 tool_calls |
 | **tool_node**     | 执行 MCP 工具         | LangGraph `ToolNode`，按工具名路由；CachePolicy 缓存同参数结果                                                                     |
@@ -82,10 +81,12 @@
 
 ### 条件路由
 
-- **START → persona_router_node**：人格分发（手选短路 / 自动四分类），随后进入 classify_node
-- **classify_node → route**：`needs_retrieval=True` 走检索链路，否则直接到 llm_node；快速短路命中时 classify 不做 LLM 调用直接 false
+- **START → router_node**：统一路由（一次 LLM 出 persona + need_retrieval；闲聊/手选走短路），随后走条件边
+- **router_node → route**：`needs_retrieval=True` 走检索链路，否则直接到 llm_node；快速短路命中时路由不做 LLM 调用直接 false
 - **llm_node → route_after_llm**：`tool_calls` 非空走 tool_node，否则走 memory_node
 - **tool_node → llm_node**：工具执行结果回到 LLM 生成最终回答（可多轮循环）
+
+> **H-11 路由合并（9/19 `a42e5e3`）**：原 `START → persona_router_node → classify_node → route` 两步串行链路合并为 `START → router_node → route`，首 token 前路由 LLM 调用从最多 2 次降到 1 次；`classify_node.py` / `persona_router_node.py` 文件保留未删（不再被 `main_graph` 引用）。`docs/architecture-flowcharts.md` 的 mermaid 图仍是旧两节点版，待同步。
 
 ---
 
@@ -173,7 +174,7 @@ AgentProject/
 │   ├── context/
 │   │   └── user_context.py               # CtxUser 请求级用户上下文
 │   ├── graphs/                           # LangGraph 图定义
-│   │   ├── main_graph.py                 # 主对话图：persona_router→classify→retrieve/llm→tool→memory
+│   │   ├── main_graph.py                 # 主对话图：router→retrieve/llm→tool→memory
 │   │   ├── retrieve_graph.py             # RAG 子图：cache→rewrite→retrieve→rerank
 │   │   ├── tool_filter.py                # 工具筛选：规则层 + 语义层
 │   │   └── nodes/
@@ -196,7 +197,7 @@ AgentProject/
 │   │   ├── eval_semantic_cache.py        # 语义缓存命中质量评测（E6：同义命中/误命中）
 │   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（E7：单路 vs 混合，key_points 口径 + --diagnose）
 │   │   ├── eval_ragas_judge.py             # 生成质量 LLM-judge 五指标（H-07 P3，生产链路，21 条集实测）
-│   │   ├── persona_router_eval.py          # 人格路由四分类评测（E15：16/16 乐观基线）
+│   │   ├── persona_router_eval.py          # 人格路由四分类评测（E15：16/16 乐观基线；已随 H-11 路由合并改为复用 ROUTER_PROMPT）
 │   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估（E9）
 │   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测（E10）
 │   │   ├── eval_jwt.py                   # JWT 登录态校验耗时/token 自动续签成功率（E11）
@@ -365,7 +366,7 @@ docker-compose up -d etcd minio milvus
 | 服务器                 | 启动方式                                                   | 作用                                              |
 | ------------------- | ------------------------------------------------------ | ----------------------------------------------- |
 | filesystem          | `npx @modelcontextprotocol/server-filesystem`          | 文件系统读写：列目录、读/写/搜索文件、创建文件夹，访问范围限定项目目录            |
-| mittatools          | `python src/mcp_client/mcp_server/mitta_tools_server.py` | 本地实用工具集：Bing 搜索（无 key）/网页抓取/git 系列/文件搜索与安全读取/项目结构 |
+| mittatools          | `python src/mcp_client/mcp_server/mitta_tools_server.py`（cwd=`/app`） | 本地实用工具集：Bing 搜索（无 key）/网页抓取/git 系列/文件搜索与安全读取/项目结构 |
 | sqlite              | `uvx mcp-server-sqlite`                                | SQLite 操作：执行 SQL 查询/写入，数据存于项目内 `local_data.db`  |
 | sequential-thinking | `npx @modelcontextprotocol/server-sequential-thinking` | 分步推理：强制模型逐步思考（拆解问题、验证假设），适合排错与复杂分析              |
 | memory              | `npx @modelcontextprotocol/server-memory`              | 知识图谱记忆：以实体/关系形式长期存储用户信息，跨会话记住用户偏好               |
@@ -374,6 +375,8 @@ docker-compose up -d etcd minio milvus
 | dbhub               | `npx @bytebase/dbhub --demo`                           | 数据库交互（当前 demo 模式）：连接 MySQL/Postgres 执行 SQL、查表结构 |
 
 能力分工：**filesystem / mittatools / context7** 负责获取内容（网页抓取由 mittatools 的 `fetch_url` 承接，原 `fetch` 因仅兼容 OpenAI MCP 客户端已移除），**sqlite / dbhub** 负责存储与查询，**memory / sequential-thinking** 负责记忆与推理，**time** 提供基础工具。删除某项只需从 `mcp_servers.json` 移除对应条目，无需改动代码。Dockerfile 额外内置 `@modelcontextprotocol/server-github` 等 npm 包，供用户级 MCP 配置按需启用。
+
+> **配置排查提示（9/19 H-11）**：`mittatools` 的 `cwd` 必须是镜像代码根 `/app`。此前指向 `/app/user_files/user_01/AgentProject`（容器内被自动建出的空目录），触发 `mcp_client/client.py` 的脚本预检失败 → 该 server 被**静默跳过**、12 个工具线上全部缺失，而服务与健康检查一切正常。`npx`/`uvx` 类服务器 `args[0]` 是包名、不走脚本预检，不受影响。改完配置请实际验证工具数，不要只看服务启动成功。
 
 ### 6. 知识库入库（可选）
 
@@ -591,7 +594,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 |
 | E13 | 在线实测 | `eval_online.py` | health ✓ / 登录 ✓ / SSE 首 token 1348ms 零污染 / 登出失效 401 ✓ / 限流第 30、31 次 429 ✓ |
 | E14 | CI 回归 | `tests/test_agent_regression.py` | 路由/安全/兜底/缓存 key 纯函数断言（pytest，入 CI） |
-| E15 | 人格路由 | `persona_router_eval.py` | 四分类分流准确率 16/16=100%（典型样本，乐观基线）；token 用量记录 |
+| E15 | 人格路由 | `persona_router_eval.py` | 四分类分流准确率 16/16=100%（典型样本，乐观基线；H-11 路由合并后重跑仍 16/16，合并首跑曾 93.8%）；token 用量记录 |
 
 测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 **45 条**刁钻 QA（基础概念 10 + 代码调试 10 + 架构设计 10 + 刁钻 Badcase 15），覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
 
