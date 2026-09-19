@@ -1253,7 +1253,7 @@
                             </div>
                         </header>
 
-                        <div class="messages-container" ref="messagesContainer" @scroll="_onMessagesScroll">
+                        <div class="messages-container" ref="messagesContainer" @scroll="onMessagesScroll">
                             <div class="messages-wrapper">
                                 <!-- 欢迎空态 -->
                                 <div v-if="messages.length === 0" class="welcome-state">
@@ -2414,7 +2414,7 @@
 
                 // 跳底悬浮按钮：滚动容器距底 > 200px 时显示，点击平滑滚到底
                 const showScrollToBottom = ref(false);
-                function _onMessagesScroll() {
+                function onMessagesScroll() {
                     const el = messagesContainer.value;
                     if (!el) return;
                     showScrollToBottom.value = (el.scrollHeight - el.scrollTop - el.clientHeight) > 200;
@@ -3261,7 +3261,7 @@
                     // 人格 tab + chibi 气泡
                     PERSONA_OPTIONS, personaMode, personaMenuOpen, personaLabel, personaHint,
                     setPersonaMode, chibiBubbles, dismissChibi,
-                    showScrollToBottom, _onMessagesScroll, jumpToBottom,
+                    showScrollToBottom, onMessagesScroll, jumpToBottom,
                     toggleThinkingMode, setEffort, toggleEffortPanel,
                     // 消息操作
                     copyMessage, shareMessage, regenerateMessage,
