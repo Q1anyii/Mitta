@@ -1,21 +1,21 @@
 [
   {
-    "test": "write_latency",
+    "ragas_test": "write_latency",
     "count": 5,
-    "avg_ms": 46.202679999987595,
-    "p95_ms": 46.40490000019781,
-    "max_ms": 48.40509999939968,
-    "min_ms": 45.16030000013416,
+    "avg_ms": 7.1165599998494145,
+    "p95_ms": 4.563400001643458,
+    "max_ms": 19.27810000051977,
+    "min_ms": 3.4634999974514358,
     "avg_size_bytes": 85.8
   },
   {
-    "test": "read_latency",
+    "ragas_test": "read_latency",
     "count": 20,
-    "avg_ms": 25.125339999931384,
-    "p95_ms": 45.49049999968702
+    "avg_ms": 2.5934250006685033,
+    "p95_ms": 2.486299999873154
   },
   {
-    "test": "duplicate_write_reduction",
+    "ragas_test": "duplicate_write_reduction",
     "first_round": {
       "writes": 3,
       "skips": 0
@@ -33,7 +33,7 @@
     "reduction_rate": 0.5
   },
   {
-    "test": "conversation_profile",
+    "ragas_test": "conversation_profile",
     "rounds": 10,
     "final_entry_count": 10,
     "entry_growth": [
@@ -48,8 +48,8 @@
       9,
       10
     ],
-    "avg_write_ms": 45.746259999941685,
-    "avg_read_ms": 27.109109999946668,
-    "total_write_time_ms": 457.46259999941685
+    "avg_write_ms": 3.4895100005087443,
+    "avg_read_ms": 1.3860899991414044,
+    "total_write_time_ms": 34.89510000508744
   }
 ]

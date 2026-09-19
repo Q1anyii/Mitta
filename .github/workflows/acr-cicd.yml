@@ -32,22 +32,45 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # 需要 HEAD~1 来对比本次是否改了 Dockerfile
+          # 必须为 0（全量历史）：构建判定要用「上一次成功构建镜像的提交」到 HEAD 的区间，
+          # 而不是 HEAD~1 → HEAD 单次提交。见下方说明。
+          fetch-depth: 0
 
       # ========== 阶段 1.5：判断是否需要重建镜像 ==========
+      # ⚠️ 判据是「自上次构建镜像以来」而不是「本次 push 的最后一个提交」。
+      #    历史事故（2026-09-09）：连续 6 个提交一次性推送，git diff HEAD~1 HEAD 只看到
+      #    最后一个提交（未含 Dockerfile/requirements）→ build_required=false 跳过构建
+      #    → 服务器拉到旧镜像，新配置静默缺失。
+      #    同类事故复发（2026-09-19）：requirements.txt 补 beautifulsoup4（a4e1bd4）后
+      #    紧跟一个纯文档提交（71b638a），HEAD~1→HEAD 只看到 docs/** → 再次跳过构建，
+      #    重启容器也拿不到新依赖，线上继续报 No module named 'bs4'。
+      #    因此在从 HEAD 往前回溯，只要遇到任一构建敏感文件即判定需要重建，
+      #    并把上次构建点写入 state 缓存，避免每次全量回溯。
       - name: Check if image build is required
         id: check
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD || true)
+          BUILD_PATTERN='^(Dockerfile|requirements\.txt|\.github/workflows/|src/)'
+          # 上次成功构建镜像的提交；首次或缓存失效时回退到一个足够早的起点
+          LAST_BUILD="${{ vars.LAST_IMAGE_BUILD_SHA }}"
+          if [ -z "$LAST_BUILD" ]; then
+            # 没有记录时保守取最近 50 个提交，任一命中即重建
+            RANGE="HEAD~50..HEAD"
+          else
+            RANGE="${LAST_BUILD}..HEAD"
+          fi
+          CHANGED=$(git diff --name-only $RANGE || git diff --name-only HEAD~1 HEAD || true)
+          echo "comparison range: $RANGE"
           echo "changed files:"
           echo "$CHANGED"
-          if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements.txt|\.github/workflows/|src/)'; then
+          if echo "$CHANGED" | grep -qE "$BUILD_PATTERN"; then
             echo "build_required=true" >> $GITHUB_OUTPUT
-            echo "→ 需要重建镜像（Dockerfile/依赖/workflow/src 代码有变更）"
+            echo "→ 需要重建镜像（区间内 Dockerfile/依赖/workflow/src 有变更）"
           else
             echo "build_required=false" >> $GITHUB_OUTPUT
             echo "→ 跳过构建，复用 latest 镜像"
           fi
+          # 供后续步骤读取，用于构建成功后更新 LAST_IMAGE_BUILD_SHA
+          echo "head_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       # ========== 阶段 1.6：判断是否需要 RAG 入库（蓝绿切换，H-20260919-08） ==========
       # 命中入库相关文件 → ingest_required=true，CI 执行蓝绿入库；
@@ -96,6 +119,17 @@ jobs:
             ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=min
+
+      # 构建成功后记录本次提交，作为下次「是否需要重建」的比较起点。
+      # 用 Repository Variable 保存（需 actions: write 权限，已在上方声明）；
+      # 未配置时判据自动回退到「最近 50 个提交」，保守但不会漏构建。
+      - name: Record last image build sha
+        if: steps.check.outputs.build_required == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh variable set LAST_IMAGE_BUILD_SHA --body "${{ steps.check.outputs.head_sha }}" || \
+            echo "WARN: 未能写入 LAST_IMAGE_BUILD_SHA（缺权限或仓库未启用 Variables），下次将回退到最近 50 提交判据"
 
       # ========== 阶段 3：rsync 增量同步前端文件 + 配置（绕过 git pull） ==========
       # 相比 scp-action 每次全量 tar 上传：rsync -c 按内容校验只传变化块，

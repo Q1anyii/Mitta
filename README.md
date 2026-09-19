@@ -598,7 +598,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 | 编号 | 维度 | 脚本 | 关键指标 |
 | --- | --- | --- | --- |
-| E1 | 动态路由 | `eval_routing.py` | 意图分类准确率 100%（17/17）、检索召回 100%、误报 0% |
+| E1 | 动态路由 | `eval_routing.py` | **单次采样值，勿引用绝对值**：2026-09-18 首跑 17/17（准确率 100%、召回 100%、误报 0%）；2026-09-19 复跑 **16/17（94.12%）**，唯一失败项「为什么 RAG 检索后还需要重排序（Rerank）?」被判无需检索。`CLASSIFIER_PROMPT` 两次之间未改、变量不唯一（H-07 改了 RAG 链路 + 单次 LLM 采样波动），**不构成回退结论**；需 `temperature=0` 重复 3 次取众数定论 |
 | E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k（22 条用例，avg_recall=0.8939 / zero_hit=0，已实测） |
 | E3 | 工具装配 | `eval_tool_assembly.py` | 并集召回/降级/熔断 6/6 通过 |
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
