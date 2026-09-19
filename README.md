@@ -106,8 +106,8 @@
 | **dense_query** | 稠密向量多路召回     | 原始 query + 改写 query 独立检索向量库，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                                   |
 | **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
 | **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
-| **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=5，分数写入 `doc.metadata["relevance_score"]` |
-| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.25` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                          |
+| **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=20 候选，分数写入 `doc.metadata["relevance_score"]` |
+| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.15` 的噪声文档（2026-09-19 H-07 由 0.25 放宽）；MMR 多样选篇（`MMR_ENABLED`，fair 评测证伪已关闭）可选；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空） |
 | **store_cache** | 写入 Redis     | 缓存键 `retrieve_cache:{thread_id}:{bucket_id}`，动态 TTL，命中自动续期                                                 |
 
 ### 关键参数
@@ -117,10 +117,12 @@
 | 稠密召回 n_results | 20                                    | `graphs/retrieve_graph.py` dense_query |
 | BM25 召回 top_k  | 20                                    | `graphs/retrieve_graph.py` bm25_search |
 | RRF_K          | 60                                    | `constant/retrieval_constants.py`      |
-| 重排 top_n       | 5                                     | `graphs/retrieve_graph.py` rerank      |
-| 过滤阈值           | 0.25（relevance_score ≥ 0.25，空则兜底 top 3；2026-09-18 由 0.3 放宽） | `graphs/nodes/retrieve/fusion_nodes.py` filter_node |
+| 重排候选 top_n    | 20                                    | `constant/retrieval_constants.py` `MMR_TOP_CANDIDATES` |
+| MMR 开关/λ/选篇数 | `MMR_ENABLED=False`（证伪后关闭）/ λ=0.5 / 选 8 | `constant/retrieval_constants.py` |
+| 过滤阈值           | 0.15（relevance_score ≥ 0.15，最多取 8 篇，空则兜底 top 3；2026-09-19 H-07 由 0.25 放宽，常量 `RERANK_FILTER_THRESHOLD`） | `constant/retrieval_constants.py` + `graphs/nodes/retrieve/fusion_nodes.py` filter_node |
 | 缓存 TTL         | 动态（默认 900s，命中续期）                      | `constant/cache_constant.py`           |
 | Embedding 模型   | BAAI/bge-m3（1024 维）                   | `constant/embedding_constants.py`      |
+| 切分 chunk      | 800 / overlap 100（2026-09-19 H-07 由 300/50 重切，chunks 405→270） | `constant/embedding_constants.py` |
 | 重排模型           | BAAI/bge-reranker-v2-m3               | `init.py`                              |
 | BM25 索引名       | kb_bm25                               | `constant/cache_constant.py`           |
 
@@ -132,7 +134,8 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
 - **BM25**：擅长精确关键词匹配（"可变默认参数""bcrypt""WebSocket" 直接命中）
 - **RRF 融合**：只看排名不看绝对分数，统一两路量纲差异
 - **rerank 精排**：交叉编码器对 query-doc 对做注意力计算，最终排序依据
-- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.25 以下视为噪声丢弃（由 0.3 放宽，提升中等相关文档召回）；过滤后为空时兜底返回原始 top 3
+- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.15 以下视为噪声丢弃（2026-09-19 H-07 由 0.25 放宽：0.3→0.25→0.15 两次放宽，提升边缘相关文档召回、改善多点分散题覆盖）；过滤后为空时兜底返回原始 top 3，最多取 8 篇
+- **MMR 多样性重排**：rerank top20 后可插 MMR 贪心选篇（`score = λ×rerank - (1-λ)×max_cos_sim`，λ=0.5），但 fair 口径评测证明 MMR on/off 无增益（key_points 均 0.4524）且拖慢 ~1.4s，`MMR_ENABLED=False` 关闭，保留节点便于一键恢复
 
 ### 工具筛选机制
 
@@ -192,6 +195,7 @@ AgentProject/
 │   │   ├── eval_tool_truncation.py       # 工具结果截断与异常兜底评测（E5）
 │   │   ├── eval_semantic_cache.py        # 语义缓存命中质量评测（E6：同义命中/误命中）
 │   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（E7：单路 vs 混合，key_points 口径 + --diagnose）
+│   │   ├── eval_ragas_judge.py             # 生成质量 LLM-judge 五指标（H-07 P3，生产链路，21 条集实测）
 │   │   ├── persona_router_eval.py          # 人格路由四分类评测（E15：16/16 乐观基线）
 │   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估（E9）
 │   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测（E10）
@@ -575,8 +579,8 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
 | E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限 6/6 通过 |
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中 100%、无关 query 误命中 0% |
-| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 最新口径）**：基础概念 10 条试点 单路 0.7583 / 混合 0.7833；项目专属集 21 条 单路 0.5690 / 混合 0.5357（旧 boolean 0.3111/0.2667 与 coverage 0.7732 均为历史口径） |
-| E8 | RAGAS 五指标 | `ragas_eval.py` | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**） |
+| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**：21 条项目专属集 单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**（`h07_p0p1_report.json`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667、coverage 0.7732 均为历史口径） |
+| E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3，生产链路 judge） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**）；21 条集实测 0.6381/0.8005/0.959/0.9881/0.7976 |
 | E9 | 记忆 | `eval_memory.py` | 写入 P95 ≈ 46ms（历史产物） |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存 deque |
 | E11 | 认证 | `eval_jwt.py` | 续签成功率、校验耗时 |
@@ -587,7 +591,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 **45 条**刁钻 QA（基础概念 10 + 代码调试 10 + 架构设计 10 + 刁钻 Badcase 15），覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
 
-**B 项目专属评测集（双轨制，2026-09-19）**：`resources/knowledge-base/test-qa/eval_project_dataset.json` 含 **21 条**，以真实入库内容 `01~10.md` 为唯一出题源（query/ground_truth/key_points 3~5 点/category），88 个 key_points 逐一在生产 405 chunks grep 反作弊验证存在原句；`eval_retrieval.py` 支持 `--dataset`/`--output` 参数分别评估。
+**B 项目专属评测集（双轨制，2026-09-19）**：`resources/knowledge-base/test-qa/eval_project_dataset.json` 含 **21 条**，以真实入库内容 `01~10.md` 为唯一出题源（query/ground_truth/key_points 3~5 点/category），88 个 key_points 逐一在生产 chunks grep 反作弊验证存在原句（重切后 270 chunks，原 405 为旧 300 切分）；`eval_retrieval.py` 支持 `--dataset`/`--output` 参数分别评估。**H-07 优化后重跑**：key_points 单路 0.7476 / 混合 0.7119、boolean avg 单/混均 0.8095（`h07_p0p1_report.json`），生成质量由 `eval_ragas_judge.py` 给出五指标（faithfulness 0.959 / answer_relevancy 0.988 / answer_correctness 0.7976 / context_recall 0.8005 / context_precision 0.6381，`ragas_judge_report.json`）。
 
 所有评估脚本输出 JSON 报告到 `src/ragas_test/`（`*_eval_report.json`），可用于版本间性能对比；E1/E6/E13 为 2026-09-18 实测，其余标注历史产物。
 

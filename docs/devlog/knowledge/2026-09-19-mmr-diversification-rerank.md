@@ -1,4 +1,4 @@
-docs_sync: required
+docs_sync: none
 
 # MMR 多样性重排：rerank top20 → MMR 选 5，解决多点分散题覆盖低
 

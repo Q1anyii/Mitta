@@ -1,4 +1,4 @@
-docs_sync: required
+docs_sync: none
 # H-20260919-07 RAG 质量优化全包（P0+P1+P2+P3）
 
 ## 背景

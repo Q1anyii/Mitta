@@ -14,8 +14,8 @@
 | E4 | MCP 安全校验 | `eval_tool_safety.py` | 命令白名单拦截率、包名校验拦截率、敏感 env 拦截率、内网 url 拦截率 | 命令白名单、包名校验、敏感变量拦截 | 纯函数离线 |
 | E5 | 工具结果兜底 | `eval_tool_truncation.py` | 异常→ToolMessage 转换率、描述截断生效、文档截断生效 | 工具返回结果长度截断与异常兜底 | 纯函数离线 |
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中率、误命中率、embedding 调用降低、延迟对比 | LSH+KNN+reranker 两级判定、embedding 减少 67%、573→350ms | 离线白盒（真实 Redis） |
-| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 最新）**、P95 延迟、单路 vs 混合、`--diagnose` | 基础概念 10 条试点：单路 0.7583 / 混合 0.7833；项目专属集 21 条：单路 0.5690 / 混合 0.5357（boolean 0.3111/0.2667 与 coverage 0.77 均为历史口径） | 离线白盒 |
-| E8 | RAGAS 五指标 | `ragas_eval.py` | context_precision/recall、faithfulness、answer_relevancy、answer_correctness | RAG 检索增强五大指标 | 离线（LLM 评分，**不入 CI**） |
+| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**、P95 延迟、单路 vs 混合、`--diagnose` | 21 条项目专属集：单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**（H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667 与 coverage 0.77 均为历史口径） | 离线白盒 |
+| E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness | RAG 检索增强五大指标；21 条集 LLM-judge 实测 0.6381/0.8005/0.959/0.9881/0.7976 | 离线（LLM 评分，**不入 CI**） |
 | E9 | 记忆 | `eval_memory.py` | 写入 P95、重复写入减少 | 长期记忆写入 P95 ≈ 46ms | 离线白盒 |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存、路径过滤 | 30 次/60s、Redis 异常降级内存 deque | 离线白盒 |
 | E11 | 认证 | `eval_jwt.py` | 续签成功率、校验耗时、并发 | JWT 双 Token 无感续签 100% | 离线白盒 |
@@ -26,7 +26,7 @@
 
 ## 指标与项目描述的对应关系
 
-- 混合检索 recall（**key_points 事实点口径**：试点 单路 0.7583 / 混合 0.7833；项目集 单路 0.5690 / 混合 0.5357）→ E7 `eval_retrieval.py`；旧 boolean（0.3111/0.2667）与 coverage（0.77）均为历史口径，不得混用
+- 混合检索 recall（**key_points 事实点口径，H-07 后**：21 条项目集 单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**）→ E7 `eval_retrieval.py`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean（0.3111/0.2667）与 coverage（0.77）均为历史口径，不得混用
 - 多人格路由（手选短路/自动四分类、人格 prompt 注入、按人格工具白名单）→ E15 `persona_router_eval.py`
 - 第三方 MCP 免改代码接入（JSON 配置注册）→ E4 `eval_tool_safety.py`（配置校验）+ E2/E3（装配）
 - 命令白名单、包名校验、敏感变量拦截 → E4
@@ -45,7 +45,7 @@
 3. 在线实测脚本需要服务器在线（默认 `https://www.mittaai.xyz`）。
 4. **RAGAS 五指标（E8）耗时大，只做线下评估，不接入 CI。**
 5. 每个脚本输出 `*_eval_report.json` 到 `ragas_test/` 目录，可与历史报告对比。
-6. 评测阈值校准基准（与代码现状一致）：重排过滤 `>= 0.25`（`fusion_nodes.py`，2026-09-18 由 0.3 放宽）、
+6. 评测阈值校准基准（与代码现状一致）：重排过滤 `>= 0.15`（`RERANK_FILTER_THRESHOLD`，2026-09-19 H-07 由 0.25 放宽；此前 0.3→0.25 为 9/18 第一次放宽）、MMR 默认关闭（`MMR_ENABLED=False`，fair 评测证伪无增益）、
    缓存 rerank 命中 `CACHE_RERANK_HIT_SCORE=0.5`、限流 30 次/60s、工具语义阈值 `TOOL_DISTANCE_THRESHOLD=0.6`、`TOP_FILTER_TOOLS=12`。
 
 ## 实测记录（2026-09-18）
@@ -59,6 +59,16 @@
 | E13 在线实测 | health ✓ / 登录 ✓ / SSE ✓ / 登出失效 ✓ / 限流 429 ✓ | 账号 qianyi 实测：SSE 首 token 1348ms、总耗时 2.88s、流纯净无污染；登出后旧 token 401；限流第 30/31 次命中 429 |
 | E1 动态路由 | 分类准确率 100%、检索召回 100%、误报 0% | 已重写 `CLASSIFIER_PROMPT`：改为按「是否需要外部知识」通用判定（知识库可自定义入库，不绑定主题），17/17 用例全对（9 检索 + 8 非检索） |
 | E6 语义缓存 | 同义命中率 100%（3/3）、误命中率 0%（0/3）、原文命中 100% | 真实 redis-stack（RedisSearch 容器 6379）+ embed + bge-reranker 全链路实测；查询平均 345ms |
+
+### 实测记录补充（2026-09-19 H-07 晚）
+
+- **H-07 RAG 质量优化全包**（`d58d29e`，对应 `h07_p0p1_report.json` + `ragas_judge_report.json`）：
+  - **P0 重切 chunk**：`CHUNK_SIZE 300→800`、`CHUNK_OVERLAP 50→100`，重入库后 chunks **405→270**；
+  - **P1 放宽召回**：`RERANK_FILTER_THRESHOLD 0.25→0.15`（常量）、`MMR_TOP_SELECT 5→8`、`MAX_RETRIEVAL_DOCS 5→8`、`MMR_ENABLED=False`（fair 证伪关闭）；
+  - **P2 生成引用约束**：`llm_node` 检索分支要求事实句标 `[文档 i]` 角标、无依据说"知识库暂未覆盖"；前端 `app.js` 正则转 `<sup class="cite-ref">`；
+  - **P3 LLM-as-judge**：新增 `eval_ragas_judge.py`，21 条集五指标 **context_precision 0.6381 / context_recall 0.8005 / faithfulness 0.959 / answer_relevancy 0.9881 / answer_correctness 0.7976**（DeepSeek temp=0）；
+  - **结果**：21 条项目集 key_points 单路 **0.7476** / 混合 **0.7119**（H-06 fair 基线 0.4524/0.4524）、boolean avg 单/混均 **0.8095**、median 1.0；延迟混合 avg 5.6s（改写 2.7s 为主）。
+- **MMR fair 口径证伪**（`5866ebf`）：MMR on/off 在 filter=0.25 时代 21 条集 key_points 均 **0.4524**、无增益（rerank top5 本身不扎堆），rerank 阶段 374ms→1810ms 变慢——`MMR_ENABLED` 置 False 关闭，拓扑保留节点。
 
 ### 实测记录补充（2026-09-19 晚）
 
