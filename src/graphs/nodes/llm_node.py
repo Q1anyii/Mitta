@@ -28,8 +28,16 @@ MAX_DOC_CHARS = 2000
 # 单轮请求内工具调用次数上限（per-turn，不是 per-session）：
 # 只统计「本次用户请求」内的工具调用，用户发新消息即重新计数。
 # 取 8 而非 4：正常复杂任务（多步查询/分析）可能需 5-7 次工具调用，
-# 上限只作兜底，真正的死循环由下方"连续重复调用检测"提前截停。
+# 上限只作兜底，真正的死循环由下方"失败熔断 / 重复调用检测"提前截停。
 MAX_TOOL_ROUNDS = 8
+# 同一工具连续失败几次后，本轮内禁止再调该工具。
+# 场景（2026-09-19 实测）：模型反复调 sequentialthinking，每次都超时，
+# 8 次额度全被这一个坏工具吃光，用户拿到的是"次数到上限"而不是答案。
+# 连续失败 2 次即足以判定"这个工具本轮坏了"，没必要等它把额度耗完。
+MAX_TOOL_FAILURES = 2
+# 工具名（含 server 前缀/别名）出现在 query 里时，视为用户/业务显式点名要用的工具。
+# 这类工具不参与"失败熔断"与"重复调用"的禁用判定（见下方 _disabled_tools）。
+_SOFT_BAN_EXEMPT = frozenset()  # 预留：需要豁免熔断的工具名可加进来
 
 
 def _turn_anchor(history: list) -> int:
@@ -47,6 +55,56 @@ def _turn_anchor(history: list) -> int:
         if isinstance(history[i], HumanMessage):
             return i + 1
     return 0
+
+
+# 工具失败信号：ToolMessage.status == "error"（langgraph 标准），
+# 或内容以既有错误前缀开头（DynamicToolNode 的 _tool_error_message 产出）。
+_TOOL_ERROR_PREFIXES = (
+    "工具执行失败",
+    "工具参数错误",
+    "抓取失败",
+    "搜索失败",
+    "读取失败",
+    "git 命令",
+)
+# 循环检测/次数上限的提示语——由本节点注入，不能被当成工具失败信号。
+_NODE_NOTICE_MARKERS = ("本轮请求中工具调用次数已达上限", "连续多次调用同一工具")
+
+
+def _is_tool_failure(msg: ToolMessage) -> bool:
+    """判断一条 ToolMessage 是否代表工具执行失败。
+
+    ★ 必须先排除本节点自己注入的提示语：那些提示是 SystemMessage 内容，
+    但历史修复（_repair_history）可能把孤立的 tool 结果包装成 ToolMessage，
+    内容里带着"次数已达上限"字样，若误判成失败会让熔断逻辑自我强化。
+    """
+    content = msg.content if isinstance(msg.content, str) else str(msg.content or "")
+    if any(marker in content for marker in _NODE_NOTICE_MARKERS):
+        return False
+    if getattr(msg, "status", None) == "error":
+        return True
+    return content.lstrip().startswith(_TOOL_ERROR_PREFIXES)
+
+
+def _failed_tool_names(history: list, turn_start: int) -> dict[str, int]:
+    """统计本轮内各工具**连续失败**的次数（按时间顺序，成功即清零）。
+
+    为什么要按"连续"而不是"累计"：一个工具失败 1 次后成功、后又失败 1 次，
+    这是正常的不稳定网络行为，不该熔断；只有**连着挂**才说明它这轮彻底不可用。
+    返回值只保留连续失败数 >= MAX_TOOL_FAILURES 的工具，交给调用方禁用。
+    """
+    streak: dict[str, int] = {}
+    for m in history[turn_start:]:
+        if not isinstance(m, ToolMessage):
+            continue
+        name = getattr(m, "name", None) or ""
+        if not name:
+            continue
+        if _is_tool_failure(m):
+            streak[name] = streak.get(name, 0) + 1
+        else:
+            streak[name] = 0  # 成功一次即清零：偶尔抖动不算坏工具
+    return {n: c for n, c in streak.items() if c >= MAX_TOOL_FAILURES}
 
 
 def llm_node(
@@ -186,11 +244,15 @@ def llm_node(
         f"white_list={'none(全量)' if allowed is None else f'{len(allowed)}个'}"
     )
 
-    # 工具调用死循环防护（两道防线，均只统计**本轮**）：
+    # 工具调用死循环防护（三道防线，均只统计**本轮**）：
     # (a) 次数上限：本轮起点之后的工具执行次数（ToolMessage 或同轮内 tool_calls）
     #     达到 MAX_TOOL_ROUNDS 后不再 bind 工具，注入终止提示让模型直接回答（硬性结束循环）；
     # (b) 连续重复调用检测：最近两次工具调用（name+args 完全相同）说明模型在同
-    #     一动作上空转（无新信息产生），立即判定死循环提前截停，不必等满 8 次。
+    #     一动作上空转（无新信息产生），立即判定死循环提前截停，不必等满 8 次；
+    # (c) 失败熔断（2026-09-19 新增）：同一工具**连续失败** MAX_TOOL_FAILURES 次后，
+    #     本轮内把它从可 bind 列表里摘掉。此前只有 (a)(b)，于是一个超时的工具会被反复
+    #     重试直到吃满 8 次额度——用户看到的是"次数到上限"，而真正该说的是"这个工具坏了"。
+    #     注意 (c) 是**摘工具**不是**停整轮**：坏工具摘掉后其余工具仍可用，模型能换路走。
     # 注意：起点之后的 ToolMessage 覆盖 tool_node 已执行的调用；起点之后 AI 的
     # tool_calls 计入尚未执行的那批（两者不会重叠：本节点返回后 tool_node 才执行）。
     # 两者取 max 而非相加，避免同一批调用被重复计数——一次误计就可能让第 8 次调用被拒。
@@ -201,6 +263,19 @@ def llm_node(
         if isinstance(m, AIMessage) and m.tool_calls
     )
     tool_rounds = max(len(turn_tools), pending_calls)
+
+    # (c) 失败熔断：先算出本轮该禁用的工具，再从候选里摘掉
+    broken_tools = _failed_tool_names(history, turn_start)
+    if broken_tools and selected_tools:
+        before = len(selected_tools)
+        selected_tools = [
+            t for t in selected_tools
+            if t.name not in broken_tools or t.name in _SOFT_BAN_EXEMPT
+        ]
+        logger.warning(
+            f"工具失败熔断：{sorted(broken_tools)} 本轮已禁用"
+            f"（连续失败 >= {MAX_TOOL_FAILURES} 次），候选 {before} -> {len(selected_tools)}"
+        )
 
     def _is_repeating() -> bool:
         # 只看本轮调用序列：连续两次同名同参调用才是死循环信号。
@@ -213,7 +288,13 @@ def llm_node(
                         tc.get("name"),
                         json.dumps(tc.get("args", {}), sort_keys=True, ensure_ascii=False),
                     ))
-        return len(calls) >= 2 and calls[-1] == calls[-2]
+        if len(calls) < 2:
+            return False
+        # 被熔断的工具已从候选摘除，它再重复也不构成"模型空转"——模型是在别处找路。
+        # 但若连摘除后的候选都还在重复，说明模型真卡住了，仍要截停。
+        if calls[-1][0] in broken_tools and calls[-1] == calls[-2]:
+            return True
+        return calls[-1] == calls[-2]
 
     force_stop = tool_rounds >= MAX_TOOL_ROUNDS or _is_repeating()
     if selected_tools and not force_stop:
@@ -222,10 +303,22 @@ def llm_node(
         # 两路均未命中（或已达工具轮次上限）：不 bind 空列表（OpenAI 兼容 API 会 400），
         # 改用裸模型并注入对应提示
         if force_stop:
-            logger.warning(f"本轮工具调用次数达上限（{tool_rounds}/{MAX_TOOL_ROUNDS}），本轮强制停止调用工具")
+            reason = (
+                f"次数达上限（{tool_rounds}/{MAX_TOOL_ROUNDS}）" if tool_rounds >= MAX_TOOL_ROUNDS
+                else "检测到连续重复调用"
+            )
+            logger.warning(f"本轮强制停止工具调用：{reason}")
             messages.append(SystemMessage(
                 content="注意：本轮请求中工具调用次数已达上限，请不要再调用任何工具，"
                         "直接基于你已有的上下文信息回答用户的问题。"
+            ))
+        elif broken_tools:
+            # 所有候选工具都被熔断摘光了：明确告知模型"这些工具本轮不可用"，
+            # 而不是含糊说"没有工具"，否则模型会以为自己能力缺失（而非工具故障）
+            logger.warning(f"本轮候选工具全部被熔断禁用：{sorted(broken_tools)}")
+            messages.append(SystemMessage(
+                content=f"注意：以下工具本轮已连续失败多次、暂时不可用：{'、'.join(sorted(broken_tools))}。"
+                        "请不要再尝试调用它们，改用其他方式回答用户，或如实说明这部分暂时做不到。"
             ))
         elif not is_default_persona and allowed == []:
             # 人格主动无工具（如 crazy）：人格 prompt 已自带能力边界说明，

@@ -1,7 +1,7 @@
 {
   "ragas_test": "tool_truncation",
-  "total": 9,
-  "passed": 9,
+  "total": 13,
+  "passed": 13,
   "pass_rate": 1.0,
   "dimension_stats": {
     "exception_to_message": {
@@ -20,6 +20,11 @@
       "pass_rate": 1.0
     },
     "loop_protection": {
+      "total": 4,
+      "pass": 4,
+      "pass_rate": 1.0
+    },
+    "failure_circuit_breaker": {
       "total": 4,
       "pass": 4,
       "pass_rate": 1.0
@@ -79,6 +84,30 @@
       "dimension": "loop_protection",
       "passed": true,
       "value_preview": "(0, 12, True)"
+    },
+    {
+      "case": "连续失败 2 次触发熔断",
+      "dimension": "failure_circuit_breaker",
+      "passed": true,
+      "value_preview": "{'sequentialthinking': 2}"
+    },
+    {
+      "case": "仅失败 1 次不熔断（留重试机会）",
+      "dimension": "failure_circuit_breaker",
+      "passed": true,
+      "value_preview": "{}"
+    },
+    {
+      "case": "失败→成功→失败 不算连续（不熔断）",
+      "dimension": "failure_circuit_breaker",
+      "passed": true,
+      "value_preview": "{}"
+    },
+    {
+      "case": "节点注入的提示不误判为工具失败",
+      "dimension": "failure_circuit_breaker",
+      "passed": true,
+      "value_preview": "{}"
     }
   ]
 }

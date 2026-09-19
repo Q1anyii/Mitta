@@ -760,6 +760,10 @@
                                 // profile 获取失败不影响登录，头像使用默认
                             }
                             updateLastActive();
+                            // 打一次性标记：ChatApp 挂载时据此开一个全新会话。
+                            // 放 sessionStorage 而非 localStorage：只在"这次登录到本标签页"
+                            // 内有效，刷新不会重复触发（见 ChatApp.onMounted 的消费逻辑）。
+                            try { sessionStorage.setItem('mitta_just_logged_in', '1'); } catch (e) {}
                             this.$router.push('/chat');
                         } else {
                             this.errors.password = message || '用户 ID 或密码错误';
@@ -2457,8 +2461,30 @@
                     focusInput();
                 };
 
-                const switchSession = async (id) => {
-                    if (id === currentThreadId.value) return;
+                // 【每次登录开一个新会话】把"当前会话"落到一个全新的空会话上。
+                // 语义：
+                //   - 已经有一个没用过的空会话（isBlank 且无消息）→ 直接复用它，不新建；
+                //   - 没有 → 建一个。createNewSession 自身会清掉旧 blank，不会堆积。
+                // 复用判据用「isBlank === true」而不是"消息为空"：isBlank 由 sendMessage
+                // 在首次发送时置 false，是"这个会话被用过"的权威标记；仅靠 messages 长度
+                // 判断会在 loadCurrentMessages 尚未完成时误判（首屏消息是异步拉的）。
+                const ensureFreshSession = () => {
+                    const blank = sessions.value.find(s => s.isBlank);
+                    if (blank) {
+                        // 已有未使用的空会话：切到它即可，不动列表顺序、不产生新 thread
+                        if (currentThreadId.value !== blank.id) {
+                            currentThreadId.value = blank.id;
+                            messages.value = [];
+                            cache.setMessages(blank.id, []);
+                            saveCurrentThread();
+                        }
+                        return blank.id;
+                    }
+                    createNewSession();
+                    return currentThreadId.value;
+                };
+
+                const switchSession = async (id) => {                    if (id === currentThreadId.value) return;
                     currentThreadId.value = id;
                     saveCurrentThread();
                     // 切换会话：停止旧会话的续接轮询，并按新会话是否在生成中重置
@@ -2553,7 +2579,11 @@
                     resetTextarea();
                     saveMessages();
                     saveSessions();
-                    scrollToBottom();
+                    // 用户主动发消息 = 明确想看新内容：无条件跳到底部。
+                    // 这里的智能跟随（"距底 120px 内才滚"）是错的——它的初衷是
+                    // 流式渲染时不打断用户翻看历史，但用户自己发消息恰恰是"我在等回复"
+                    // 的信号，此时停在半路会让新消息和 AI 气泡都在屏幕外，看起来像没发出去。
+                    scrollToBottom({ force: true });
 
                     isLoading.value = true;
                     streaming.value = false;
@@ -2583,7 +2613,7 @@
                         messages.value.push({ id: generateId(), role: 'assistant', content: '', reasoning: '', tool_calls: [], blocks: [], time: formatTime() });
                         aiMsg = messages.value[messages.value.length - 1];
                         saveMessages();
-                        scrollToBottom();
+                        scrollToBottom({ force: true });  // 与用户消息一致：本轮发送已强制跳底，AI 占位也必须跟到底
 
                         // 创建 AbortController 用于停止回复
                         abortController.value = new AbortController();
@@ -2871,8 +2901,33 @@
                             createNewSession();
                         }
                     }
-                    await loadCurrentMessages();
-                    scrollToBottom();
+                    // 【每次登录自动开新会话】登录成功时会在 sessionStorage 打一次性标记，
+                    // 标记只在这里消费一次并立即清除。用 sessionStorage 而非 localStorage：
+                    // 它的生命周期是"这个标签页"，刷新后仍在但新开标签页会重置——
+                    // 恰好对应"本次登录会话"的语义。这样避免了两个错误行为：
+                    //   ① 刷新页面不该新建（用户只是想接着看原会话）；
+                    //   ② 重复调用不该堆积（标记消费即删，createNewSession 也会清旧 blank）。
+                    const LOGIN_FLAG = 'mitta_just_logged_in';
+                    let justLoggedIn = false;
+                    try {
+                        justLoggedIn = sessionStorage.getItem(LOGIN_FLAG) === '1';
+                        if (justLoggedIn) sessionStorage.removeItem(LOGIN_FLAG);
+                    } catch (e) {
+                        // 隐私模式等禁用 sessionStorage 的场景：静默降级为"不是刚登录"
+                    }
+                    if (justLoggedIn) {
+                        ensureFreshSession();
+                    }
+                    // 刚建的空会话必然没有历史：跳过 loadCurrentMessages 的网络请求，
+                    // 直接置空。否则每个新会话都要向后端问一次必然为空的 history，
+                    // 而该 thread 在后端还不存在（无归属），属于纯浪费的往返。
+                    const _curSession = sessions.value.find(s => s.id === currentThreadId.value);
+                    if (_curSession && _curSession.isBlank) {
+                        messages.value = [];
+                    } else {
+                        await loadCurrentMessages();
+                    }
+                    scrollToBottom({ force: justLoggedIn });  // 刚登录：直接落到新会话底部
                     focusInput();
                     checkHealth();
                     healthTimer = setInterval(checkHealth, 30000);
@@ -3319,6 +3374,10 @@
             if (!isLoggedIn && !isAuthRoute) {
                 next('/api/login');
             } else if (isLoggedIn && isAuthRoute) {
+                // 已登录还去登录页 = 一次"重新进入"：等同登录，也开新会话。
+                // 用户手动点开 /api/login 或从 bookmark 进来都会走这里，
+                // 若不打标记就会复现"登录了却还在旧会话"的困惑。
+                try { sessionStorage.setItem('mitta_just_logged_in', '1'); } catch (e) {}
                 next('/chat');
             } else {
                 next();

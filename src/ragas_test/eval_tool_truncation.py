@@ -34,7 +34,8 @@ from langchain_core.tools import ToolException
 
 from graphs.main_graph import _tool_error_message
 from graphs.nodes.llm_node import (
-    MAX_RETRIEVAL_DOCS, MAX_DOC_CHARS, MAX_TOOL_ROUNDS, _turn_anchor,
+    MAX_RETRIEVAL_DOCS, MAX_DOC_CHARS, MAX_TOOL_ROUNDS, MAX_TOOL_FAILURES,
+    _turn_anchor, _failed_tool_names,
 )
 from utils.tools_util import format_tools_for_prompt
 from graphs.tool_filter import ToolFilter
@@ -147,6 +148,73 @@ def build_cases() -> List[Dict]:
         ),
         "assert": lambda v: v[0] == 0 and v[1] >= MAX_TOOL_ROUNDS and v[2] is True,
         "dimension": "loop_protection",
+    })
+
+    # 10-13. 失败熔断（2026-09-19 新增）：同一工具连续失败达 MAX_TOOL_FAILURES 后本轮禁用。
+    # 回归场景：模型反复调一个超时的工具（sequentialthinking），把 8 次额度全吃光，
+    # 用户拿到的是"次数到上限"而非答案。熔断要能在额度耗尽前把坏工具摘掉。
+    def _fail_turn(fail_count: int, name: str = "sequentialthinking"):
+        """构造一轮内某工具连续失败 fail_count 次的历史。"""
+        h = [HumanMessage(content="帮我想想怎么构建项目")]
+        for i in range(fail_count):
+            h.append(AIMessage(content="", tool_calls=[
+                {"name": name, "args": {"thought": f"s{i}"}, "id": f"f{i}"}]))
+            h.append(ToolMessage(
+                content="工具执行失败：TimeoutError: tool call timed out after 30s",
+                name=name, tool_call_id=f"f{i}", status="error"))
+        return h
+
+    # 10. 连续失败 2 次 → 该工具进入禁用集合
+    cases.append({
+        "name": f"连续失败 {MAX_TOOL_FAILURES} 次触发熔断",
+        "fn": lambda: _failed_tool_names(_fail_turn(MAX_TOOL_FAILURES), 0),
+        "assert": lambda d: "sequentialthinking" in d
+                            and d["sequentialthinking"] >= MAX_TOOL_FAILURES,
+        "dimension": "failure_circuit_breaker",
+    })
+    # 11. 只失败 1 次（未达阈值）→ 不熔断，给工具留重试机会
+    cases.append({
+        "name": "仅失败 1 次不熔断（留重试机会）",
+        "fn": lambda: _failed_tool_names(_fail_turn(1), 0),
+        "assert": lambda d: d == {},
+        "dimension": "failure_circuit_breaker",
+    })
+    # 12. 「连续」语义：失败→成功→失败 不算连续，不该熔断。
+    #     若这里变红，说明实现把「累计失败」当成了「连续失败」，
+    #     会让一个只是偶尔抖动的工具被误杀。
+    def _interleaved_failures():
+        h = [HumanMessage(content="q")]
+        for i, ok in enumerate([False, True, False]):
+            h.append(AIMessage(content="", tool_calls=[
+                {"name": "fetch_url", "args": {"url": f"u{i}"}, "id": f"i{i}"}]))
+            h.append(ToolMessage(
+                content="抓取失败: ConnectError" if not ok else "正文内容……",
+                name="fetch_url", tool_call_id=f"i{i}",
+                status="error" if not ok else "success"))
+        return h
+
+    cases.append({
+        "name": "失败→成功→失败 不算连续（不熔断）",
+        "fn": lambda: _failed_tool_names(_interleaved_failures(), 0),
+        "assert": lambda d: d == {},
+        "dimension": "failure_circuit_breaker",
+    })
+    # 13. 本节点自己注入的「次数已达上限」提示不能被误判为工具失败。
+    #     否则熔断会自我强化：注入的提示被当成失败 → 下一轮又多禁一个工具。
+    def _notice_history():
+        h = [HumanMessage(content="q")]
+        h.append(AIMessage(content="", tool_calls=[
+            {"name": "memory", "args": {}, "id": "n0"}]))
+        h.append(ToolMessage(
+            content="注意：本轮请求中工具调用次数已达上限，请不要再调用任何工具。",
+            name="memory", tool_call_id="n0"))
+        return h
+
+    cases.append({
+        "name": "节点注入的提示不误判为工具失败",
+        "fn": lambda: _failed_tool_names(_notice_history(), 0),
+        "assert": lambda d: d == {},
+        "dimension": "failure_circuit_breaker",
     })
     return cases
 
