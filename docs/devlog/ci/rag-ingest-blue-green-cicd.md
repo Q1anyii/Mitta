@@ -36,4 +36,4 @@ docs_sync: none
 - **BM25 旧 key 堆积**：RedisSearch hset 按 doc_id 前缀保留，不主动清（回滚需要）；数据量小不影响性能，后续可按 doc_id 前缀定期清；
 - **首个 commit 无 HEAD~1**：`git diff HEAD~1 HEAD` 失败（`|| true`）→ 不触发入库，可接受（首次部署人工初始化即可）；
 - **collection 命名**：`FAQ_KNOWLEDGE_BASE_<short_sha>`（下划线 + 十六进制）符合 chroma 命名规则（字母数字下划线）；
-- CI 部署后 `docs_sync: required`：README 部署说明（CI 流程 / collection 管理 / 手动初始化步骤）需文档 Agent 同步。
+- ~~CI 部署后 `docs_sync: required`：README 部署说明（CI 流程 / collection 管理 / 手动初始化步骤）需文档 Agent 同步。~~ **已同步（2026-09-19，提交 `3469a6b` + `c17aa83`）**：README「CI/CD 蓝绿入库切换」节与 mermaid 流水线图已补蓝绿流程、触发检测、cleanup --keep、rsync exclude、手动初始化说明。本行改为提示语，不再作为待办标记。
