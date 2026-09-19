@@ -42,6 +42,7 @@ from constant.retrieval_constants import (
     MMR_LAMBDA,
     MMR_TOP_CANDIDATES,
     MMR_TOP_SELECT,
+    RERANK_FILTER_THRESHOLD,
 )
 from constant.cache_constant import SPARSE_INDEX_NAME, DOC_PREFIX
 from vector.vector_store import create_vector_store
@@ -338,12 +339,14 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
     stats["num_candidates"] = len(merged)
 
     # Step 5: 重排 + MMR 多样性选择（与生产 fusion_nodes.rerank 对齐）
+    # 2026-09-19 P1（H-20260919-07）：永远拿 MMR_TOP_CANDIDATES=20 篇 rerank，
+    # MMR off 时取前 MMR_TOP_SELECT=8（与生产 rerank() 行为一致，不再只打 8 篇）。
     t0 = time.perf_counter()
     if merged:
         try:
             rerank_results = online_rerank(
                 queries[0], [d.text for d in merged],
-                top_n=MMR_TOP_CANDIDATES if MMR_ENABLED else MMR_TOP_SELECT,
+                top_n=MMR_TOP_CANDIDATES,
             )
             top_docs = []
             for r in rerank_results:
@@ -427,7 +430,7 @@ def main():
     parser = argparse.ArgumentParser(description="Mitta 检索链路离线评估")
     parser.add_argument("--limit", type=int, default=50, help="测试 query 数量（默认 50）")
     parser.add_argument("--n-results", type=int, default=20, help="稠密召回数量（默认 20）")
-    parser.add_argument("--filter-threshold", type=float, default=0.25, help="重排分数过滤阈值（默认 0.25，对齐生产 filter_node）")
+    parser.add_argument("--filter-threshold", type=float, default=RERANK_FILTER_THRESHOLD, help=f"重排分数过滤阈值（默认 {RERANK_FILTER_THRESHOLD}，对齐生产 filter_node）")
     parser.add_argument("--category", type=str, default=None, help="按 category 过滤测试集")
     parser.add_argument("--metric", type=str, default="boolean", choices=["boolean", "coverage"], help="recall 口径：boolean 布尔命中率（默认）| coverage 旧关键词覆盖率")
     parser.add_argument("--no-pipeline", action="store_true", help="只测单路召回")

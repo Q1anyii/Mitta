@@ -15,13 +15,19 @@ DISTANCE_THRESHOLD = 0.3
 RRF_K = 60
 
 # ── MMR（Maximal Marginal Relevance）多样性重排 ──
-# rerank 后从 top20 候选里贪心选 5 篇"相关且彼此不语义扎堆"的文档，
+# rerank 后从 top20 候选里贪心选 8 篇"相关且彼此不语义扎堆"的文档，
 # 解决多点分散题 key_points 覆盖低的问题（同章节相邻段落语义重复）。
 # 公式：score = λ × rerank_score - (1-λ) × max_cosine_sim(doc, 已选集合)
-MMR_ENABLED = True          # 一键开关：False 时回退为纯 rerank top5（现状基线）
+# 2026-09-19 H-20260919-06 实测 MMR 无增益（rerank top5 本身不扎堆），本阶段先关。
+MMR_ENABLED = False         # 一键开关：False 时回退为纯 rerank topN
 MMR_LAMBDA = 0.5            # 相关性 vs 多样性权重：1=只看相关，0=只看多样
 MMR_TOP_CANDIDATES = 20     # rerank 候选数（从 bge-reranker 拿多少篇）
-MMR_TOP_SELECT = 5          # MMR 最终选篇数（与 MAX_RETRIEVAL_DOCS=5 对齐）
+MMR_TOP_SELECT = 8          # MMR 最终选篇数（2026-09-19 P1 放宽：5→8，与 MAX_RETRIEVAL_DOCS 对齐）
+
+# rerank 分数过滤阈值：低于此值的文档丢弃（filter_node 用）
+# 2026-09-19 P1 放宽（H-20260919-07）：0.25→0.15，放宽边缘文档进入上下文，
+# 提升多点分散题 key_points 覆盖；代价是引入少量低相关噪声，卡 boolean median=1.0 红线。
+RERANK_FILTER_THRESHOLD = 0.15
 
 # 查询改写提示词：LLM 根据对话历史将用户问题改写成适合向量检索的独立查询
 # 要求：解决指代、补全限定词、生成主查询+子查询+关键词

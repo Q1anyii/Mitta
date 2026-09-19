@@ -248,6 +248,8 @@
                 renderer: renderer,
             });
             let html = marked.parse(cleaned);
+            // 2026-09-19 P2: [1][2] citation superscript (negative lookahead to skip md links)
+            html = html.replace(/\[(\d{1,2})\](?!\()/g, '<sup class="cite-ref">$1</sup>');
             // highlight.js 代码高亮（渲染后处理）
             if (typeof hljs !== 'undefined') {
                 const tmp = document.createElement('div');

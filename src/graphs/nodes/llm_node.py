@@ -21,7 +21,8 @@ from graphs.utils.history_repair import _repair_history, _trim_history
 from graphs.utils.user_profile import _ensure_username_profile, _get_username
 
 # 检索资料最大文档数：超出丢弃（优先保留最相关的排前文档）
-MAX_RETRIEVAL_DOCS = 5
+# 2026-09-19 P1 放宽（H-20260919-07）：5→8，与 rerank/filter 放宽对齐
+MAX_RETRIEVAL_DOCS = 8
 # 单篇检索文档最大字符数：超出截断，防止超长文档撑爆单次请求 token
 MAX_DOC_CHARS = 2000
 # 单轮请求内工具执行轮次上限：超过后强制停止继续调用工具，避免
@@ -87,6 +88,11 @@ def llm_node(
             context = "（知识库中未检索到相关内容）"
         user_content = (
             f"请严格依据下面检索到的资料回答用户问题，资料中没有的内容不要编造。\n\n"
+            f"【引用要求】\n"
+            f"- 事实性陈述（数字、接口、配置、机制、结论）后必须标注来源角标，如 [1][2]，"
+            f"角标编号对应下方【检索资料】的 [文档 i]；\n"
+            f"- 若所有资料均无法支撑某个事实，明确说\"知识库暂未覆盖该内容\"，不要用常识补全；\n"
+            f"- 角标只标事实句，客套话/过渡句/总结句不加。\n\n"
             f"【检索资料】\n{context}\n\n"
             f"【用户问题】\n{input_str}"
         )

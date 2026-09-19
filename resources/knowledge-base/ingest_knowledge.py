@@ -137,11 +137,15 @@ def ingest_file(processor, file_path: Path, vector_store) -> int:
     vector_store.upsert(ids, documents, metadatas)
 
     # ---- Step 4：批量写入 RedisSearch（BM25 全文索引）----
-    # cache_service 本身没有 pipeline，底层 redis 客户端才有
-    pipe = cache_service.redis.pipeline()
-    for doc_id, content in zip(ids, documents):
-        pipe.hset(f"{DOC_PREFIX}{doc_id}", mapping={"content": content, "source": source})
-    pipe.execute()
+    # 2026-09-19 H-07：WSL2 localhost 转发不稳定，Redis 写入失败时降级跳过
+    # （chroma 向量入库已完成；BM25 索引后续在 WSL 内单独重建）
+    try:
+        pipe = cache_service.redis.pipeline()
+        for doc_id, content in zip(ids, documents):
+            pipe.hset(f"{DOC_PREFIX}{doc_id}", mapping={"content": content, "source": source})
+        pipe.execute()
+    except Exception as e:
+        logger.warning(f"RedisSearch 写入失败，跳过 BM25 索引（chroma 已入库）: {e}")
 
     return len(ids)
 

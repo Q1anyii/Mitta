@@ -12,6 +12,7 @@ from constant.retrieval_constants import (
     MMR_LAMBDA,
     MMR_TOP_CANDIDATES,
     MMR_TOP_SELECT,
+    RERANK_FILTER_THRESHOLD,
 )
 from graphs.state import RAGState
 from vector.retrieve_doc import RetrievedDoc
@@ -216,28 +217,25 @@ def rerank(state: RAGState, online_rerank, vector_store=None) -> dict:
 def filter_node(state: RAGState) -> dict:
     """按重排分数过滤低相关文档。
 
-    阈值 0.25：过滤噪声，保留中等相关以上文档。
-    （2026-09-18 由 0.3 放宽：top5 内 0.25~0.3 的中等相关文档此前被过滤，
-    放宽后进入上下文，提升召回覆盖率；代价是引入少量低相关噪声）
-    过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空，避免 LLM 无上下文可用）。
+    阈值 RERANK_FILTER_THRESHOLD（2026-09-19 P1 放宽到 0.15）：过滤明显噪声，
+    保留中等相关以上文档。过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）。
 
     Args:
         state: 含 reranked_docs（重排后的文档，metadata 含 relevance_score）
 
     Returns:
-        {"reranked_docs": [过滤后的文档，最多 5 条]}
+        {"reranked_docs": [过滤后的文档，最多 MMR_TOP_SELECT 条]}
     """
     reranked_docs = state["reranked_docs"]
 
-    # 阈值 0.25：过滤噪声，保留中等相关以上文档（2026-09-18 由 0.3 放宽）
+    # 阈值改为常量引用（2026-09-19），不再硬编码
     finally_docs = [
         doc for doc in reranked_docs
-        if doc.metadata.get("relevance_score", 0.0) >= 0.25
+        if doc.metadata.get("relevance_score", 0.0) >= RERANK_FILTER_THRESHOLD
     ]
 
     if finally_docs:
-        # 返回过滤后的结果（最多 5 条）
-        return {"reranked_docs": finally_docs[:5]}
+        return {"reranked_docs": finally_docs[:MMR_TOP_SELECT]}
 
     # 兜底：过滤后为空时，返回原始 top 3（宁可不准确也不返回空）
     return {"reranked_docs": reranked_docs[:3]}
