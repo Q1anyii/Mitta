@@ -111,3 +111,7 @@ resources/chroma.sqlite3
 /AGENTS.md
 /temp.md
 /src/ragas_test/resources/chroma_db/chroma.sqlite3
+
+# 临时工作目录与本地备份
+.workbuddy/
+resources/chroma_db_backup_*/

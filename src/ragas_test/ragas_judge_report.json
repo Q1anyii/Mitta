@@ -1,0 +1,269 @@
+{
+  "config": {
+    "limit": 21,
+    "n_results": 20,
+    "filter_threshold": 0.15,
+    "judge": "deepseek-chat"
+  },
+  "summary": {
+    "context_precision": 0.6381,
+    "context_recall": 0.8005,
+    "faithfulness": 0.959,
+    "answer_relevancy": 0.9881,
+    "answer_correctness": 0.7976
+  },
+  "rows": [
+    {
+      "question": "项目的 LangGraph 检索图是怎么构建的？节点有哪些？",
+      "gen_ms": 15860.3,
+      "scores": {
+        "context_precision": 0.3,
+        "context_recall": 0.2,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.2
+      },
+      "answer": "资料不足以列出该检索图的具体节点清单，尤其没有给出 `retrieve_graph.py` 中的 `add_node`、`add_edge`、`add_conditional_edges` 或 `compile` 细节。\n\n能确定的构建信息如下：\n\n- 检索图位于 `src/graphs/` 目录下的 `retrieve_graph.py`，注释为“RAG 检索图” [文档 3]。\n- LangGraph 的核心是状态图：节点是函数，边是状态流转，状态在节点间传递和累积 [文档 1]。\n- Graph 层负责 LangGraph 状态图定义、节点逻辑，不关心 HTTP 和数据库连接细节 [文档 2]。\n- 资料中出现的与 RAG/检索相关的状态定义 `RAGState(TypedDict)` 包含字段：`question`、`history`、`rewritten_queries`、`merged_docs`、`reranked_docs`、`cache_hit` [文档 1]。这些是状态字段，不等于节点名称。\n- 因此，可以理解为检索图会围绕问题、历史、重写查询、合并文档、重排文档、"
+    },
+    {
+      "question": "Checkpointer 和 Store 在项目里分别存什么？",
+      "gen_ms": 7662.6,
+      "scores": {
+        "context_precision": 0.6,
+        "context_recall": 1.0,
+        "faithfulness": 0.94,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "在 AgentProject 项目中，二者分工如下：\n\n| 组件 | 存什么 | 粒度/管理方式 | 典型用途 |\n|---|---|---|---|\n| Checkpointer（PostgresSaver） | 存会话执行状态、对话历史、图执行状态快照 [文档 2][文档 3]；本项目示例中用于存储对话历史和图执行状态 [文档 2]。 | 粒度是 `thread_id`，会话级；由 LangGraph 自动写入 [文档 1][文档 2]。 | 多轮对话、中断恢复、人机交互 [文档 1][文档 2]。 |\n| Store（PostgresStore） | 存跨会话长期记忆、用户配置/偏好、知识库/知识库元数据等 [文档 1][文档 3]；本项目示例中具体存用户全局自定义 prompt，键为 `(\"user_global\", user_id), \"custom_prompt\"` [文档 1][文档 2]。 | 粒度是 `namespace + key`，任意层级；需要手动 `put/get` [文档 1][文档 2]。 | 用户偏好、知识库、长期记忆 [文档 1][文档 2]。 |\n\n"
+    },
+    {
+      "question": "LangGraph 状态设计要注意什么？有哪些常见陷阱？",
+      "gen_ms": 17275.0,
+      "scores": {
+        "context_precision": 0.7,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "**状态设计注意事项**\n- 把状态图当作 LangGraph 的核心思维模型，不要当成普通函数调用链；重点是思考状态如何在节点间流动和累积。好的状态设计能让图逻辑清晰易懂。[文档 1]\n- 状态是累积的（additive），节点返回的 `dict` 会合并到状态中。[文档 3] TypedDict 状态也是累积的。[文档 5]\n- 只在状态中存放需要跨节点传递的数据。[文档 3] 状态中只放必要数据；大对象可以放状态，但要注意序列化开销。[文档 3] 如果状态膨胀，大对象可用引用或临时存储。[文档 5]\n- 可用 `StateGraph(state_schema=RAGState)` 定义状态图，并用 TypedDict 定义状态结构，例如 `RAGState`。[文档 3][文档 4]\n- 节点与状态交互时，应单一职责、纯函数化、输入输出明确，并且只返回需要更新的字段，不返回整个状态。[文档 3]\n- Checkpointer 和 Store 的边界要清晰：Checkpointer 管“这次对话”，Store 管“这个用户”。不要把用户偏好存在 Checkpointer 里，也不要"
+    },
+    {
+      "question": "条件边和 Send 扇出在检索图里怎么用？",
+      "gen_ms": 13073.0,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "在检索图里，条件边主要用于**路由**：根据状态动态决定下一个节点 [文档 1]。资料示例在 `check_cache` 后接条件边：缓存命中走 `output_node`，未命中走 `rewrite` [文档 1]。\n\n```python\nbuilder.add_conditional_edges(\n    \"check_cache\",\n    lambda state: \"hit\" if state.get(\"cache_hit\") else \"miss\",\n    {\n        \"hit\": \"output_node\",   # 缓存命中：直接输出\n        \"miss\": \"rewrite\",      # 缓存未命中：走检索流程\n    },\n)\n```\n\n这对应流程中的：`check_cache` → 命中则直接输出，未命中则继续 [文档 3]。\n\nSend 扇出用于**并行执行多个节点实例** [文档 1]。在检索图示例中，`rewrite` 后定义 `map_queries`，为每个改写后的查询创建一个检索任务，并发送到 `retrieve` [文档 2]："
+    },
+    {
+      "question": "项目知识库文档入库时怎么切分的？",
+      "gen_ms": 6128.5,
+      "scores": {
+        "context_precision": 0.25,
+        "context_recall": 0.13,
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.8,
+        "answer_correctness": 0.2
+      },
+      "answer": "项目知识库文档入库时，`EmbeddingProcessor.embed` 会先解析文档并调用 `split_docs(file_path)` 进行切分；其中 `.md` 按标题切分，`.txt`/`.pdf` 原样加载 [文档 1]。切分后得到 `child_docs`，再计算稳定 ID、组装元数据并执行 `upsert` [文档 1]。推荐入库脚本会自动遍历 `knowledge-base` 目录下的所有 `.md` 文件，并调用项目的 `EmbeddingProcessor` 入库 [文档 3]。\n\n更细的切分规则，例如具体按几级标题、片段大小、是否有重叠等，资料中“### 2.3 文档切分策略”只有标题、没有正文内容，知识库暂未覆盖 [文档 1]。"
+    },
+    {
+      "question": "RRF 融合的原理是什么？项目里 k 取多少？",
+      "gen_ms": 4187.0,
+      "scores": {
+        "context_precision": 0.5,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "RRF（Reciprocal Rank Fusion）的原理是：将多个查询的检索结果按排名融合，排名越靠前权重越高[文档 1]。具体公式为：`score(d) = Σ 1 / (k + rank_i(d) + 1)`，其中 `k` 是平滑常数，通常取 60；`rank_i(d)` 是文档 `d` 在第 i 个查询结果中的排名，从 0 开始；对每个查询结果按排名计算分数并累加，最终按总分降序排列[文档 1][文档 2]。多个查询都排前的文档得分最高[文档 1]。\n\nRRF 的特点是：不需要归一化不同查询的相似度分数，只关心排名；对排名敏感；实现简单、计算高效；在多查询融合场景下表现稳定[文档 1][文档 2]。\n\n项目里 `k` 取 60：文档 1 中写有 `RRF_K = 60`[文档 1]；文档 2 也说明本项目 `retrieve_graph.py` 中的 `rrf_fusion()` 函数使用 `RRF_K=60`[文档 2]。"
+    },
+    {
+      "question": "项目用的重排序模型是什么？怎么调用？",
+      "gen_ms": 4612.1,
+      "scores": {
+        "context_precision": 0.45,
+        "context_recall": 0.8,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.6
+      },
+      "answer": "项目使用的重排序模型是 `BAAI/bge-reranker-v2-m3`，通过在线 API 进行重排序，`top_n=10` [文档 2]。\n\n调用方式上，资料给出了函数签名：\n\n```python\ndef online_rerank(query: str, documents: list[str], top_n: int = 10) -> list[dict]:\n    \"\"\"调用在线重排，返回按相关性降序的 [{index, relevance_score}, ...]\"\"\"\n```\n\n该函数接收 `query`、`documents`、`top_n`，返回按相关性降序的 `[{index, relevance_score}, ...]` [文档 3]。\n\n当前流程中，重排序位于 `RRF 融合` 之后、`缓存` 之前 [文档 1]。具体在线 API 的接口地址、鉴权方式、请求参数等资料未提供，知识库暂未覆盖。"
+    },
+    {
+      "question": "检索缓存是怎么做的？模糊匹配怎么实现？",
+      "gen_ms": 14652.3,
+      "scores": {
+        "context_precision": 0.55,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "检索缓存的做法如下：\n\n- 读取缓存：`check_cache` 会从 `state` 取 `question`，从 `config` 取 `thread_id`，然后调用 `cache_service.query_cache(thread_id, question, 3)`；如果查到结果，就返回 `{\"reranked_docs\": query_in_cache, \"cache_hit\": True}`，否则返回 `{\"cache_hit\": False}` [文档 1]。\n- 写入缓存：`store_cache` 只在未命中缓存时执行，即 `if not state.get(\"cache_hit\")`，调用 `cache_service.store_cache(thread_id, state[\"question\"], state[\"reranked_docs\"])`；命中时不再写入 [文档 1]。\n- 缓存对象是重排序后的文档：命中后直接复用 `reranked_docs`，写入时也保存 `reranked_docs` [文档 1]。当前流程中缓存阶段位于重排序之后 [文档 2]"
+    },
+    {
+      "question": "向量检索的距离阈值过滤是怎么做的？阈值怎么选？",
+      "gen_ms": 16780.5,
+      "scores": {
+        "context_precision": 0.45,
+        "context_recall": 1.0,
+        "faithfulness": 0.95,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "距离阈值过滤位于“多查询并行检索”之后、“RRF 融合”之前 [文档 1][文档 2]。\n\n**具体做法**：\n- 先设定 `DISTANCE_THRESHOLD`，示例为 `0.5`，按余弦距离，越小越相关 [文档 3]。\n- 对每个查询返回的 `raw_results`，取 `documents/distances/metadatas/ids` 的 `[0]`，因为 ChromaDB 返回的是嵌套列表，即使只传一个查询也要取 `[0]` [文档 3][文档 4][文档 7]。\n- 将 `(doc_text, dist, meta, doc_id)` 用 `zip` 配对，若 `dist < DISTANCE_THRESHOLD` 则保留，否则过滤掉；保留时把 `dist` 写入 `meta[\"_distance\"]`，便于调试 [文档 3][文档 4]。\n- 各查询过滤后的结果会构造成 `Document`，再进入 RRF 融合 [文档 4]。\n- 过滤判断依据是 ChromaDB 返回的 `distances`，不是 metadata 里的 `_distance`，所以 meta"
+    },
+    {
+      "question": "项目怎么集成 MCP 服务器的？",
+      "gen_ms": 25725.0,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 0.9,
+        "faithfulness": 0.8,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "资料显示，项目集成 MCP 服务器的核心流程是：环境变量配置 → 加载校验 → 初始化 MCP Holders → 收集工具并注入 LangGraph，同时挂载对外 MCP 端点 [文档1][文档2][文档5][文档7]。\n\n1. **配置来源**：通过环境变量 `MCP_SERVERS` 配置 MCP 服务器，值为 JSON；MCP 配置是可选的 [文档1][文档5][文档6]。示例为 `filesystem` 类型的 `stdio` 服务器，使用 `npx` 启动 `@modelcontextprotocol/server-filesystem` [文档5][文档6]。项目配置加载顺序是 `.env` 文件优先于系统环境变量，再使用代码默认值，`.env` 通过 `load_dotenv(override=True)` 加载 [文档6]。\n\n2. **配置加载与校验**：`load_mcp_server_configs()` 从环境变量加载配置；没有配置时返回空列表，JSON 不合法时记录警告并跳过，不阻塞启动 [文档5]。逐项校验时：`stdio` 必须包含 `command`，"
+    },
+    {
+      "question": "项目的分层架构是怎样的？依赖方向？",
+      "gen_ms": 12378.5,
+      "scores": {
+        "context_precision": 0.45,
+        "context_recall": 0.83,
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.95,
+        "answer_correctness": 0.85
+      },
+      "answer": "根据资料，项目的分层架构及依赖方向如下：\n\n### 分层架构\n项目分层包括 API 层、服务层、Graph 层、数据层和工具层 [文档 1]。\n\n| 层级 | 职责 | 不做什么 |\n|---|---|---|\n| API 层 | 路由定义、参数校验、依赖注入、响应封装 | 不写业务逻辑 [文档 1] |\n| 服务层 | 业务逻辑编排、事务管理、多数据源协作 | 不直接处理 HTTP 请求/响应 [文档 1] |\n| Graph 层 | LangGraph 状态图定义、节点逻辑 | 不关心 HTTP 和数据库连接细节 [文档 1] |\n| 数据层 | 数据库连接、CRUD 操作 | 不写业务逻辑 [文档 1] |\n| 工具层 | 通用工具函数（JWT、响应、文档处理） | 不依赖业务层 [文档 1] |\n\n### 依赖方向\n文档 1 给出的依赖方向为：\n\n**API 层 → 服务层 → Graph 层 → 数据层** [文档 1]\n\n各层对应的依赖/管理方式为：API 层对应依赖注入，服务层对应单例服务，Graph 层对应状态图，数据层对应连接管理 [文档 1]。\n\n依赖原则包括：\n-"
+    },
+    {
+      "question": "配置管理怎么做的？敏感信息怎么脱敏？",
+      "gen_ms": 9502.0,
+      "scores": {
+        "context_precision": 1.0,
+        "context_recall": 0.4,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.4
+      },
+      "answer": "配置管理方面：\n- 通过环境变量读取配置：使用 `os.getenv(key)` 获取配置值；如果未设置则返回默认值 `default` [文档 1]。\n- 布尔型配置通过 `get_env_bool` 解析：将值去除空格并转为小写后，判断是否属于 `\"true\"`、`\"1\"`、`\"yes\"`、`\"on\"` [文档 1]。\n- 配置摘要会遍历 `REQUIRED_ENV_VARS`，逐个读取对应环境变量并记录 [文档 1][文档 2]。\n- 敏感字段不注入工具上下文：例如 `CtxUser` 中 `password=None`，敏感字段不注入，工具无法访问 [文档 2]。\n\n敏感信息脱敏方面：\n- 在配置摘要/日志中，对 key 包含 `\"KEY\"`、`\"SECRET\"` 或 `\"PASSWORD\"` 且值存在的配置进行脱敏 [文档 1][文档 2]。\n- 脱敏规则是只显示前 4 位和后 4 位，中间用 `*` 填充：`value[:4] + \"*\" * (len(value) - 8) + value[-4:]`，日志输出为 `{key}: {masked} (已配置)` [文档 1"
+    },
+    {
+      "question": "JWT 双 Token 机制是怎样的？",
+      "gen_ms": 16642.6,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "根据资料，JWT 双 Token 机制由 **Access Token** 和 **Refresh Token** 组成 [文档2]。JWT 本身是无状态的，签发后无法主动失效，因此用 Redis 存储 token 来支持主动登出、改密码后旧 token 失效、限流等能力 [文档1][文档2]。\n\n| Token 类型 | 有效期 | 存储位置 | 用途 |\n|-----------|--------|----------|------|\n| Access Token | 15 分钟 | 前端 localStorage + Redis | API 认证 |\n| Refresh Token | 30 天 | 仅 Redis，不下发前端 | 自动续签 access token |\n\n以上表格内容来自 [文档2]。\n\n具体机制和特点如下：\n\n- Access Token 短期有效，默认 15 分钟过期 [文档2][文档5]；登录时会存入 Redis，TTL 为 15 分钟，与 access token 有效期一致 [文档3][文档4]。\n- Refresh Token 有效期为 30 天 ["
+    },
+    {
+      "question": "为什么还要做会话归属校验？",
+      "gen_ms": 12967.2,
+      "scores": {
+        "context_precision": 0.65,
+        "context_recall": 1.0,
+        "faithfulness": 0.8,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.9
+      },
+      "answer": "因为会话级资源是用 `thread_id` 标识的，而 `thread_id` 不是用户 ID，不能像用户资源那样直接按 `user_id` 判断归属，所以需要在业务层做会话归属校验 [文档 1][文档 2]。检索资料也显示，API 层除了解析 JWT 的 `get_current_user`、`require_self_or_admin` 资源归属校验外，还需要会话归属校验，即校验 `thread_id` 属于当前用户 [文档 6]。\n\n具体原因和后果包括：\n\n1. 如果不校验，任意用户都可以用他人的 `thread_id` 发消息 [文档 1]。\n2. 如果不校验，LangGraph 会用当前用户覆盖该会话归属 metadata，造成会话劫持 [文档 1]。\n3. 历史记录、删除会话等接口也需要同样校验 [文档 1]。\n4. 文件上传时如果带 `thread_id`，也要做会话归属校验，否则会出现“无权上传到该会话”的越权风险 [文档 5]。\n5. 如果校验逻辑写成 `if owner and owner != ...`，当 `get_thread_user_id(thread_i"
+    },
+    {
+      "question": "密码是怎么存储的？",
+      "gen_ms": 2200.5,
+      "scores": {
+        "context_precision": 1.0,
+        "context_recall": 0.25,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.25
+      },
+      "answer": "密码通过 **bcrypt** 方案进行哈希处理后存储：使用 `passlib.context.CryptContext`，配置 `schemes=[\"bcrypt\"]`、`deprecated=\"auto\"`，并调用 `pwd_context.hash(password)` 来生成密码哈希 [文档 1]。\n\n资料未说明哈希值具体存储在哪个数据库、字段或存储介质中，这部分知识库暂未覆盖 [文档 1]。"
+    },
+    {
+      "question": "RAGState 状态定义用了什么类型？为什么？",
+      "gen_ms": 6371.5,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.9
+      },
+      "answer": "RAGState 状态定义使用的是 **TypedDict** 类型，例如资料中展示为 `class RAGState(TypedDict)` [文档3][文档4]。\n\n原因主要有：\n\n- 它用于 **LangGraph 状态定义**，属于 LangGraph 状态、内部传递的数据结构，适合使用 TypedDict [文档1]。\n- TypedDict **仅提供类型提示，不做运行时校验**，性能高、无运行时开销，适合不需要校验的结构化字典、内部函数参数等场景 [文档1]。\n- LangGraph 中状态是累积的，节点返回的 `dict` 会合并到状态中，并且只在状态中存放需要跨节点传递的数据 [文档2]。\n- 需要校验和序列化的场景才更适合用 `BaseModel`，例如 LLM 输出解析 `QueryRewriteResult`；而 `RAGState` 是内部状态传递，因此用 TypedDict [文档1]。"
+    },
+    {
+      "question": "SSE 流式响应是怎么实现的？",
+      "gen_ms": 13495.4,
+      "scores": {
+        "context_precision": 0.85,
+        "context_recall": 0.75,
+        "faithfulness": 0.75,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "SSE 是服务器向客户端单向推送事件的 HTTP 协议，基于 HTTP 长连接 [文档 1]。本项目的 SSE 流式响应大致按下面链路实现：\n\n1. **后端生成 SSE 流**\n   - FastAPI 的 `/api/chat/` 接口返回 `StreamingResponse(event_stream, media_type=\"text/event-stream\")` [文档 1]。\n   - 生成器 `stream(user_id, thread_id, query)` 中会遍历 LangGraph：`self.graph.stream({\"question\": query}, config=config, stream_mode=\"values\")` [文档 5]。\n   - 当 chunk 中有 `answer` 时，yield SSE 格式数据：`data: {json.dumps({'content': chunk['answer']})}\\n\\n`，最后 yield `data: [DONE]\\n\\n` [文档 5]。\n   - 架构上，API 层 FastAPI 负"
+    },
+    {
+      "question": "Redis 在项目里存了哪些东西？",
+      "gen_ms": 8149.0,
+      "scores": {
+        "context_precision": 0.45,
+        "context_recall": 0.55,
+        "faithfulness": 0.9,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.65
+      },
+      "answer": "Redis 在项目中主要存储/用于以下内容：\n\n- **检索结果缓存**：`cache_service` 用 Redis 存储检索结果，TTL 为 15 秒 [文档 1][文档 4]。\n- **JWT access token**：登录时会把 access token 存入 Redis，有效期 15 分钟；其存储位置为前端 localStorage + Redis [文档 2][文档 7][文档 8]。\n- **JWT refresh token**：refresh token 存入 Redis，有效期 30 天，且仅存 Redis、不下发前端 [文档 2][文档 7][文档 8]。\n- **限流计数**：`RateLimitMiddleware` 可能用 Redis 计数；资料也提到 Redis 用于基于 `user_id` 统计请求次数来做限流 [文档 1][文档 2]。\n- **Token 主动失效相关用途**：Redis 存 token 可用于主动登出、改密码后旧 token 失效、强制下线、双 Token 自动续签等 [文档 2][文档 8]。\n\n另外，资料明确提到对话历史存"
+    },
+    {
+      "question": "全局异常处理器怎么设计的？",
+      "gen_ms": 14928.4,
+      "scores": {
+        "context_precision": 0.8,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "全局异常处理器在资料中是按“最后一道防线”来设计的：它不是唯一防线，业务层应先处理预期内的错误，全局处理器只处理未预期的系统错误 [文档 1]。在 API 层，它通过 FastAPI 的 `@exception_handler` 实现，并统一响应格式为 `{ok, detail}` [文档 3]。\n\n具体设计包括：\n\n1. **未处理 `Exception` 的全局处理器**  \n   使用 `@app.exception_handler(Exception)` 定义全局异常捕获 [文档 5]。它用 `logger.exception` 记录完整异常信息和堆栈，便于排查 [文档 2][文档 5]。日志中会包含 `path`、`method` 等上下文 [文档 2][文档 5]；资料也强调日志应包含足够上下文，如 `path`、`method`、`user_id`、参数，但不要记录密码、token 等敏感信息 [文档 1]。  \n   返回客户端时使用 `JSONResponse`，`status_code=500`，内容为 `{\"ok\": False, \"detail\": \"服务器内部"
+    },
+    {
+      "question": "前端 401 时怎么处理？",
+      "gen_ms": 4742.9,
+      "scores": {
+        "context_precision": 0.4,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "前端 401 时的处理方式：\n\n- 前端登录获取 token 后存储在 `localStorage`，每次请求带 `Authorization: Bearer {token}` [文档 1]。\n- 401 时，前端会自动跳转登录页 [文档 1]。\n- 在 `apiChat` 的 `fetch` 响应处理中，修复要点包含：`if (response.status === 401) { /* 跳转登录 */ }` [文档 2]。\n- 更具体的示例处理是：  \n  `if (response.status === 401) { cache.remove(STORAGE_KEY.USER); window.location.href = '/api/login'; throw new Error('登录已过期，请重新登录'); }` [文档 3]。\n\n因此，前端 401 时应清除本地用户缓存，并跳转到 `/api/login` 登录页，同时抛出“登录已过期，请重新登录”的错误 [文档 3]。"
+    },
+    {
+      "question": "项目目录结构是怎么分的？",
+      "gen_ms": 7893.7,
+      "scores": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.8
+      },
+      "answer": "项目根目录为 `AgentProject/`，整体分为后端源码、文档、测试和配置文件等部分 [文档 2]。\n\n- `src/` 是后端源码目录，包含：\n  - `main.py`：FastAPI 入口，路由定义 [文档 1]\n  - `init.py`：全局初始化（模型、嵌入、重排、system prompt）[文档 1]\n  - `config.py`：配置管理（环境变量、校验、类型安全访问）[文档 1]\n  - `embedding.py`：文档嵌入与向量库操作 [文档 1]\n- `constant/`：常量管理，按模块分类，包括 `embedding_constants.py`、`retrieval_constants.py`、`cache_constant.py` [文档 1]\n- `context/`：上下文管理（用户上下文）[文档 1]\n- `graphs/`：LangGraph 图定义，包括 `main_graph.py`（主对话图）和 `retrieve_graph.py`（RAG 检索图）[文档 1]\n- `middleware/`：中间件（限流等）[文档 1]\n- "
+    }
+  ]
+}
