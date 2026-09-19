@@ -1360,7 +1360,7 @@
                         <!-- ══════════ 输入区 ══════════ -->
                         <div class="input-area">
                             <!-- 跳底按钮：钉在输入框正上方；输出中始终显示并带加载环 -->
-                            <button v-if="showScrollToBottom || isLoading" class="scroll-to-bottom-btn"
+                            <button v-if="canScrollMessages && (showScrollToBottom || isLoading)" class="scroll-to-bottom-btn"
                                     :class="{ 'is-generating': isLoading }"
                                     @click="jumpToBottom" title="跳到最新消息" aria-label="跳到最新消息">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -2409,14 +2409,17 @@
                         if (c) {
                             c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' });
                         }
+                        onMessagesScroll();
                     });
                 };
 
                 // 跳底悬浮按钮：滚动容器距底 > 200px 时显示，点击平滑滚到底
                 const showScrollToBottom = ref(false);
+                const canScrollMessages = ref(false);
                 function onMessagesScroll() {
                     const el = messagesContainer.value;
                     if (!el) return;
+                    canScrollMessages.value = (el.scrollHeight - el.clientHeight) > 10;
                     showScrollToBottom.value = (el.scrollHeight - el.scrollTop - el.clientHeight) > 200;
                 }
                 function jumpToBottom() {
@@ -3261,7 +3264,7 @@
                     // 人格 tab + chibi 气泡
                     PERSONA_OPTIONS, personaMode, personaMenuOpen, personaLabel, personaHint,
                     setPersonaMode, chibiBubbles, dismissChibi,
-                    showScrollToBottom, onMessagesScroll, jumpToBottom,
+                    showScrollToBottom, canScrollMessages, onMessagesScroll, jumpToBottom,
                     toggleThinkingMode, setEffort, toggleEffortPanel,
                     // 消息操作
                     copyMessage, shareMessage, regenerateMessage,
