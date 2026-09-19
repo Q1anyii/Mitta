@@ -12,7 +12,7 @@
 | E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k | 工具装配规则层+语义层并集召回 | 离线白盒（真实 MCP 工具） |
 | E3 | 工具装配降级/熔断 | `eval_tool_assembly.py` | 并集召回、语义层异常降级、熔断生效 | 语义层异常自动降级规则层并熔断 | 离线白盒（mock 向量库） |
 | E4 | MCP 安全校验 | `eval_tool_safety.py` | 命令白名单拦截率、包名校验拦截率、敏感 env 拦截率、内网 url 拦截率 | 命令白名单、包名校验、敏感变量拦截 | 纯函数离线 |
-| E5 | 工具结果兜底 | `eval_tool_truncation.py` | 异常→ToolMessage 转换率、描述截断生效、文档截断生效 | 工具返回结果长度截断与异常兜底 | 纯函数离线 |
+| E5 | 工具结果兜底 | `eval_tool_truncation.py` | 异常→ToolMessage 转换率、描述截断生效、文档截断生效、**工具调用上限的按轮语义** | 工具返回结果长度截断与异常兜底；上限计数为 per-turn（新 HumanMessage 归零） | 纯函数离线 |
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中率、误命中率、embedding 调用降低、延迟对比 | LSH+KNN+reranker 两级判定、embedding 减少 67%、573→350ms | 离线白盒（真实 Redis） |
 | E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**、P95 延迟、单路 vs 混合、`--diagnose` | 21 条项目专属集：单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**（H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667 与 coverage 0.77 均为历史口径） | 离线白盒 |
 | E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness | RAG 检索增强五大指标；21 条集 LLM-judge 实测 0.6381/0.8005/0.959/0.9881/0.7976 | 离线（LLM 评分，**不入 CI**） |
@@ -54,7 +54,7 @@
 |---|---|---|
 | E3 工具装配 | 6/6 通过（100%） | 并集/去重/降级/熔断均符合预期 |
 | E4 MCP 安全 | 11/11 通过（100%） | 命令/包名/env/sse-url/type 白名单拦截率 100%，合法配置放行不误伤 |
-| E5 工具兜底 | 6/6 通过（100%） | 异常→提示转换、ENOTDIR 纠正方向、描述截断 200、文档截断、轮次上限 |
+| E5 工具兜底 | 9/9 通过（100%） | 异常→提示转换、ENOTDIR 纠正方向、描述截断 200、文档截断、轮次上限常量、**新轮计数归零 / 轮内封顶 / 按轮 vs 会话累计防回退** |
 | E14 CI 回归 | 73/73 通过 | pytest 四个测试文件（19 项 Agent 新增 + 54 项既有），可入 CI |
 | E13 在线实测 | health ✓ / 登录 ✓ / SSE ✓ / 登出失效 ✓ / 限流 429 ✓ | 账号 qianyi 实测：SSE 首 token 1348ms、总耗时 2.88s、流纯净无污染；登出后旧 token 401；限流第 30/31 次命中 429 |
 | E1 动态路由 | 分类准确率 100%、检索召回 100%、误报 0% | 已重写 `CLASSIFIER_PROMPT`：改为按「是否需要外部知识」通用判定（知识库可自定义入库，不绑定主题），17/17 用例全对（9 检索 + 8 非检索） |
@@ -80,3 +80,7 @@
 
 - **E7 检索 recall 口径已改 boolean**：`eval_retrieval.py` 新增 `--metric boolean|coverage`（默认 boolean，句级要点覆盖：句子关键词命中≥60%、覆盖句占比≥50% 即 1），并修复过滤后不足 5 条按 RRF 顺序补足的口径问题；实测 45 条：单路 avg **0.3111** / 混合 avg **0.2667**（阈值 0.25）。
 - **E2 工具筛选已实测**：22 条用例 / 41 工具 / top_k=12，`avg_recall=0.8939`、`avg_precision=0.1406`、`zero_hit=0`；脚本含本地化 MCP 配置适配（`_localize_mcp_configs`）与显式关连接修复，`cd src && python -m ragas_test.evaluate_tool_filter --max-cases 22` 可复现。
+
+### 实测记录补充（2026-09-19 深夜）
+
+- **E5 扩充至 9 条并全绿**（`a4e1bd4`）：新增 3 条"按轮计数"回归用例（新轮起点归零 / 轮内累计达上限 / **按轮 vs 会话累计防回退锁**）。第 3 条同时计算新旧两种口径并断言二者分道扬镳，用于锁死代际语义——把计数改回"整个会话累计"会立刻变红。另修正既有第 5 条长期挂红的期望值（`MAX_RETRIEVAL_DOCS` 5→8，H-07 P1 放宽时漏改评测集）。结果：**9/9 通过（100%）**，此前 7/9。

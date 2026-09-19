@@ -86,6 +86,8 @@
 - **llm_node → route_after_llm**：`tool_calls` 非空走 tool_node，否则走 memory_node
 - **tool_node → llm_node**：工具执行结果回到 LLM 生成最终回答（可多轮循环）
 
+> **工具调用上限按轮计数（9/19 `a4e1bd4`）**：防死循环的两道防线——单轮次数上限 `MAX_TOOL_ROUNDS=8` 与连续重复调用检测——**均只统计本轮**（从最后一条 `HumanMessage` 之后切片计数，用户发新消息即重新计数）。修复前误按 checkpointer 里的整段会话累计计数，会话累计过 8 次后每轮都被拦、本轮一次工具未调即被剥掉工具；`_is_repeating` 同步收窄到本轮（跨轮重复同一请求属用户重试，不判死循环）。
+
 > **H-11 路由合并（9/19 `a42e5e3`）**：原 `START → persona_router_node → classify_node → route` 两步串行链路合并为 `START → router_node → route`，首 token 前路由 LLM 调用从最多 2 次降到 1 次；`classify_node.py` / `persona_router_node.py` 文件保留未删（不再被 `main_graph` 引用）。`docs/architecture-flowcharts.md` 的 mermaid 图仍是旧两节点版，待同步。
 
 ---
@@ -497,6 +499,22 @@ MCP 工具通过 `langchain_mcp_adapters` 加载为 async 工具，闭包捕获�
 - MCP 工具按服务器名注入 tags（`SERVER_TAGS` 映射）、按工具名注入精准 tags（`TOOL_TAGS`，2026-09-18 新增），供工具筛选规则层命中并按强弱排序
 - 关闭时按序在工具循环内释放 MCP 子进程连接，避免资源泄漏
 
+### MCP 工具故障排查（两次「工具在但不可用」）
+
+自研 `mitta-tools` 出过两次形态不同、都很难发现的线上故障，排查时的关键区分是**「工具不在」还是「工具在但坏了」**：
+
+| | 工具不在（服务端被跳过） | 工具在但坏了（调用才报错） |
+| --- | --- | --- |
+| 现象 | 模型答「没有网页抓取工具」 | 模型答「抓取组件缺少依赖模块 `No module named 'bs4'`」 |
+| 根因 | `mcp_servers.json` 里 `cwd` 指向被 `os.makedirs` 建出的空目录，`client.py` 脚本预检查 `Path(cwd)/args[0]` 不存在 → `raise ConnectionError` → 整个 server 被 warning 跳过（12 工具全缺） | `web_search`/`fetch_url` 在**函数体内** `from bs4 import BeautifulSoup`，而 `beautifulsoup4` 从未列入 `requirements.txt`；server 启动正常、工具照常注册、`tools/list` 看得到，只有真调用才抛 `ModuleNotFoundError` |
+| 排查入口 | 启动日志搜 `MCP 服务器脚本不存在`；核对实际注册工具数 | 健康检查看不出问题；需直连工具函数试调一次 |
+| 修复 | `cwd` 改镜像代码根 `/app`（`5282862`） | 依赖清单补 `beautifulsoup4>=4.14,<5`（`a4e1bd4`） |
+| 部署方式 | 只改挂载配置，**CI rsync 同步 + 重启 api 即可，无需重建镜像** | `requirements.txt` 变更 → **必须 CI 重建镜像**才生效 |
+
+> **注意**：第二次修复（缺 bs4）需重建镜像，新镜像上线前线上 `fetch_url` / `web_search` 仍不可用。
+>
+> **待补**：延迟 import 的可选依赖目前**没有启动期校验**，只靠 `requirements.txt` 注释提醒；如需彻底防复发，可在 `main.py` lifespan 里对可选依赖做 try import 并暴露到 `/health`。
+
 ### 智能工具筛选
 
 每轮对话时，`ToolFilter.select_tools(query, tools)` 执行两层筛选并集，只把候选工具暴露给 LLM：
@@ -584,7 +602,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k（22 条用例，avg_recall=0.8939 / zero_hit=0，已实测） |
 | E3 | 工具装配 | `eval_tool_assembly.py` | 并集召回/降级/熔断 6/6 通过 |
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
-| E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限 6/6 通过 |
+| E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限/**按轮计数** 9/9 通过（`doc_truncation` 期望值已随 `MAX_RETRIEVAL_DOCS=8` 修正） |
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中 100%、无关 query 误命中 0% |
 | E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**：21 条项目专属集 单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**（`h07_p0p1_report.json`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667、coverage 0.7732 均为历史口径） |
 | E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3，生产链路 judge） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**）；21 条集实测 0.6381/0.8005/0.959/0.9881/0.7976 |
