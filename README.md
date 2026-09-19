@@ -100,34 +100,102 @@
   <em>RAG 检索子图（点击图片查看原图）</em>
 </p>
 
+> **2026-09-19 H-12 编排变更**：默认路径由「rewrite → dense_query → bm25_search」三段串行
+> 改为单个 `parallel_retrieve` 节点内部线程池扇出（见下「并行编排」）。三个旧节点**保留注册**，
+> `RETRIEVE_PARALLEL_ENABLED=0` 可完整回退串行，便于线上对比排障。
+
 ### 节点说明
 
-| 节点              | 职责           | 关键实现                                                                                                       |
-| --------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
-| **check_cache** | Redis 检索缓存检查 | `cache_service.query_cache(thread_id, question)`，LSH 快速过滤 + 向量重排验证                                         |
-| **rewrite**     | LLM 查询改写     | 输出 JSON：`{主查询, 子查询[], 关键词[]}`，解决多轮指代问题                                                                     |
-| **dense_query** | 稠密向量多路召回     | 原始 query + 改写 query 独立检索向量库，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                                   |
-| **bm25_search** | BM25 稀疏检索    | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板               |
-| **retrieve**    | RRF 融合 + 去重  | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重，按文本去重                                                |
-| **rerank**      | 在线重排         | SiliconFlow `BAAI/bge-reranker-v2-m3`，按 relevance_score 降序取 top_n=20 候选，分数写入 `doc.metadata["relevance_score"]` |
-| **filter**      | 相关性阈值过滤      | 过滤 `relevance_score < 0.15` 的噪声文档（2026-09-19 H-07 由 0.25 放宽）；MMR 多样选篇（`MMR_ENABLED`，fair 评测证伪已关闭）可选；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空） |
-| **store_cache** | 写入 Redis     | 缓存键 `retrieve_cache:{thread_id}:{bucket_id}`，动态 TTL，命中自动续期                                                 |
+| 节点                     | 职责                          | 关键实现                                                                                                                                            |
+| ---------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **check_cache**        | 检索缓存两级查找                    | 先 L3a 精确层 `query_exact_cache(question)`（文本 hash，0 embedding / 0 rerank），未命中再走 L3b 语义层 `query_cache(thread_id, question)`（LSH 分桶 + KNN + rerank 验证） |
+| **parallel_retrieve**  | 并行编排（改写 + 多路召回，默认路径）        | 阶段一 `rewrite ∥ dense(原问题) ∥ bm25` 并发；阶段二 `dense(主查询) ∥ dense(子查询)` 并发；单路超时/失败只丢弃该路结果，不阻塞整体                                                        |
+| **rewrite**            | LLM 查询改写（串行回退路径）            | 输出 JSON `{main_query, sub_queries[], keywords[]}`；命中 L1 改写缓存时跳过 LLM                                                                            |
+| **dense_query**        | 稠密向量多路召回（串行回退路径）           | 原始 query + 改写 query 独立检索向量库，`n_results=20`，不做距离过滤（bge-m3 相关文档距离偏高，过滤会误杀）                                                                        |
+| **bm25_search**        | BM25 稀疏检索（串行回退路径）          | RedisSearch `FT.SEARCH` 对 `kb:doc:*` HASH 做全文检索，top_k=20，补稠密向量对精确术语（"可变默认参数""bcrypt"）召回不足的短板                                                    |
+| **retrieve**           | RRF 融合 + 去重                 | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重、按文本去重；RRF 分写入 `metadata["rrf_score"]` 供 pre 阶段多样性去重当相关性信号                                |
+| **rerank**             | 候选去重 + 在线重排 + 多样性选择         | `MMR_STAGE=pre_lex`（默认）：RRF 候选池先做词级 Jaccard 去重（44→20 篇）→ SiliconFlow `BAAI/bge-reranker-v2-m3` 精排 top_n=20 → 分数写入 `metadata["relevance_score"]`    |
+| **filter**             | 相关性阈值过滤                     | 过滤 `relevance_score < 0.15` 的噪声文档（2026-09-19 H-07 由 0.25 放宽）；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                                     |
+| **store_cache**        | 写入 Redis（L3a + L3b 双写）      | L3a `rcache:x:{kb_ver}:{hash(问题)}`；L3b `retrieve_cache:{thread_id}:{bucket_id}`；动态 TTL 900s，命中自动续期                                              |
+
+### 并行编排（2026-09-19 H-12）
+
+**真实依赖**：`rewrite` 依赖 question + history；`dense(原问题)` 与 `bm25` 只依赖 question，**都不依赖改写**；只有 `dense(改写后各路)` 必须等 rewrite。
+
+原实现把「原问题」那一路和改写后的路写在同一个 `dense_query` 节点里，导致它白白等完改写；
+`bm25` 排在 `dense_query` 之后也是白等。拆开后：
+
+```
+阶段一（并发）：rewrite  ∥  dense(原问题)  ∥  bm25
+阶段二（并发）：dense(主查询) ∥ dense(子查询1) ∥ dense(子查询2)
+阶段三（串行）：RRF 融合 → rerank → filter
+```
+
+**为什么用线程池而不是 LangGraph 并行边**：主图是同步 `invoke`（`chat_service` 里 `asyncio.to_thread(graph.invoke)`），
+LangGraph 的**同步 superstep 对同一批无依赖节点是串行执行**的，只加边不加执行器不会变快
+（要真并发得把节点改 async + 全链路换 `ainvoke`）。所以在单节点内用 `ThreadPoolExecutor` 扇出。
+
+**降级策略**（任一路失败只丢弃该路，不抛异常）：
+
+| 失败路             | 降级动作                          | 影响                     |
+| --------------- | ----------------------------- | ---------------------- |
+| rewrite 超时/异常   | `rewritten_queries = [原问题]`   | 退化为「原问题 + BM25」两路，仍出结果 |
+| dense(任一路) 失败   | 该路贡献 0 条候选                    | 其余路不受影响                |
+| bm25 失败         | 稀疏路为空                         | RedisSearch 不可用时常见     |
+| 全部稠密路失败         | 只剩 BM25                       | 仍走 rerank/filter，不返回空  |
+
+超时常量：改写 10s / 稠密 8s / BM25 3s。注意 Python 无法强制杀线程，超时是「不再等待该 future 的结果」。
+
+**端到端实测**（21 条项目评测集，2026-09-19，同一份数据同一环境）：
+
+| 组合                 | 端到端均值     | p95        | 改写      | 稠密        | BM25   | 重排      | MMR     |
+| ------------------ | --------- | ---------- | ------- | --------- | ------ | ------- | ------- |
+| 串行基线（off）          | 4278.7 ms | 8294 ms    | 2226.0  | 1280.7    | 12.2   | 759.6   | 0       |
+| 串行 + pre_lex（默认）   | 9749.2 ms | —          | 2286.4  | 6947.2 ⚠  | 14.1   | 426.7   | 74.6    |
+| **并行（parallel+off）** | 6487.0 ms | 8582 ms    | —       | 5791.5 ⚠  | —      | 695.4   | 0       |
+
+> ⚠ **读数口径**：本次 6 臂连跑期间，外部 embedding API 抖动剧烈——同一份数据、同一段代码，
+> `dense_retrieve` 分项在 1280.7 ~ 9385.9 ms 之间跳变（6× 方差），而 `rewrite`（2226~2529 ms）
+> 与 `rerank`（426~760 ms）始终稳定。因此**只有稳定性分项可信，含稠密项的端到端均值不可跨臂比较**。
+> 并行臂结构收益的理论值约 960 ms（把 rewrite 与 dense(原问题)/bm25 重叠），远小于该抖动量级，
+> 本次 A/B **未能验证也未能否定**并行收益，需在 API 稳定窗口重测。
+
+**理论分解**（剔除抖动，仅按依赖关系推算）：
+
+| 组合                  | 推算端到端     | 说明                                             |
+| ------------------- | --------- | ---------------------------------------------- |
+| 串行基线                | ~3.5 s    | rewrite 2.2s + dense 1.3s + bm25 0.01s         |
+| 并行（重写与首路召回重叠）       | ~2.5 s    | max(rewrite 2.2s, dense 0.3s) + dense 0.3s，省 ~29% |
+| 并行 + L1 改写缓存命中      | ~0.6 s    | 改写 0 ms，只剩两阶段稠密                                |
+| **L3a 精确命中**（任意编排）  | **~1 ms** | 0 embedding / 0 rerank，直接返回                    |
+
+> 补充事实：`ChromaVectorStore.query` **内部已用线程池并发**跑多条 query
+> （`max_workers=min(len(query_texts),4)`），所以「4 路稠密」本身早就不是串行的，
+> 并行的边际收益只来自「rewrite 与 dense(原问题)/bm25 的时间重叠」，不要按 4× 去估算。
+> 生产环境保留 `RETRIEVE_PARALLEL_ENABLED=1` 默认开启，`=0` 一键回退串行对比。
 
 ### 关键参数
 
-| 参数             | 值                                     | 位置                                     |
-| -------------- | ------------------------------------- | -------------------------------------- |
-| 稠密召回 n_results | 20                                    | `graphs/retrieve_graph.py` dense_query |
-| BM25 召回 top_k  | 20                                    | `graphs/retrieve_graph.py` bm25_search |
-| RRF_K          | 60                                    | `constant/retrieval_constants.py`      |
-| 重排候选 top_n    | 20                                    | `constant/retrieval_constants.py` `MMR_TOP_CANDIDATES` |
-| MMR 开关/λ/选篇数 | `MMR_ENABLED=False`（证伪后关闭）/ λ=0.5 / 选 8 | `constant/retrieval_constants.py` |
-| 过滤阈值           | 0.15（relevance_score ≥ 0.15，最多取 8 篇，空则兜底 top 3；2026-09-19 H-07 由 0.25 放宽，常量 `RERANK_FILTER_THRESHOLD`） | `constant/retrieval_constants.py` + `graphs/nodes/retrieve/fusion_nodes.py` filter_node |
-| 缓存 TTL         | 动态（默认 900s，命中续期）                      | `constant/cache_constant.py`           |
-| Embedding 模型   | BAAI/bge-m3（1024 维）                   | `constant/embedding_constants.py`      |
-| 切分 chunk      | 800 / overlap 100（2026-09-19 H-07 由 300/50 重切，chunks 405→270） | `constant/embedding_constants.py` |
-| 重排模型           | BAAI/bge-reranker-v2-m3               | `init.py`                              |
-| BM25 索引名       | kb_bm25                               | `constant/cache_constant.py`           |
+| 参数                     | 值                                                                                                                                   | 位置                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 稠密召回 n_results        | 20/路（原问题 + 主查询 + 子查询，最多 4 路）                                                                                                        | `graphs/nodes/retrieve/parallel_nodes.py`                                                |
+| BM25 召回 top_k         | 20                                                                                                                                  | `graphs/nodes/retrieve/query_nodes.py` `run_bm25`                                        |
+| RRF_K                  | 60                                                                                                                                  | `constant/retrieval_constants.py`                                                        |
+| 重排候选 top_n            | 20                                                                                                                                  | `constant/retrieval_constants.py` `MMR_TOP_CANDIDATES`                                   |
+| **MMR 档位** `MMR_STAGE` | `pre_lex`（默认，rerank 前词级 Jaccard 去重 44→20）／`pre`（向量 MMR）／`post`（rerank 后，已证伪）／`off`                                                   | `constant/retrieval_constants.py`                                                        |
+| MMR 词级去重阈值             | `MMR_LEXICAL_JACCARD=0.35`，`MMR_PRE_SELECT=20`                                                                                       | `constant/retrieval_constants.py`                                                        |
+| MMR λ                  | `MMR_LAMBDA=0.5`（post）／`MMR_PRE_LAMBDA=0.7`（pre）                                                                                     | `constant/retrieval_constants.py`                                                        |
+| 并行编排开关                 | `RETRIEVE_PARALLEL_ENABLED=1`（默认），`RETRIEVE_PARALLEL_WORKERS=4`                                                                       | `constant/retrieval_constants.py`                                                        |
+| 单路超时                   | 改写 `REWRITE_TIMEOUT_SEC=10` / 稠密 `DENSE_TIMEOUT_SEC=8` / BM25 `SPARSE_TIMEOUT_SEC=3`                                                 | `constant/retrieval_constants.py`                                                        |
+| 过滤阈值                   | 0.15（relevance_score ≥ 0.15，最多取 8 篇，空则兜底 top 3；2026-09-19 H-07 由 0.25 放宽，常量 `RERANK_FILTER_THRESHOLD`）                              | `constant/retrieval_constants.py` + `graphs/nodes/retrieve/fusion_nodes.py` filter_node  |
+| 缓存分层开关                 | `CACHE_LAYER_ENABLED=1`（默认）                                                                                                         | `constant/cache_constant.py`                                                             |
+| 缓存 TTL                 | L1 改写 24h／L2 向量 7d／L3 检索结果动态 900s（命中续期）                                                                                             | `constant/cache_constant.py`                                                             |
+| 缓存强命中阈值                | `CACHE_RERANK_STRONG_HIT=0.7`（两段式验证快通道）、`CACHE_RERANK_HIT_SCORE=0.5`、`CACHE_KNN_FAST_K=3`                                            | `constant/cache_constant.py`                                                             |
+| 知识库版本键                 | `KB_VERSION=v1`（入库重灌即失效全部 L3a/L3b）                                                                                                   | `constant/cache_constant.py`                                                             |
+| Embedding 模型           | BAAI/bge-m3（1024 维）                                                                                                                 | `constant/embedding_constants.py`                                                        |
+| 切分 chunk               | 800 / overlap 100（2026-09-19 H-07 由 300/50 重切，chunks 405→270）                                                                       | `constant/embedding_constants.py`                                                        |
+| 重排模型                   | BAAI/bge-reranker-v2-m3                                                                                                             | `init.py`                                                                                |
+| BM25 索引名               | kb_bm25                                                                                                                             | `constant/cache_constant.py`                                                             |
 
 ### 混合检索设计思路
 
@@ -138,7 +206,21 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
 - **RRF 融合**：只看排名不看绝对分数，统一两路量纲差异
 - **rerank 精排**：交叉编码器对 query-doc 对做注意力计算，最终排序依据
 - **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.15 以下视为噪声丢弃（2026-09-19 H-07 由 0.25 放宽：0.3→0.25→0.15 两次放宽，提升边缘相关文档召回、改善多点分散题覆盖）；过滤后为空时兜底返回原始 top 3，最多取 8 篇
-- **MMR 多样性重排**：rerank top20 后可插 MMR 贪心选篇（`score = λ×rerank - (1-λ)×max_cos_sim`，λ=0.5），但 fair 口径评测证明 MMR on/off 无增益（key_points 均 0.4524）且拖慢 ~1.4s，`MMR_ENABLED=False` 关闭，保留节点便于一键恢复
+- **多样性去重（`MMR_STAGE` 四档，2026-09-19 H-12 定档 `pre_lex`）**：MMR 的位置比开关更重要，四档 A/B（21 条项目评测集，key_points 口径）如下：
+
+  | 档位                    | boolean recall | kp 覆盖  | kp 全覆盖比 | 重排耗时     | 去重开销    | 送 rerank |
+  | --------------------- | -------------- | ------ | ------- | -------- | ------- | ------- |
+  | `off`                 | 0.8095         | 0.6833 | 0.4286  | 759.6 ms | 0       | 44.9    |
+  | `pre` λ=0.5           | 0.8095         | 0.7119 | 0.4762  | 477.6 ms | 2180 ms | 20      |
+  | `pre` λ=0.7           | 0.8095         | 0.6714 | 0.4286  | 449.9 ms | 4362 ms | 20      |
+  | `post` λ=0.5          | **0.7143 ↓**   | 0.6833 | 0.4286  | 757.9 ms | 6217 ms | 44.0    |
+  | **`pre_lex`（默认）**     | 0.8095         | 0.7119 | 0.4762  | **426.7** | **74.6** | 20      |
+
+  结论：① `post`（rerank 后再多样性选篇）**是负收益**——recall 从 0.8095 掉到 0.7143，却多花 6217 ms，彻底证伪；
+  ② 向量 `pre` 方向对（kp 覆盖 0.6833→0.7119）但花 2180 ms 只省 282 ms 重排，净亏 7.7×；
+  ③ λ 调高反而变差（0.7119→0.6714），说明起作用的是**多样性项本身**，不是"少送几篇给 rerank"；
+  ④ `pre_lex` 用 jieba 词级 Jaccard（阈值 0.35）近似多样性，**不需要额外 embedding**，
+  拿到与 `pre` λ=0.5 相同的最佳质量，开销只有 74.6 ms（便宜 29×），重排 759.6→426.7 ms，**净省 ~258 ms 且质量更好**。
 
 ### 工具筛选机制
 
@@ -155,7 +237,10 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
 | 短期记忆    | PostgreSQL Checkpointer | thread_id         | 会话级，可恢复                     |
 | 长期记忆    | PostgreSQL Store        | user_id           | 跨会话持久                       |
 | 节点缓存    | Redis                   | 输入哈希              | TTL 10~900 秒                |
-| 检索缓存    | Redis + LSH             | thread_id + query | TTL 900 秒                   |
+| 检索缓存 L1 改写 | Redis STRING（JSON）  | `rw:{prompt_ver}:{hash(问题‖历史)}` | TTL 24h（跨用户共享）        |
+| 检索缓存 L2 向量 | Redis STRING（float32 二进制） | `emb:{model_tag}:{hash(文本)}` | TTL 7d（跨用户共享）      |
+| 检索缓存 L3a 精确 | Redis STRING（JSON）   | `rcache:x:{kb_ver}:{hash(问题)}` | TTL 900s 命中续期（跨用户共享） |
+| 检索缓存 L3b 语义 | Redis + LSH 分桶       | thread_id + bucket_id | TTL 900s 命中续期           |
 | BM25 索引 | RedisSearch HASH        | doc_id            | 持久化，知识库重建时重建                |
 | 登录态     | Redis                   | user_id           | access 15 分钟 / refresh 30 天 |
 
@@ -539,14 +624,53 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 
 缓存键自定义设计：默认 key_func 对节点输入整体 pickle 哈希，而 Send payload 含每轮变化的 messages，会导致缓存键每轮都变、永不命中。自定义 key_func 只取稳定部分（用户输入/工具参数），确保缓存可命中。
 
-### 检索结果缓存（CacheService + Redis Search + LSH）
+### 检索缓存四层（CacheService + Redis Search + LSH，2026-09-19 H-12 重构）
 
-除 LangGraph 节点级缓存外，`CacheService` 基于 Redis Search 构建了独立的检索结果缓存层，在 `retrieve_graph` 的 `check_cache` 节点使用：
+除 LangGraph 节点级缓存外，`CacheService` 基于 Redis 构建了**四层缓存**。原实现只有一层「检索结果语义缓存」，
+问题在于它**每次命中都要先跑一次 embedding** 才能查 LSH 桶——省下的只是重排和召回，embedding 开销一分没省，
+延迟收益被砍半、embedding 调用成本完全没降。重构后按「谁依赖谁」拆成四层，让每一层单独可命中：
 
-- **缓存键**：`retrieve_cache:{thread_id}:{bucket_id}`，其中 bucket_id 通过 LSH（局部敏感哈希）对 query 向量做嵌套分桶，解决 Redis 无法直接做向量相似度检索的问题
-- **两级验证**：LSH 快速过滤候选 → 用 bge-reranker-v2-m3 验证候选问题与当前问题是否语义等价（阈值 0.5，实测同义改写 0.89+，无关问题 0.0）
-- **动态 TTL**：默认 900 秒，每命中一次自动刷新过期时间，兼顾热点问题长缓存与冷门问题快速淘汰
-- **降级策略**：Redis 不可用时静默降级为不缓存，不阻塞检索主链路
+| 层            | 缓存内容          | 缓存键                                                    | 命中条件                                    | 跨用户共享         | TTL          |
+| ------------ | ------------- | ------------------------------------------------------ | --------------------------------------- | ------------ | ------------ |
+| **L1 改写**    | LLM 查询改写结果    | `rw:{prompt_ver}:{sha256(norm(问题)‖norm(历史))[:32]}`     | 归一化后问题+历史完全相同                           | ✅ 全局共享（不含用户态） | 24h          |
+| **L2 向量**    | bge-m3 文本向量   | `emb:{model_tag}:{sha256(norm(文本))[:32]}`              | 归一化后文本完全相同                              | ✅ 全局共享       | 7d           |
+| **L3a 精确结果** | 完整检索结果（含重排分）  | `rcache:x:{kb_ver}:{sha256(norm(问题))[:32]}`            | 归一化后问题完全一致                              | ✅ 全局共享       | 900s（命中续期）   |
+| **L3b 语义结果** | 完整检索结果（含重排分）  | `retrieve_cache:{thread_id}:{bucket_id}`（LSH 分桶）       | LSH 桶内 + rerank ≥ 0.5                   | ❌ 按会话隔离      | 900s（命中续期）   |
+
+**归一化**（决定 L1/L2/L3a 能否跨用户）：全角空格→半角、trim、连续空白折叠为单空格、ASCII 转小写。
+`"Redis  是什么？"`、`"Redis 是什么？ "`、`"redis 是什么？"` 三个写法会落到同一个 key。
+
+**为什么 L3b 不能省掉 rerank**：bge-m3 原始 query 向量对短问题区分度差（正是项目要上 rerank 的原因），
+只用向量 KNN 会把「怎么部署」和「怎么回滚」判成一条。所以 L3b 的 rerank **是命中判据本身，不是可选优化**，
+真正能省掉 rerank 的是 L3a（文本 hash 精确匹配，无需任何语义判断）。
+
+**L3b 两段式验证**（H-12 新增，解决「每次都要重排整个桶」）：先取 KNN 近邻 top `CACHE_KNN_FAST_K=3` 精排，
+分数 ≥ `CACHE_RERANK_STRONG_HIT=0.7` 直接判命中（强命中快通道，绝大多数命中走这条）；
+否则才把整个桶的候选全量精排，≥ `CACHE_RERANK_HIT_SCORE=0.5` 判命中。未命中一律走完整 RAG。
+
+**失效策略**：
+
+| 变更                          | 失效范围                                     |
+| --------------------------- | ---------------------------------------- |
+| 知识库重灌/切 chunk             | `MITTA_KB_VERSION` 自增 → L3a、L3b **全部**失效 |
+| 改写 prompt 改版                | `MITTA_REWRITE_PROMPT_VER` 自增 → L1 全失效   |
+| 换 embedding 模型              | L2 key 自带 `model_tag`，新旧并存不串味，老条目自然过期    |
+| 时间                          | L1 24h / L2 7d / L3 900s 动态续期            |
+
+> 已知待办：L3a 是跨会话共享的，而 `clear_thread_cache` 目前按 thread 清理，会误删本可共享的条目，需改为按 key 清理。
+
+**各层实际收益**（本地 redis-stack 实测 / 分项推算）：
+
+| 层   | 命中后省掉什么                           | 实测/推算收益                                       |
+| --- | --------------------------------- | --------------------------------------------- |
+| L1  | 一次 LLM 改写调用                       | 改写分项 2226 ms → ~0 ms（重复提问场景）                  |
+| L2  | 一次 embedding 调用                   | **首次 469 ms → 二次 2 ms**（同文本，1024 维，向量逐位一致）    |
+| L3a | embedding + 4 路召回 + RRF + 重排，**全链路** | **~1 ms**（0 embedding / 0 rerank，直接反序列化返回） |
+| L3b | 4 路召回 + RRF + 部分重排                | 高并发下把整条 RAG 流水线降到「1 次 embedding + 3 条候选重排」   |
+
+**降级策略**：Redis 不可用（或 `CACHE_LAYER_ENABLED=0`）时静默降级为不缓存，不阻塞检索主链路。
+⚠ 部署注意：Windows 下 Redis 必须用 `127.0.0.1` 而非 `localhost`——`localhost` 会解析到 IPv6 `::1`，
+而 redis-stack 只监听 IPv4，报错 10054 后 **BM25 会静默退化为空召回**（不抛异常，极难发现）。
 
 ### 流式输出与工具调用状态
 
@@ -603,8 +727,8 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E3 | 工具装配 | `eval_tool_assembly.py` | 并集召回/降级/熔断 6/6 通过 |
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
 | E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限/**按轮计数** 9/9 通过（`doc_truncation` 期望值已随 `MAX_RETRIEVAL_DOCS=8` 修正） |
-| E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中 100%、无关 query 误命中 0% |
-| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**：21 条项目专属集 单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**（`h07_p0p1_report.json`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667、coverage 0.7732 均为历史口径） |
+| E6 | 语义缓存 | `eval_semantic_cache.py` + 冒烟脚本 | 同义改写命中 100%、无关 query 误命中 0%；H-12 拆分为 L1 改写 / L2 向量 / L3a 精确 / L3b 语义四层，L2 实测首次 469 ms → 二次 2 ms |
+| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall**：21 条项目专属集 kp 覆盖 单路 **0.7476** / 混合 **0.7119**、kp 全覆盖比 0.619 / 0.4762、boolean avg 单/混均 **0.8095**（`h07_p0p1_report.json`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667、coverage 0.7732 均为历史口径）。**2026-09-19 H-12 修正**：脚本原按中文键 `主查询/子查询` 读取改写结果，而 `REWRITE_PROMPT` 输出的是 `main_query/sub_queries`，两键从未匹配 → 历史评测**实际只跑了 1 路稠密**（生产是 4 路）。修复后重跑四档 A/B，`pre_lex` 定档为默认（详见「混合检索设计思路」）；含稠密项的端到端延迟受外部 embedding API 抖动污染（1280~9386 ms），**不可跨臂比较** |
 | E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3，生产链路 judge） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**）；21 条集实测 0.6381/0.8005/0.959/0.9881/0.7976 |
 | E9 | 记忆 | `eval_memory.py` | 写入 P95 ≈ 46ms（历史产物） |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存 deque |
@@ -696,7 +820,20 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 `.github/workflows/acr-cicd.yml`，触发条件：push 到 `main` 分支（构建镜像→推 ACR→rsync→部署→健康检查）；2026-09-19 起新增 **RAG 入库检测 + 蓝绿切换**（见下「CI/CD 蓝绿入库切换」）。
 
-`.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——push 到 `main` 且路径命中 `src/**`、`tests/**`、`requirements.txt` 或 workflow 本身时触发；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest（`tests/test_agent_regression.py` + `test_config.py` + `test_jwt_utils.py` + `test_rand_id_util.py`，73 用例，无外部依赖），失败上传 pytest 报告 artifact。**明确排除**：RAGAS 五指标（耗时+LLM 评分）与依赖 Redis/Postgres/LLM/向量库的离线白盒评测（本地评估）。
+`.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——push 到 `main` 且路径命中 `src/**`、`tests/**`、`requirements.txt` 或 workflow 本身时触发（也支持 `workflow_dispatch` 手动触发）；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest，**73 用例、零外部依赖**（不连 Redis/Postgres/LLM/向量库），失败时上传 pytest 报告 artifact：
+
+| 测试文件                              | 覆盖内容                                  | 用例数 |
+| --------------------------------- | ------------------------------------- | --- |
+| `tests/test_config.py`            | 环境变量加载/校验/布尔解析                        | 32  |
+| `tests/test_agent_regression.py`  | 动态路由/MCP 安全/工具兜底/记忆缓存 key/工具名解析/安全过滤  | 19  |
+| `tests/test_jwt_utils.py`         | JWT 签发/验证/过期/密码哈希(bcrypt)             | 12  |
+| `tests/test_rand_id_util.py`      | 随机 ID 生成/唯一性/int 范围                   | 10  |
+
+**明确排除**：RAGAS 五指标（耗时 + LLM 评分）与依赖 Redis/Postgres/LLM/向量库的离线白盒评测（只在本地评估）。
+
+> **与部署链路的关系**：当前两个 workflow 都由 `push 到 main` 触发、**并行执行、彼此解耦**——回归红叉会在 commit 上标红并留下 artifact，但**不会阻断** `acr-cicd.yml` 的部署。
+> 这样设计的好处是回归跑挂不会卡住线上发布，代价是它不是硬门禁；若要升级为硬门禁，可把 `acr-cicd.yml` 的触发改为
+> `on: workflow_run: workflows: ["Agent Regression Tests"] types: [completed]` 并判断 `conclusion == 'success'`（已列入后续规划）。
 
 ### 部署架构
 
@@ -714,11 +851,14 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 └─────────────┘                 └──────────────────────┘
 ```
 
-### 完整流水线（8 步）
+### 完整流水线（部署 8 步 + 并行回归门禁）
+
+一次 push 到 `main` 会同时触发**两条独立 workflow**：部署链路（`acr-cicd.yml`，8 步）与回归测试（`agent-regression.yml`，E14），二者并行、互不阻塞。
 
 ```mermaid
 flowchart TD
     PUSH[push 到 main] --> CHECK[① Checkout<br/>fetch-depth: 2]
+    PUSH --> REG[并行：agent-regression.yml<br/>Python 3.12 + pytest 73 用例<br/>零外部依赖]
     CHECK --> DETECT{② 需要重建镜像？<br/>Dockerfile/requirements/workflow 变更}
     DETECT -->|是| BUILD[③ Buildx + Login ACR<br/>取 SHORT_SHA + Build&push]
     DETECT -->|否| SKIP[跳过构建<br/>复用 latest 镜像]
@@ -736,7 +876,18 @@ flowchart TD
     HEALTH -->|失败| ROLLBACK[回滚切回旧 collection 再重启]
     ROLLBACK --> OK
     HEALTH -->|全失败| FAIL[❌ docker logs --tail 50<br/>exit 1]
+
+    REG --> REGJ{回归结果<br/>test_config 32 / regression 19<br/>jwt 12 / rand_id 10}
+    REGJ -->|73 passed| REGOK[✅ 回归通过<br/>commit 绿勾]
+    REGJ -->|失败| REGFAIL[❌ 红叉 + 上传 pytest artifact<br/>当前不阻断部署]
+
+    classDef gate fill:#F3E8FA,stroke:#9C5BD0,stroke-width:1.5px;
+    class REG,REGJ,REGOK,REGFAIL gate;
 ```
+
+**回归门禁覆盖什么**（都是纯函数、确定性断言，秒级出结果）：动态路由分流规则、MCP 安全白名单（命令/包名/env/sse/type）、工具结果兜底与按轮计数、记忆缓存 key 构造、工具名解析、配置与 JWT/ID 生成。
+
+**为什么不把重活放进 CI**：RAGAS 五指标要用 LLM 打分（分钟级 + 抖动大），离线白盒评测要连 Redis/Postgres/向量库/在线 LLM——放进 CI 既不划算也不稳定，因此只在本地跑，结果归档到 `src/ragas_test/reports/<日期>/` 做版本间对比。
 
 ### 镜像构建跳过机制（提速核心）
 
@@ -817,6 +968,9 @@ flowchart TD
 5. 目前只在源码层面支持自定义模型，后续需在设置界面添加接口
 6. 引入 token 消耗检测
 7. **多人格 v1 已落地**（4 人格路由 + chibi）；后续：crazy 的 `collect_to_cassette` 工具、supervisor 多 Agent 编排（`docs/SUPERVISOR_UPGRADE_PLAN.md` 规划中）
+8. **回归测试升级为硬门禁**：当前 `agent-regression.yml` 与部署链路并行、不阻断发布；后续改用 `workflow_run` 串联，只有 73 用例全绿才允许 `acr-cicd.yml` 部署
+9. **缓存分层待补量化**：新增 `eval_cache_layers.py`，在「重复提问 / 同义改写 / 多轮历史」三种负载下实测 L1/L2/L3a/L3b 命中率；`clear_thread_cache` 需改为按 key 清理（L3a 跨会话共享，按 thread 清会误删）
+10. **并行编排复测**：本次 A/B 期间外部 embedding API 抖动达 6×（1280→9386 ms），并行收益被噪声掩盖，需在稳定窗口重测后再决定是否长期保留 `RETRIEVE_PARALLEL_ENABLED=1`
 
 ## 许可证
 

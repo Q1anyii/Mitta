@@ -122,41 +122,36 @@
 
   <!-- RAG 子图 -->
   <rect x="42" y="626" width="876" height="80" rx="8" fill="#FFFFFF" stroke="rgba(201,167,232,0.5)" stroke-width="1"/>
-  <text x="54" y="645" font-size="12.5" font-weight="700" fill="#1A1B1C">RAG 检索子图 retrieve_graph（混合检索三级流水线）</text>
+  <text x="54" y="645" font-size="12.5" font-weight="700" fill="#1A1B1C">RAG 检索子图 retrieve_graph（并行编排 + 四层缓存 + 三级流水线）</text>
 
   <rect x="54" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
   <text x="60" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">check_cache</text>
-  <text x="60" y="682" font-size="10" fill="#6B7280">LSH+reranker 验证</text>
-  <text x="166" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
+  <text x="60" y="682" font-size="10" fill="#6B7280">L3a 精确 → L3b 语义</text>
+  <text x="169" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
 
-  <rect x="176" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
-  <text x="182" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">rewrite</text>
-  <text x="182" y="682" font-size="10" fill="#6B7280">主查询+子+关键词</text>
-  <text x="288" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
+  <rect x="180" y="652" width="170" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
+  <text x="186" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">parallel_retrieve</text>
+  <text x="186" y="682" font-size="10" fill="#6B7280">线程池扇出 改写∥召回</text>
+  <text x="361" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
 
-  <rect x="298" y="652" width="130" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
-  <text x="304" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">dense_query(20)</text>
-  <text x="304" y="682" font-size="10" fill="#6B7280">+ bm25_search(20)</text>
-  <text x="436" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
+  <rect x="372" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
+  <text x="378" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">retrieve</text>
+  <text x="378" y="682" font-size="10" fill="#6B7280">RRF k=60 去重</text>
+  <text x="487" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
 
-  <rect x="446" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
-  <text x="452" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">retrieve</text>
-  <text x="452" y="682" font-size="10" fill="#6B7280">RRF k=60 去重</text>
-  <text x="558" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
+  <rect x="498" y="652" width="120" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
+  <text x="504" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">rerank</text>
+  <text x="504" y="682" font-size="10" fill="#6B7280">pre_lex 去重→bge 精排</text>
+  <text x="629" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
 
-  <rect x="568" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
-  <text x="574" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">rerank</text>
-  <text x="574" y="682" font-size="10" fill="#6B7280">bge-reranker top5</text>
-  <text x="680" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
+  <rect x="640" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
+  <text x="646" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">filter</text>
+  <text x="646" y="682" font-size="10" fill="#6B7280">阈值 0.15 空兜底 top3</text>
+  <text x="755" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
 
-  <rect x="690" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
-  <text x="696" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">filter</text>
-  <text x="696" y="682" font-size="10" fill="#6B7280">阈值 0.3 空兜底 top3</text>
-  <text x="802" y="674" text-anchor="middle" font-size="11" fill="#C9A7E8" font-weight="700">→</text>
-
-  <rect x="812" y="652" width="92" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
-  <text x="818" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">store_cache</text>
-  <text x="818" y="682" font-size="10" fill="#6B7280">TTL 900s 续期</text>
+  <rect x="766" y="652" width="104" height="44" rx="6" fill="#F7F2FC" stroke="rgba(201,167,232,0.55)" stroke-width="1"/>
+  <text x="772" y="668" font-size="10.5" font-weight="700" fill="#1A1B1C">store_cache</text>
+  <text x="772" y="682" font-size="10" fill="#6B7280">L3a+L3b 双写 900s</text>
 
   <!-- MCP 客户端 -->
   <rect x="42" y="714" width="876" height="92" rx="8" fill="#FFFFFF" stroke="rgba(201,167,232,0.5)" stroke-width="1"/>
