@@ -10,8 +10,8 @@
 
 ## 功能特性
 
-- **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟
-- **多人格路由层（2026-09-19 v1）**：4 个对话人格（帽子 cappie 默认 / 善良 kind / 疯狂 crazy / 短发 manager）由每轮 `persona_router_node` 分发——前端手选短路（0 次 LLM）或未手选自动四分类（1 次小模型调用）；人格 prompt 无条件叠加进 System Prompt（语气层，不推翻事实层）；**按人格配置工具白名单**（善良 23 个纯只读 / 短发加 git 只读 4 个 / 疯狂零工具走裸模型分支）；配 chibi 袖珍分身概率性后置吐槽（30%，SSE 独立事件不进主消息流）；自建 16 条人格路由评测分流准确率 100%（乐观基线，边界用例未覆盖）
+- **意图路由**：LLM 分类器判断问题是否需要检索知识库，`Send` 条件路由按需走检索链路，避免无谓延迟；**闲聊/自我介绍快速短路**（9/19 H-09）：正则命中直接判不需要检索、跳过 LLM 分类调用，进一步压低首 token 延迟
+- **多人格路由层（2026-09-19 v1）**：4 个对话人格（帽子 cappie 默认 / 善良 kind / 疯狂 crazy / 短发 manager）由每轮 `persona_router_node` 分发——前端手选短路（0 次 LLM）或未手选自动四分类（1 次小模型调用）；人格 prompt 无条件叠加进 System Prompt（语气层，不推翻事实层）；**按人格配置工具白名单**（善良 23 个纯只读 / 短发加 git 只读 4 个 / 疯狂零工具走裸模型分支）；配 chibi 袖珍分身概率性后置吐槽（30%，SSE 独立事件不进主消息流）；自建 16 条人格路由评测分流准确率 100%（乐观基线，边界用例未覆盖）；**H-09 修复手选路由失效 bug**（`Send` 不继承父 state、payload 漏带 persona 致手选全部兜底 cappie，补 `"persona"` 后手选真正生效）
 - **RAG 增强检索**：查询改写（主查询 + 子查询）→ 稠密向量多路召回 + BM25 稀疏检索（RedisSearch）→ RRF 融合去重 → SiliconFlow 在线重排 → 相关性阈值过滤
 - **MCP 工具集成**：通过 Model Context Protocol 接入 filesystem、sqlite、sequential-thinking、memory、time、context7、dbhub 等外部工具，并自研本地 **mitta-tools**（git 操作/网络搜索/文件检索，12 个工具）；工具常驻事件循环，支持故障降级；**分组 + 分级启动**（方案B）：第一方 6 台常驻、第三方 context7/dbhub 懒加载（`McpLazyLoader` 闪连预热 schema → 命中触发真实连接 → `DynamicToolNode` 动态路由），节省 150-300MB 内存
 - **智能工具筛选**：规则层（tags 关键词命中）+ 语义层（向量检索）并集，每轮只暴露相关工具给 LLM，避免工具过多导致注意力稀释
@@ -25,7 +25,7 @@
 - **断点续传（刷新不中断）**：聊天任务与 SSE 连接解耦，每个思考/工具/正文事件按序号落 Redis List（TTL 7 天）；前端刷新或重连时先 `GET events?after=已消费序号` 重放缺失的增量事件重建界面，再续推新事件，强刷也能恢复思考过程与流式输出，且不会因重发而重复累积对话
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
-- **现代化前端**：Vue 3 SPA（CDN 单文件，多主题 + 响应式移动端 + 高对比几何切角动效），工具调用记录穿插展示、复制/分享/重新生成
+- **现代化前端**：Vue 3 SPA（CDN 单文件，多主题 + 响应式移动端 + 高对比几何切角动效），工具调用记录穿插展示、复制/分享/重新生成；**聊天区跳底悬浮按钮**（距底 >200px 显示）+ **人格工具范围提示**（9/19 H-09）
 - **安全认证**：JWT（access 15 分钟 + 隐式 refresh 30 天自动续签）+ bcrypt + 登出即时失效（Redis 删除 token）+ 请求限流
 - **节点级缓存**：LangGraph CachePolicy + Redis，memory_node 结果按 TTL 缓存（retrieve/tool 节点缓存已移除，原因见「核心设计说明 → 节点级缓存」）
 
@@ -74,7 +74,7 @@
 | 节点                | 职责                | 关键实现                                                                                                                |
 | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **persona_router_node** | 每轮人格分发（2026-09-19） | 手选短路（`configurable.persona_override` 合法值，0 次 LLM）/ 自动四分类（`PERSONA_ROUTER_PROMPT` 小模型），非法/失败兜底 cappie；状态 `OverAllState.persona` |
-| **classify_node** | LLM 判断问题是否需要知识库检索 | `model.invoke([CLASSIFIER_PROMPT, user_input])`，返回 yes/no                                                           |
+| **classify_node** | LLM 判断问题是否需要知识库检索 | `model.invoke([CLASSIFIER_PROMPT, user_input])` 返回 yes/no；**闲聊/自我介绍快速短路**（`_QUICK_NO_PATTERNS` 正则 + `_quick_no_retrieval`，命中直接 needs_retrieval=False、跳过 LLM 分类，25 边界用例） |
 | **retrieve_node** | 调用 RAG 子图检索知识库    | `retrieve_graph.invoke()`，Document 转 dict 存入 state（checkpoint 反序列化兼容）                                               |
 | **llm_node**      | 核心生成节点            | 组装 System Prompt（默认+用户自定义+长期记忆+**人格 prompt**）→ ToolFilter 筛选工具 → **按人格白名单收缩** → `model.bind_tools()` → `model.stream()` → 合并 chunk 提取 tool_calls |
 | **tool_node**     | 执行 MCP 工具         | LangGraph `ToolNode`，按工具名路由；CachePolicy 缓存同参数结果                                                                     |
@@ -83,7 +83,7 @@
 ### 条件路由
 
 - **START → persona_router_node**：人格分发（手选短路 / 自动四分类），随后进入 classify_node
-- **classify_node → route**：`needs_retrieval=True` 走检索链路，否则直接到 llm_node
+- **classify_node → route**：`needs_retrieval=True` 走检索链路，否则直接到 llm_node；快速短路命中时 classify 不做 LLM 调用直接 false
 - **llm_node → route_after_llm**：`tool_calls` 非空走 tool_node，否则走 memory_node
 - **tool_node → llm_node**：工具执行结果回到 LLM 生成最终回答（可多轮循环）
 

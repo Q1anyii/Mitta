@@ -1,6 +1,6 @@
 # persona 手选路由修复 + 首 token 提速 + 前端交互优化（H-20260919-09）
 
-docs_sync: required
+docs_sync: none
 
 日期：2026-09-19
 类别：agent / persona / frontend
