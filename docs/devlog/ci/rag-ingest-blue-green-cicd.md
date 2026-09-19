@@ -1,6 +1,6 @@
 # RAG 入库 CI 蓝绿切换（双 collection + 保留一版回滚）（H-20260919-08）
 
-docs_sync: required
+docs_sync: none
 
 日期：2026-09-19
 类别：ci / rag-ingest

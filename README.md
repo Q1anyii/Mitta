@@ -253,7 +253,8 @@ AgentProject/
 │   ├── system_prompt/
 │   │   └── default_system_prompt.txt     # 默认 System Prompt（Mitta 角色设定）
 │   ├── knowledge-base/                   # 编程知识库（Markdown）
-│   │   ├── ingest_knowledge.py           # 知识库入库脚本（向量库 + RedisSearch BM25 双写）
+│   │   ├── ingest_knowledge.py           # 知识库入库脚本（向量库 + RedisSearch BM25 双写；支持 --collection/--redis-url 覆盖，供 CI 蓝绿入库）
+│   │   ├── cleanup_collections.py        # 清理旧 collection（--keep 显式保留活跃+上一版，删除其余 FAQ_KNOWLEDGE_BASE_*）
 │   │   ├── 01~10-*.md                    # 分类知识文档
 │   │   └── test-qa/                      # 测试 QA 集（eval_dataset.json 45 条 + eval_project_dataset.json 21 条）
 │   ├── FAQ/                              # 在线学习平台 FAQ 知识库
@@ -383,6 +384,7 @@ docker-compose up -d etcd minio milvus
 ```bash
 cd src
 python ../resources/knowledge-base/ingest_knowledge.py
+# 蓝绿入库到指定 collection（CI 用）：--collection FAQ_KNOWLEDGE_BASE_<short_sha> --redis-url redis://redis:6379/0
 ```
 
 **方式二：HTTP 接口增量入库**（日常维护推荐，无需登录服务器）
@@ -402,6 +404,8 @@ curl -X POST http://localhost:8000/api/knowledge/upload \
 ```
 
 重复上传同一文档时基于内容哈希生成 doc_id 自动覆盖更新，不产生重复；BM25 索引自动覆盖新写入的 `kb:doc:*` 哈希，无需重建。
+
+**方式三：CI 蓝绿自动入库**（2026-09-19 新增，见「CI/CD 蓝绿入库切换」）——push 到 main 且改动命中 `src/constant/embedding_constants.py` / `resources/knowledge-base/` / `resources/config/vector_db.json` 时，Actions 自动入库到新 collection `FAQ_KNOWLEDGE_BASE_<short_sha>` → 切换 vector_db.json → 重启 → 健康检查通过后保留最近两个 collection（`cleanup_collections.py --keep`），失败自动回滚旧 collection。**绝不先删旧库**。
 
 ### 7. 启动后端
 
@@ -669,7 +673,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 ### 工作流文件
 
-`.github/workflows/acr-cicd.yml`，触发条件：push 到 `main` 分支（构建镜像→推 ACR→rsync→部署→健康检查）。
+`.github/workflows/acr-cicd.yml`，触发条件：push 到 `main` 分支（构建镜像→推 ACR→rsync→部署→健康检查）；2026-09-19 起新增 **RAG 入库检测 + 蓝绿切换**（见下「CI/CD 蓝绿入库切换」）。
 
 `.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——push 到 `main` 且路径命中 `src/**`、`tests/**`、`requirements.txt` 或 workflow 本身时触发；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest（`tests/test_agent_regression.py` + `test_config.py` + `test_jwt_utils.py` + `test_rand_id_util.py`，73 用例，无外部依赖），失败上传 pytest 报告 artifact。**明确排除**：RAGAS 五指标（耗时+LLM 评分）与依赖 Redis/Postgres/LLM/向量库的离线白盒评测（本地评估）。
 
@@ -689,7 +693,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 └─────────────┘                 └──────────────────────┘
 ```
 
-### 完整流水线（7 步）
+### 完整流水线（8 步）
 
 ```mermaid
 flowchart TD
@@ -699,10 +703,17 @@ flowchart TD
     DETECT -->|否| SKIP[跳过构建<br/>复用 latest 镜像]
     BUILD --> RSYNC
     SKIP --> RSYNC
-    RSYNC[④ rsync 增量同步前端/配置到 /opt/mitta]
-    RSYNC --> SSH[⑤ SSH 部署：清残留+登录 ACR+pull+up -d]
-    SSH --> HEALTH{⑥ 健康检查<br/>curl /health × 24}
-    HEALTH -->|200| OK[✅ 部署成功<br/>清理悬空镜像]
+    RSYNC[④ rsync 增量同步前端/配置/知识库到 /opt/mitta<br/>--exclude vector_db.json]
+    RSYNC --> INGEST{⑤ RAG 入库需要？<br/>embedding/knowledge-base/vector_db.json 变更}
+    INGEST -->|是| BLUE[⑥ 蓝绿入库到 FAQ_KNOWLEDGE_BASE_&lt;short_sha&gt;<br/>失败即红，旧库不动]
+    INGEST -->|否| SKIPI[跳过入库<br/>不花 embedding API]
+    BLUE --> SWITCH[⑦ sed 切换 vector_db.json → 重启 api]
+    SKIPI --> SSH
+    SWITCH --> SSH[⑧ SSH 部署：清残留+登录 ACR+pull+up -d]
+    SSH --> HEALTH{健康检查<br/>curl /health × 24}
+    HEALTH -->|200| OK[✅ 部署成功<br/>cleanup 保留最近两版+清理悬空镜像]
+    HEALTH -->|失败| ROLLBACK[回滚切回旧 collection 再重启]
+    ROLLBACK --> OK
     HEALTH -->|全失败| FAIL[❌ docker logs --tail 50<br/>exit 1]
 ```
 
@@ -733,9 +744,20 @@ flowchart TD
 ### 部署脚本要点
 
 - **[0] 清理配置残留**：`rm -f resources/config/.mcp_config_path .vector_config_path`，防止容器内把本地 Windows 路径残留解析成 `/app/E:\...` 导致全局配置读不到
-- **rsync 增量同步**：`rsync -azc`（按内容校验，只传变化块）把 `resources/frontend`、`docker-compose.yml`、`resources/config`、`resources/system_prompt` 同步到 `/opt/mitta`；前端目录加 `--delete` 清理服务器残留，根目录不加以免误删 `.env` 与数据卷。相比原 SCP 全量打包，跨境公网下从 ~2.5 分钟降到秒级
+- **rsync 增量同步**：`rsync -azc`（按内容校验，只传变化块）把 `resources/frontend`、`docker-compose.yml`、`resources/config`、`resources/system_prompt`、`resources/knowledge-base`（仅 ingest_required=true 时）同步到 `/opt/mitta`；前端目录加 `--delete` 清理服务器残留，根目录不加以免误删 `.env` 与数据卷；**`--exclude vector_db.json`**（服务器上该文件由 CI 动态维护 collection 名）。相比原 SCP 全量打包，跨境公网下从 ~2.5 分钟降到秒级
 - **只拉镜像不本地 build**：`docker compose pull api && docker compose up -d --no-build api`
 - **健康检查**：`sleep 20` + `curl localhost:8000/health` 最多 24 次（5 秒间隔），全失败则贴日志并 `exit 1`
+
+### CI/CD 蓝绿入库切换（2026-09-19，`451214c`）
+
+知识库改 chunk/切分器后不再需要手动 ssh 服务器跑入库。push 到 main 时若本次提交命中 **`src/constant/embedding_constants.py` / `resources/knowledge-base/` / `resources/config/vector_db.json`**，`acr-cicd.yml` 自动执行蓝绿入库：
+
+1. **入库到新 collection**：`ingest_knowledge.py --collection FAQ_KNOWLEDGE_BASE_<short_sha> --redis-url redis://redis:6379/0`（新增参数，覆盖 vector_db.json 的 collection 名；`docker-compose.yml` 将 `./resources/knowledge-base` 挂载进 api 容器，.md/脚本变更无需重建镜像）；
+2. **切换指向**：`sed` 替换 vector_db.json 的 collection 名 → 重启 api；
+3. **健康检查**：通过则部署成功；**失败自动回滚**切回旧 collection 再重启；
+4. **清理旧库**：`cleanup_collections.py --keep <活跃> <上一个可回滚>` 显式保留最近两个 `FAQ_KNOWLEDGE_BASE_*`，删除其余（其他 collection 如 MCP_TOOLS 不碰）；按显式 --keep 列表而非创建时间排序——chroma Collection 无可靠创建时间元数据，short_sha 名称不保证时间序。
+
+**边界说明**：仓库内 `vector_db.json` 是初始值（`FAQ_KNOWLEDGE_BASE`），服务器上被 CI 改过名；换服务器时需手动恢复初始 collection 或重新入库到初始名。首个 commit 无 `HEAD~1` 时 `git diff` 失败不触发入库（首次部署人工初始化即可）。BM25 旧 key 按 doc_id 前缀保留不清（回滚需要），数据量小不影响性能。
 
 > 完整流程图见 [docs/ci-flow.html](docs/ci-flow.html)。
 
