@@ -15,7 +15,8 @@ from config import load_vector_db_config
 from graphs.main_graph import build_main_graph
 from graphs.retrieve_graph import build_retrieve_graph
 from init import COLLECTION_NAME, CustomPostgresSaver
-from service.cache_service import cache_service
+from service.cache_service import cache_service, CachedEmbeddings
+from constant.cache_constant import CACHE_LAYER_ENABLED
 from service.file_upload_service import file_upload_service
 from vector.vector_store import create_vector_store
 
@@ -181,6 +182,15 @@ class ChatService:
         # 创建向量库：注入 embedding_function，未提供 deps 时 create_vector_store 内部降级
         vec_cfg = load_vector_db_config()
         embed_fn = deps.embedding_function if deps else None
+        # L2 embedding 缓存（H-20260919-10）：把注入的 embedding_function 包一层，
+        # 让检索/工具筛选/MMR 的所有向量化先查 Redis，未命中才打 API。
+        # CACHE_LAYER_ENABLED=0 可一键退回原行为（排障 / 对照评测用）。
+        if embed_fn is not None and CACHE_LAYER_ENABLED:
+            try:
+                embed_fn = CachedEmbeddings(cache_service, embed_fn)
+                logger.success("向量库已启用 L2 embedding 缓存")
+            except Exception as e:
+                logger.warning(f"L2 embedding 缓存包装失败，退回原始 embedding_function: {e}")
         self.vector_store = create_vector_store(vec_cfg, embedding_function=embed_fn)
         self.pool = ConnectionPool(
             conninfo=self.db_url,

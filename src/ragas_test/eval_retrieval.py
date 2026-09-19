@@ -29,6 +29,7 @@ import sys
 import time
 from pathlib import Path
 from typing import List, Dict, Tuple
+from concurrent.futures import ThreadPoolExecutor
 
 from loguru import logger
 
@@ -38,10 +39,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from constant.retrieval_constants import (
     RRF_K,
-    MMR_ENABLED,
+    MMR_STAGE,
     MMR_LAMBDA,
+    MMR_PRE_LAMBDA,
     MMR_TOP_CANDIDATES,
     MMR_TOP_SELECT,
+    MMR_PRE_SELECT,
+    MMR_LEXICAL_JACCARD,
     RERANK_FILTER_THRESHOLD,
 )
 from constant.cache_constant import SPARSE_INDEX_NAME, DOC_PREFIX
@@ -50,6 +54,7 @@ from vector.retrieve_doc import RetrievedDoc
 from graphs.nodes.retrieve.fusion_nodes import _mmr_select, _mmr_embed
 from init import embed_model, online_rerank, model
 from service.cache_service import cache_service
+from ragas_test.report_path import resolve_report_path
 
 
 # ============================================================
@@ -177,7 +182,14 @@ def rrf_fusion(results: List[List[RetrievedDoc]], k: int = RRF_K) -> List[Retrie
             if key not in scores:
                 scores[key] = {"doc": doc, "score": 0.0}
             scores[key]["score"] += 1.0 / (k + rank + 1)
-    return [item["doc"] for item in sorted(scores.values(), key=lambda x: x["score"], reverse=True)]
+    ranked = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
+    # RRF 分落 metadata（与生产 fusion_nodes.rrf_fusion 对齐）：pre 阶段 MMR 用它当相关性信号
+    for item in ranked:
+        doc = item["doc"]
+        if doc.metadata is None:
+            doc.metadata = {}
+        doc.metadata["rrf_score"] = item["score"]
+    return [item["doc"] for item in ranked]
 
 
 def dedup_by_text(docs: List[RetrievedDoc]) -> List[RetrievedDoc]:
@@ -193,15 +205,32 @@ def dedup_by_text(docs: List[RetrievedDoc]) -> List[RetrievedDoc]:
 
 
 def rewrite_query(query: str) -> List[str]:
-    """LLM 查询改写，返回 [主查询, 子查询...]。"""
+    """LLM 查询改写，返回 [主查询, 子查询...]。
+
+    2026-09-19 H-20260919-09 修复：REWRITE_PROMPT 要求的 JSON 键是 main_query / sub_queries
+    （英文），本函数此前却按 `主查询` / `子查询`（中文）取值 —— 两个键都取不到，
+    静默回退成 [原始 query]，导致**所有历史检索评测实际只跑了 1 路稠密召回**，
+    而生产 dense_query 是 [原查询] + [主查询] + 子查询 = 4 路。
+    现同时兼容两种键名，并保持与生产一致的 4 路组装。
+    """
     try:
         from constant.retrieval_constants import REWRITE_PROMPT
         prompt = REWRITE_PROMPT.format(question=query, history="无")
         resp = model.invoke(prompt, response_format={"type": "json_object"})
         raw = json.loads(resp.content)
-        queries = [raw.get("主查询", query)] + raw.get("子查询", [])
-        queries = [q for q in queries if q and len(q) > 2][:4]
-        return queries if queries else [query]
+        main = raw.get("main_query") or raw.get("主查询") or query
+        subs = raw.get("sub_queries") or raw.get("子查询") or []
+        if isinstance(subs, str):
+            subs = [subs]
+        # 与生产 dense_query 对齐：[原始 query, 主查询, 子查询...]
+        queries = [query, main] + list(subs)
+        # 去重保序，过滤过短项，最多 4 路（生产同样上限）
+        seen, out = set(), []
+        for q in queries:
+            if q and len(q) > 2 and q not in seen:
+                seen.add(q)
+                out.append(q)
+        return out[:4] if out else [query]
     except Exception as e:
         logger.warning(f"Query 改写失败，使用原始 query: {e}")
         return [query]
@@ -311,26 +340,58 @@ def single_path_retrieve(vector_store, query: str, n_results: int) -> Tuple[List
 # 混合检索流水线（当前项目 retrieve_graph 的离线版）
 # ============================================================
 
-def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: float = 0.15) -> Tuple[List[RetrievedDoc], float, Dict]:
-    """混合检索：改写 → 稠密多路 → BM25 → RRF → 去重 → 重排 → 过滤。"""
-    stats = {"rewrite_time": 0, "dense_time": 0, "bm25_time": 0, "rerank_time": 0, "num_queries": 1, "num_candidates": 0}
+def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: float = 0.15,
+                    mmr_stage: str = None, mmr_lambda: float = None,
+                    parallel: bool = False) -> Tuple[List[RetrievedDoc], float, Dict]:
+    """混合检索：改写 → 稠密多路 → BM25 → RRF → 去重 → [pre-MMR] → 重排 → [post-MMR] → 过滤。
+
+    mmr_stage: "off"（默认，纯 rerank top8）| "pre"（rerank 前 MMR 去重候选池）| "post"（rerank 后 MMR 选篇）
+    mmr_lambda: 覆盖 λ，None 时用常量默认（pre 用 MMR_PRE_LAMBDA，post 用 MMR_LAMBDA）
+    """
+    stage = (mmr_stage or MMR_STAGE or "off").strip().lower()
+    stats = {"rewrite_time": 0, "dense_time": 0, "bm25_time": 0, "rerank_time": 0, "mmr_time": 0,
+             "num_queries": 1, "num_candidates": 0, "num_rerank_pool": 0, "mmr_stage": stage}
     t_total = time.perf_counter()
 
-    # Step 1: Query 改写
-    t0 = time.perf_counter()
-    queries = rewrite_query(query)
-    stats["rewrite_time"] = time.perf_counter() - t0
-    stats["num_queries"] = len(queries)
+    if parallel:
+        # ── 并行编排（镜像生产 parallel_nodes.parallel_retrieve）──
+        # 阶段一：rewrite ∥ dense(原问题) ∥ bm25 三者无依赖，同时发起
+        # 阶段二：改写完成后，主查询/子查询各自一路稠密，彼此并行
+        def _dense_one(q):
+            r = vector_store.query([q], n_results=n_results)
+            return r[0] if r else []
 
-    # Step 2: 稠密向量多路检索（不过滤距离，bge-m3 相关文档距离偏高）
-    t0 = time.perf_counter()
-    dense_results = vector_store.query(queries, n_results=n_results)
-    stats["dense_time"] = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            f_rw = ex.submit(rewrite_query, query)
+            f_d0 = ex.submit(_dense_one, query)
+            f_bm = ex.submit(bm25_search, query, n_results)
+            rw = f_rw.result()
+            rw_queries = list(rw)[:3]
+            f_dn = [ex.submit(_dense_one, q) for q in rw_queries]
+            dense_results = [f_d0.result()] + [f.result() for f in f_dn]
+            bm25_docs = f_bm.result()
+        stats["dense_time"] = time.perf_counter() - t0
+        stats["bm25_time"] = 0.0
+        queries = [query] + rw_queries
+        stats["rewrite_time"] = 0.0
+        stats["num_queries"] = len(queries)
+    else:
+        # ── 串行编排（原实现）──
+        t0 = time.perf_counter()
+        queries = rewrite_query(query)
+        stats["rewrite_time"] = time.perf_counter() - t0
+        stats["num_queries"] = len(queries)
 
-    # Step 3: BM25 稀疏检索
-    t0 = time.perf_counter()
-    bm25_docs = bm25_search(query, top_k=n_results)
-    stats["bm25_time"] = time.perf_counter() - t0
+        # Step 2: 稠密向量多路检索（不过滤距离，bge-m3 相关文档距离偏高）
+        t0 = time.perf_counter()
+        dense_results = vector_store.query(queries, n_results=n_results)
+        stats["dense_time"] = time.perf_counter() - t0
+
+        # Step 3: BM25 稀疏检索
+        t0 = time.perf_counter()
+        bm25_docs = bm25_search(query, top_k=n_results)
+        stats["bm25_time"] = time.perf_counter() - t0
 
     # Step 4: RRF 融合（稠密多路 + BM25 一路）
     rank_lists = dense_results + [bm25_docs]
@@ -338,29 +399,61 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
     merged = dedup_by_text(merged)
     stats["num_candidates"] = len(merged)
 
-    # Step 5: 重排 + MMR 多样性选择（与生产 fusion_nodes.rerank 对齐）
+    # Step 5: 重排 + MMR 多样性选择（与生产 fusion_nodes.rerank 三档对齐）
     # 2026-09-19 P1（H-20260919-07）：永远拿 MMR_TOP_CANDIDATES=20 篇 rerank，
     # MMR off 时取前 MMR_TOP_SELECT=8（与生产 rerank() 行为一致，不再只打 8 篇）。
+    # 2026-09-19 H-20260919-08：MMR_STAGE=pre 时先把候选池 MMR 去重到 MMR_PRE_SELECT 篇再送 rerank。
     t0 = time.perf_counter()
     if merged:
+        # ── pre 阶段：rerank 前对 RRF 候选池做多样性去重 ──
+        rerank_pool = merged
+        if stage == "pre_lex" and len(merged) > MMR_PRE_SELECT:
+            t_mmr = time.perf_counter()
+            try:
+                from graphs.nodes.retrieve.fusion_nodes import _lexical_dedup_select
+                rerank_pool = _lexical_dedup_select(merged, MMR_PRE_SELECT)
+                stats["mmr_lambda"] = MMR_LEXICAL_JACCARD
+            except Exception as e:
+                logger.warning(f"[mmr:pre_lex] 评测脚本词级去重失败，回退完整候选池: {e}")
+                rerank_pool = merged
+            stats["mmr_time"] = time.perf_counter() - t_mmr
+        elif stage == "pre" and len(merged) > MMR_PRE_SELECT:
+            t_mmr = time.perf_counter()
+            try:
+                lam = mmr_lambda if mmr_lambda is not None else MMR_PRE_LAMBDA
+                embeddings = _mmr_embed([d.text for d in merged])
+                rel_scores = [float(d.metadata.get("rrf_score", 0.0)) for d in merged]
+                rerank_pool = _mmr_select(merged, embeddings, rel_scores=rel_scores,
+                                          k=MMR_PRE_SELECT, lambda_=lam)
+                stats["mmr_lambda"] = lam
+            except Exception as e:
+                logger.warning(f"[mmr:pre] 评测脚本预去重失败，回退完整候选池: {e}")
+                rerank_pool = merged
+            stats["mmr_time"] = time.perf_counter() - t_mmr
+        stats["num_rerank_pool"] = len(rerank_pool)
+
         try:
             rerank_results = online_rerank(
-                queries[0], [d.text for d in merged],
+                queries[0], [d.text for d in rerank_pool],
                 top_n=MMR_TOP_CANDIDATES,
             )
             top_docs = []
             for r in rerank_results:
-                doc = merged[r["index"]]
+                doc = rerank_pool[r["index"]]
                 doc.metadata["relevance_score"] = r["relevance_score"]
                 top_docs.append(doc)
-            # MMR 多样性选择：从 topN 候选里选 k 篇"相关且彼此不语义扎堆"
-            if MMR_ENABLED and len(top_docs) > MMR_TOP_SELECT:
+            # post 阶段：从精排 topN 里选 k 篇"相关且彼此不语义扎堆"
+            if stage == "post" and len(top_docs) > MMR_TOP_SELECT:
+                t_mmr = time.perf_counter()
                 try:
+                    lam = mmr_lambda if mmr_lambda is not None else MMR_LAMBDA
                     embeddings = _mmr_embed([d.text for d in top_docs])
-                    final_docs = _mmr_select(top_docs, embeddings)
+                    final_docs = _mmr_select(top_docs, embeddings, k=MMR_TOP_SELECT, lambda_=lam)
+                    stats["mmr_lambda"] = lam
                 except Exception as e:
-                    logger.warning(f"[mmr] 评测脚本 MMR 失败，回退纯 rerank top{MMR_TOP_SELECT}: {e}")
+                    logger.warning(f"[mmr:post] 评测脚本 MMR 失败，回退纯 rerank top{MMR_TOP_SELECT}: {e}")
                     final_docs = top_docs[:MMR_TOP_SELECT]
+                stats["mmr_time"] = time.perf_counter() - t_mmr
             else:
                 final_docs = top_docs[:MMR_TOP_SELECT]
         except Exception as e:
@@ -368,7 +461,7 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
             final_docs = merged[:MMR_TOP_SELECT]
     else:
         final_docs = []
-    stats["rerank_time"] = time.perf_counter() - t0
+    stats["rerank_time"] = time.perf_counter() - t0 - stats.get("mmr_time", 0.0)
 
     # Step 6: 过滤（relevance_score >= threshold），空则兜底 top3
     # 口径对齐生产 filter_node（2026-09-19 H-20260919-06）：只兜底 top3，不补到 5。
@@ -437,6 +530,14 @@ def main():
     parser.add_argument("--diagnose", action="store_true", help="对未命中 query 输出候选明细诊断到 diagnose_report.md")
     parser.add_argument("--dataset", type=str, default=None,
                         help="评测集 JSON 路径（默认 resources/knowledge-base/test-qa/eval_dataset.json）")
+    parser.add_argument("--parallel", action="store_true",
+                        help="用线程池并行编排（改写 ∥ 原问题稠密 ∥ BM25，改写后再并发跑改写路），对比串行基线")
+    parser.add_argument("--mmr-stage", type=str, default=None, choices=["off", "pre", "pre_lex", "post"],
+                        help=f"MMR 阶段（默认取常量 MMR_STAGE={MMR_STAGE}）：off=纯 rerank | pre=rerank 前去重候选池 | post=rerank 后选篇")
+    parser.add_argument("--mmr-lambda", type=float, default=None,
+                        help="覆盖 MMR λ（pre 覆盖 MMR_PRE_LAMBDA，post 覆盖 MMR_LAMBDA）")
+    parser.add_argument("--out-dir", type=str, default=None, help="报告输出目录（默认 reports/<今天>）")
+    parser.add_argument("--tag", type=str, default="", help="报告文件名后缀，用于 A/B 多组并存（如 _mmr_pre_l07）")
     parser.add_argument("--output", type=str, default="retrieval_eval_report.json",
                         help="报告输出文件名（默认 retrieval_eval_report.json，落盘到本脚本同目录）")
     args = parser.parse_args()
@@ -458,7 +559,9 @@ def main():
 
     # 注入含 RedisSearch 的 Redis（6379 WSL sorts-redis；.env 的 6380 无 RedisSearch，BM25 无法工作）
     import redis as _redis
-    cache_service.db_url = "redis://:sorts_dev@localhost:6379"
+    # 2026-09-19：用 127.0.0.1 而非 localhost —— localhost 在 Windows 上可能解析到 ::1，
+    # redis-stack 只监听 IPv4，表现为 10054「远程主机强迫关闭连接」，BM25 整路静默降级为空。
+    cache_service.db_url = "redis://:sorts_dev@127.0.0.1:6379"
     cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
     cache_service.redis = _redis.Redis(
         host=cache_service.host, port=cache_service.port,
@@ -514,7 +617,9 @@ def main():
         logger.info(f"【混合检索评估】改写+稠密多路+BM25+RRF+重排+过滤(>={args.filter_threshold})")
         for i, item in enumerate(test_queries):
             query = item["question"]
-            docs, elapsed, stats = hybrid_retrieve(vector_store, query, args.n_results, args.filter_threshold)
+            docs, elapsed, stats = hybrid_retrieve(vector_store, query, args.n_results, args.filter_threshold,
+                                                   mmr_stage=args.mmr_stage, mmr_lambda=args.mmr_lambda,
+                                                   parallel=args.parallel)
             recall = evaluate_recall(docs, item["ground_truth"], k=5, metric=args.metric)
             pipeline_recalls.append(recall)
             pipeline_latencies.append(elapsed)
@@ -572,7 +677,8 @@ def main():
         logger.info(f"  稠密向量检索: {avg('dense_time'):.1f}ms")
         logger.info(f"  BM25 稀疏检索: {avg('bm25_time'):.1f}ms")
         logger.info(f"  重排精排:     {avg('rerank_time'):.1f}ms")
-        logger.info(f"  平均候选数:   {statistics.mean(s['num_candidates'] for s in pipeline_stats_all):.1f}")
+        logger.info(f"  MMR:          {avg('mmr_time'):.1f}ms (stage={pipeline_stats_all[0].get('mmr_stage')}, λ={pipeline_stats_all[0].get('mmr_lambda')})")
+        logger.info(f"  平均候选数:   {statistics.mean(s['num_candidates'] for s in pipeline_stats_all):.1f} → 送 rerank {statistics.mean(s.get('num_rerank_pool', 0) for s in pipeline_stats_all):.1f}")
 
     # 保存 JSON 报告
     def kp_stats(pairs):
@@ -595,6 +701,19 @@ def main():
             "category": args.category,
             "metric": args.metric,
             "dataset": str(dataset_path or DATASET_PATH),
+            "parallel_orchestration": bool(args.parallel),
+            "mmr_stage": (args.mmr_stage or MMR_STAGE),
+            "mmr_lambda": args.mmr_lambda,
+            "mmr_pre_lambda_default": MMR_PRE_LAMBDA,
+            "mmr_pre_select": MMR_PRE_SELECT,
+            "mmr_constants": {
+                "MMR_STAGE": MMR_STAGE,
+                "MMR_LAMBDA": MMR_LAMBDA,
+                "MMR_PRE_LAMBDA": MMR_PRE_LAMBDA,
+                "MMR_PRE_SELECT": MMR_PRE_SELECT,
+                "MMR_TOP_CANDIDATES": MMR_TOP_CANDIDATES,
+                "MMR_TOP_SELECT": MMR_TOP_SELECT,
+            },
             "deprecated_metric_note": "旧口径（coverage 关键词覆盖率 / boolean 句级覆盖）依赖 ground_truth 与知识库的文本同一性；实测 test-qa 文档未入库、答案多为改写组织，字面匹配天然偏低。key_points 口径以知识库可支撑的原句事实点为判定单元，更接近生产体验（H-20260918-02）。",
             "key_points_scope": "基础概念 10 条试点（已按生产 405 chunks 验证事实点可在某 chunk 找到原句）" if not dataset_path else "项目专属评测集全部条目（21 条，key_points 逐一在生产 405 chunks 验证存在原句）",
         },
@@ -625,10 +744,16 @@ def main():
                 "dense_retrieve": round(statistics.mean(s["dense_time"] for s in pipeline_stats_all) * 1000, 1),
                 "bm25": round(statistics.mean(s["bm25_time"] for s in pipeline_stats_all) * 1000, 1),
                 "rerank": round(statistics.mean(s["rerank_time"] for s in pipeline_stats_all) * 1000, 1),
+                "mmr": round(statistics.mean(s.get("mmr_time", 0.0) for s in pipeline_stats_all) * 1000, 1),
+            },
+            "candidate_pool": {
+                "avg_rrf_candidates": round(statistics.mean(s["num_candidates"] for s in pipeline_stats_all), 1),
+                "avg_rerank_scored": round(statistics.mean(s.get("num_rerank_pool", 0) for s in pipeline_stats_all), 1),
             },
         }
 
-    output_path = Path(__file__).parent / args.output
+    base = args.output[:-5] if args.output.endswith(".json") else args.output
+    output_path = resolve_report_path(f"{base}{args.tag}.json", out_dir=args.out_dir)
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(f"\n评估报告已保存: {output_path}")
 

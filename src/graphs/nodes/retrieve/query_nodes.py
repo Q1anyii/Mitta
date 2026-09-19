@@ -66,23 +66,22 @@ def dense_query(state: RAGState, vector_store: VectorStore) -> dict:
     return {"rank_list": rank_list}
 
 
-def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
-    """BM25 稀疏检索：用 RedisSearch 对知识库全文做关键词匹配。
+def run_bm25(query: str, cache_service, top_k: int = 20) -> list[RetrievedDoc]:
+    """BM25 稀疏检索的纯函数实现（H-20260919-11 从图节点里抽出，供并行编排复用）。
 
     与稠密向量检索互补：向量检索擅长语义匹配（"如何修电脑" ≈ "电脑维修方法"），
     BM25 擅长精确关键词匹配（专有名词、错误码、型号等）。
 
+    只依赖 question，**不依赖查询改写结果**，因此可以跟改写并行发起。
+
     Args:
-        state: 含 question 和 rank_list（稠密检索结果）
+        query: 检索问题（原始问题即可，BM25 不受指代影响）
         cache_service: Redis 缓存服务（依赖注入，提供 redis 连接执行 FT.SEARCH）
         top_k: BM25 返回的最大文档数
 
     Returns:
-        {"rank_list": 原稠密结果 + [BM25 结果列表]} — 追加到二维列表末尾
+        BM25 结果列表；RedisSearch 不可用/查询异常时返回空列表（降级，不抛异常）
     """
-    query = state["question"]
-    rank_list = state["rank_list"]
-
     # RedisSearch 查询语法中 : ( ) - @ 等是特殊字符，中文问句直接传会 Syntax error。
     # 用 jieba 分词后以 OR（|）连接：默认英文分词器对中文按整句分词，
     # 空格 AND 会因中文词无结果而整体返回 0，OR 保证英文/专有名词能命中。
@@ -104,8 +103,8 @@ def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
             "LIMIT", "0", str(top_k),
         )
     except Exception:
-        # 索引不存在或查询异常，降级：仅保留稠密检索结果（保持二维结构）
-        return {"rank_list": rank_list + [[]]}
+        # 索引不存在或查询异常，降级：返回空结果（不抛异常，由调用方决定是否还有别的路）
+        return []
 
     # 兼容两种返回格式：新版 redis-py 返回 dict（键为 bytes 或 str）；旧版返回扁平 list
     def _get(d, name):
@@ -133,10 +132,10 @@ def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
                 ))
             except Exception:
                 continue
-        return {"rank_list": rank_list + [docs]}
+        return docs
 
     if not isinstance(result, (list, tuple)) or len(result) < 2:
-        return {"rank_list": rank_list + [[]]}
+        return []
 
     docs = []
     # FT.SEARCH 返回格式：[总数, doc_id1, score1, doc_id2, score2, ...]
@@ -159,13 +158,28 @@ def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
             ))
         except Exception:
             continue
-    # 注意：必须用 append/拼接保持二维（list[list[RetrievedDoc]]），
-    # 若写成 [rank_list, docs] 会把稠密结果整体包一层成三维，rrf_fusion 遍历时 doc 变成 list 直接 AttributeError
-    return {"rank_list": rank_list + [docs]}
+    return docs
 
 
-def rewrite_query(state: RAGState, model) -> dict:
+def bm25_search(state: RAGState, cache_service, top_k: int = 20) -> dict:
+    """BM25 稀疏检索图节点：包装 run_bm25，把结果追加到 rank_list（保持二维结构）。
+
+    注意：必须用 append/拼接保持二维（list[list[RetrievedDoc]]），
+    若写成 [rank_list, docs] 会把稠密结果整体包一层成三维，rrf_fusion 遍历时
+    doc 变成 list 直接 AttributeError。
+    """
+    docs = run_bm25(state["question"], cache_service, top_k=top_k)
+    return {"rank_list": state["rank_list"] + [docs]}
+
+
+def rewrite_query(state: RAGState, model, cache_service=None) -> dict:
     """Query 改写：用 LLM 将原始问题 + 多轮历史改写为结构化查询。
+
+    L1 改写缓存（2026-09-19 H-20260919-10）：改写是纯函数 f(问题, 历史) -> 查询集合，
+    与 user_id / thread_id 无关，因此缓存键只含归一化后的 (问题, 历史)，**可跨用户共享**。
+    命中时直接跳过 LLM 调用 —— 实测改写占混合检索链路 2226~2694 ms（约 40%~48%），
+    是单节点里最贵的一环。
+
 
     输出格式（中文 JSON，由 QueryRewriteResult 映射）：
     {
@@ -188,9 +202,33 @@ def rewrite_query(state: RAGState, model) -> dict:
     history_text = "\n".join(
         f"{m['role']}: {m['content']}" for m in state.get("history", [])
     )
+    queries = run_rewrite(state["question"], history_text, model, cache_service)
+    logger.info(f"重写后问题:{queries}")
+    return {"rewritten_queries": queries}
+
+
+def run_rewrite(question: str, history_text: str, model, cache_service=None) -> list[str]:
+    """改写的纯函数实现（H-20260919-11 从图节点抽出，供并行编排复用）。
+
+    Args:
+        question: 用户原始问题
+        history_text: 已拼好的多轮历史文本（可为空串）
+        model: LLM
+        cache_service: 传则启用 L1 改写缓存；None 时不缓存（离线评测/降级）
+
+    Returns:
+        [主查询, 子查询...]；任何异常都降级为 [question]，不抛异常
+    """
+    # ── L1 改写缓存：命中即返回，跳过 LLM ──
+    if cache_service is not None:
+        cached = cache_service.get_rewrite_cache(question, history_text)
+        if cached and cached.get("main_query"):
+            queries = [cached["main_query"]] + list(cached.get("sub_queries") or [])
+            logger.info(f"[cache:L1] 改写缓存命中，跳过 LLM: {queries}")
+            return queries
 
     prompt = REWRITE_PROMPT.format(
-        question=state["question"],
+        question=question,
         history=history_text or "无",
     )
     logger.info("正在进行Query 改写 + 重排序")
@@ -202,13 +240,15 @@ def rewrite_query(state: RAGState, model) -> dict:
     try:
         result = QueryRewriteResult(**raw_json)
         queries = [result.main_query] + result.sub_queries
+        # 写 L1 缓存：只缓存校验通过的结构化结果，避免把降级兜底值写进去
+        if cache_service is not None:
+            cache_service.set_rewrite_cache(question, history_text, raw_json)
     except Exception:
         logger.warning(f"Query 改写返回格式异常，尝试兼容解析: {list(raw_json.keys())}")
         if isinstance(raw_json.get("queries"), list) and raw_json["queries"]:
             queries = raw_json["queries"]
         else:
             # 最终兜底：用原始问题，不阻塞检索
-            queries = [state["question"]]
+            queries = [question]
 
-    logger.info(f"重写后问题:{queries}")
-    return {"rewritten_queries": queries}
+    return queries
