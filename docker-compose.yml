@@ -150,6 +150,8 @@ services:
       - ./resources/config:/app/resources/config
       - ./resources/system_prompt:/app/resources/system_prompt
       - ./resources/chroma_db:/app/resources/chroma_db
+      # 知识库挂载：.md 变更无需重建镜像，CI rsync 后容器内直接读最新入库脚本与文档
+      - ./resources/knowledge-base:/app/resources/knowledge-base
       - ./logs:/app/logs
 
   # ==================== 前端 Nginx（静态托管 + API 反代 + HTTPS）====================

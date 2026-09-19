@@ -152,6 +152,26 @@ def ingest_file(processor, file_path: Path, vector_store) -> int:
 
 def main():
     """主函数：遍历所有 .md 文件并入库。"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="知识库向量入库（支持蓝绿 collection 切换）")
+    parser.add_argument("--collection", default=None,
+                        help="覆盖 vector_db.json 的 collection 名（如 FAQ_KNOWLEDGE_BASE_<short_sha>）")
+    parser.add_argument("--redis-url", default=None,
+                        help="覆盖 Redis(RedisSearch) 连接 URL，如 redis://redis:6379/0；"
+                             "不传时用顶部默认值（本地 WSL 配置）")
+    args = parser.parse_args()
+
+    if args.redis_url:
+        # 服务器容器内跑入库：Redis 服务名/密码与本地不同，用参数覆盖
+        cache_service.db_url = args.redis_url
+        cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
+        cache_service.redis = _redis.Redis(
+            host=cache_service.host, port=cache_service.port,
+            password=cache_service.password,
+            socket_timeout=5, socket_connect_timeout=5,
+        )
+
     logger.info("=" * 60)
     logger.info("编程知识库向量库入库开始")
     logger.info(f"知识库目录: {KB_DIR}")
@@ -181,7 +201,10 @@ def main():
     fail_count = 0
 
     from vector import vector_store
-    vector_store = create_vector_store(load_vector_db_config())
+    cfg = load_vector_db_config()
+    if args.collection:
+        cfg["collection"] = args.collection
+    vector_store = create_vector_store(cfg)
 
     for i, file_path in enumerate(md_files, 1):
         logger.info(f"[{i}/{len(md_files)}] 处理: {file_path.name}")

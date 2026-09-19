@@ -49,6 +49,23 @@ jobs:
             echo "→ 跳过构建，复用 latest 镜像"
           fi
 
+      # ========== 阶段 1.6：判断是否需要 RAG 入库（蓝绿切换，H-20260919-08） ==========
+      # 命中入库相关文件 → ingest_required=true，CI 执行蓝绿入库；
+      # 否则跳过（普通业务代码改动不触发入库，不花 embedding API 费用）
+      - name: Check if RAG ingest is required
+        id: ingest
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD || true)
+          echo "changed files (ingest check):"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(src/constant/embedding_constants.py|resources/knowledge-base/|resources/config/vector_db.json)'; then
+            echo "ingest_required=true" >> $GITHUB_OUTPUT
+            echo "→ RAG 入库相关文件变更，CI 将执行蓝绿入库"
+          else
+            echo "ingest_required=false" >> $GITHUB_OUTPUT
+            echo "→ 无 RAG 入库变更，跳过入库"
+          fi
+
       # ========== 阶段 2：构建后端镜像（仅 Dockerfile 等变化时执行） ==========
       - name: Set up Docker Buildx
         if: steps.check.outputs.build_required == 'true'
@@ -63,7 +80,6 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Get commit hash
-        if: steps.check.outputs.build_required == 'true'
         id: sha
         run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
@@ -114,9 +130,14 @@ jobs:
           echo "=== [1] 增量同步前端（--delete 清理旧文件，含已删备份目录）==="
           rsync -azc --delete -e "ssh ${SSH_OPTS[*]}" resources/frontend/ "$HOST:$DEST/resources/frontend/"
 
-          echo "=== [2] 增量同步运行时配置 ==="
-          rsync -azc -e "ssh ${SSH_OPTS[*]}" resources/config/ "$HOST:$DEST/resources/config/"
+          echo "=== [2] 增量同步运行时配置（排除 vector_db.json，它由 CI 动态维护 collection 名） ==="
+          rsync -azc -e "ssh ${SSH_OPTS[*]}" --exclude vector_db.json resources/config/ "$HOST:$DEST/resources/config/"
           rsync -azc -e "ssh ${SSH_OPTS[*]}" resources/system_prompt/ "$HOST:$DEST/resources/system_prompt/"
+
+          echo "=== [2.5] 同步知识库（仅 RAG 入库变更时；api 容器已挂载此目录，无需重建镜像） ==="
+          if [ "${{ steps.ingest.outputs.ingest_required }}" = "true" ]; then
+            rsync -azc -e "ssh ${SSH_OPTS[*]}" resources/knowledge-base/ "$HOST:$DEST/resources/knowledge-base/"
+          fi
 
           echo "=== [3] 同步 compose 文件 ==="
           rsync -azc -e "ssh ${SSH_OPTS[*]}" docker-compose.yml "$HOST:$DEST/docker-compose.yml"
@@ -144,6 +165,22 @@ jobs:
             echo "=== [2/4] 拉取最新后端镜像 ==="
             docker compose pull api
 
+            echo "=== [2.5/4] RAG 蓝绿入库（仅入库相关文件变更时；绝不先删旧库） ==="
+            INGEST_REQUIRED="${{ steps.ingest.outputs.ingest_required }}"
+            if [ "$INGEST_REQUIRED" = "true" ]; then
+              NEW_COLL="FAQ_KNOWLEDGE_BASE_${{ env.SHORT_SHA }}"
+              OLD_COLL="$(python3 -c "import json;print(json.load(open('resources/config/vector_db.json'))['collection'])")"
+              echo "  NEW_COLL=$NEW_COLL  OLD_COLL=$OLD_COLL"
+              echo "  → 入库到新 collection（失败即 CI 红，旧库继续服务）"
+              docker compose exec -T api python resources/knowledge-base/ingest_knowledge.py \
+                --collection "$NEW_COLL" --redis-url "redis://redis:6379/0"
+              echo "  → 切换 vector_db.json 指向并重启 api"
+              sed -i "s/\"collection\": *\"[^\"]*\"/\"collection\": \"$NEW_COLL\"/" resources/config/vector_db.json
+              docker compose up -d --no-build api
+            else
+              echo "  → 无 RAG 变更，跳过入库"
+            fi
+
             echo "=== [3/4] 重建 api 容器（不 build） ==="
             docker compose up -d --no-build api
 
@@ -157,12 +194,28 @@ jobs:
               echo "  第 ${i} 次: HTTP $HEALTH"
               if [ "$HEALTH" = "200" ]; then
                 echo "✅ 部署成功"
+                if [ "$INGEST_REQUIRED" = "true" ]; then
+                  echo "=== 清理旧 collection（保留 NEW + OLD 两个，更早的删除） ==="
+                  docker compose exec -T api python resources/knowledge-base/cleanup_collections.py \
+                    --keep "$NEW_COLL" --keep "$OLD_COLL"
+                fi
                 docker ps --format "table {{.Names}}\t{{.Status}}" | grep mitta
                 break
               fi
               if [ "$i" = "24" ]; then
                 echo "❌ 健康检查失败，查看日志："
                 docker logs mitta-api --tail 80 2>&1
+                if [ "$INGEST_REQUIRED" = "true" ]; then
+                  echo "=== 回滚：切回旧 collection $OLD_COLL 并重启（不能让 api 挂着有问题的新库） ==="
+                  sed -i "s/\"collection\": *\"[^\"]*\"/\"collection\": \"$OLD_COLL\"/" resources/config/vector_db.json
+                  docker compose up -d --no-build api
+                  sleep 15
+                  RB=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
+                  echo "回滚后健康检查: HTTP $RB"
+                  if [ "$RB" != "200" ]; then
+                    echo "❌ 回滚后仍不健康，需人工介入（docker logs mitta-api）"
+                  fi
+                fi
                 exit 1
               fi
               sleep 5
