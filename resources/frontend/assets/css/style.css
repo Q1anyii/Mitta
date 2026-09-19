@@ -396,7 +396,17 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .icon-btn:hover { color: var(--red); border-color: var(--ink); background: var(--surface-2); }
 
 /* ---------- 消息滚动区 ---------- */
-.messages-container { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+.messages-container { flex: 1; overflow-y: auto; scroll-behavior: smooth; position: relative; }
+.scroll-to-bottom-btn {
+    position: absolute; right: 18px; bottom: 14px; z-index: 30;
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--violet); color: #fff;
+    border: 1px solid var(--ink); box-shadow: var(--shadow-hard-sm);
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.scroll-to-bottom-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-hard); }
 .messages-wrapper { max-width: 920px; margin: 0 auto; padding: 28px 24px 12px; }
 
 /* 欢迎态 */
@@ -982,7 +992,10 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     padding: 6px; background: var(--surface); border: 2px solid var(--ink); box-shadow: var(--shadow-hard);
     border-radius: var(--r-sm); z-index: 30; animation: menu-pop .18s var(--ease-pop) both; }
 .persona-option { padding: 5px 12px; font-size: 12.5px; font-weight: 800; border-radius: 4px; cursor: pointer;
-    color: var(--text-2); transition: all .12s; white-space: nowrap; }
+    color: var(--text-2); transition: all .12s; white-space: nowrap;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.25; }
+.persona-option-label { font-size: 12.5px; font-weight: 800; }
+.persona-option-hint { font-size: 10px; font-weight: 500; opacity: .68; }
 .persona-option:hover { background: var(--surface-2); }
 .persona-option.selected { background: var(--violet); color: #fff; }
 /* ── chibi 浮动气泡（H-20260919-01）── */

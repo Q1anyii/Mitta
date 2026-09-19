@@ -24,6 +24,10 @@ def route(state: OverAllState) -> list[Send]:
     payload = {
         "input_str": state["input_str"],
         "messages": state.get("messages", []),  # 历史对话（短期记忆）
+        # Send 任务不继承父 state，persona 必须显式传递：
+        # 否则 llm_node 里 state.get("persona") 为 None → 兜底 cappie，
+        # 手选 crazy/kind/manager 全部答成帽子米塔（H-20260919-09 根因）
+        "persona": state.get("persona"),
     }
     if state.get("needs_retrieval"):
         return [Send("retrieve_node", payload)]

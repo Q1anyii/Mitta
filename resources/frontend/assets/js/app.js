@@ -1253,7 +1253,7 @@
                             </div>
                         </header>
 
-                        <div class="messages-container" ref="messagesContainer">
+                        <div class="messages-container" ref="messagesContainer" @scroll="_onMessagesScroll">
                             <div class="messages-wrapper">
                                 <!-- 欢迎空态 -->
                                 <div v-if="messages.length === 0" class="welcome-state">
@@ -1355,6 +1355,12 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- 跳底按钮：距底 > 200px 显示，点击平滑滚底（absolute 定位，不随内容滚动） -->
+                            <button v-if="showScrollToBottom" class="scroll-to-bottom-btn"
+                                    @click="jumpToBottom" title="跳到最新消息" aria-label="跳到最新消息">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
                         </div>
 
                         <!-- ══════════ 输入区 ══════════ -->
@@ -1408,14 +1414,17 @@
                                     <div class="persona-select-wrapper">
                                         <button class="persona-btn" :class="{ active: personaMode !== 'auto' }"
                                                 @click.stop="personaMenuOpen = !personaMenuOpen"
-                                                :title="personaMode === 'auto' ? '自动分发人格' : '当前人格：' + personaLabel">
+                                                :title="personaMode === 'auto' ? '自动分发人格' : '当前人格：' + personaLabel + ' · ' + personaHint">
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21v-1a8 8 0 0 1 16 0v1"></path></svg>
                                             <span>{{ personaLabel }}</span>
                                         </button>
                                         <div v-if="personaMenuOpen" class="persona-menu" @click.stop>
                                             <div v-for="p in PERSONA_OPTIONS" :key="p.key" class="persona-option"
                                                  :class="{ selected: personaMode === p.key }"
-                                                 @click="setPersonaMode(p.key)">{{ p.label }}</div>
+                                                 @click="setPersonaMode(p.key)">
+                                                <span class="persona-option-label">{{ p.label }}</span>
+                                                <span v-if="p.hint" class="persona-option-hint">{{ p.hint }}</span>
+                                            </div>
                                         </div>
                                     </div>
                                     <!-- 上传 -->
@@ -1682,12 +1691,14 @@
                 const reasoningEffort = ref(localStorage.getItem('reasoningEffort') || 'low');
                 const thinkingPanelOpen = ref(false);  // 思考设置面板展开状态
                 // 人格 tab：auto=路由自动分发；其余=手选（后端 persona_override 短路）
+                // 工具范围提示与后端 persona_constant.py 的 allowed_tools 白名单一一对应：
+                // cappie=None 全量工具；kind=只读日常（无 git）；crazy=[] 无工具；manager=kind + git 只读
                 const PERSONA_OPTIONS = [
-                    { key: 'auto', label: '自动' },
-                    { key: 'cappie', label: '帽子' },
-                    { key: 'kind', label: '善良' },
-                    { key: 'crazy', label: '疯狂' },
-                    { key: 'manager', label: '短发' },
+                    { key: 'auto', label: '自动', hint: '按问题自动分配人格' },
+                    { key: 'cappie', label: '帽子', hint: '全量工具' },
+                    { key: 'kind', label: '善良', hint: '日常问答 · 只读' },
+                    { key: 'crazy', label: '疯狂', hint: '纯对话 · 无工具' },
+                    { key: 'manager', label: '短发', hint: '技术问答 · Git 只读' },
                 ];
                 const personaMode = ref(localStorage.getItem('personaMode') || 'auto');
                 const personaMenuOpen = ref(false);
@@ -1699,6 +1710,10 @@
                 const personaLabel = computed(() => {
                     const p = PERSONA_OPTIONS.find(o => o.key === personaMode.value);
                     return p ? p.label : '自动';
+                });
+                const personaHint = computed(() => {
+                    const p = PERSONA_OPTIONS.find(o => o.key === personaMode.value);
+                    return p && p.hint ? p.hint : '';
                 });
                 // chibi 浮动气泡：右侧独立窗口，不进主消息流、不影响主对话
                 const chibiBubbles = ref([]);
@@ -2396,6 +2411,20 @@
                         }
                     });
                 };
+
+                // 跳底悬浮按钮：滚动容器距底 > 200px 时显示，点击平滑滚到底
+                const showScrollToBottom = ref(false);
+                function _onMessagesScroll() {
+                    const el = messagesContainer.value;
+                    if (!el) return;
+                    showScrollToBottom.value = (el.scrollHeight - el.scrollTop - el.clientHeight) > 200;
+                }
+                function jumpToBottom() {
+                    const el = messagesContainer.value;
+                    if (!el) return;
+                    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+                    showScrollToBottom.value = false;
+                }
 
                 const autoResize = () => {
                     const el = textarea.value;
@@ -3230,8 +3259,9 @@
                     // 深度思考
                     thinkingMode, reasoningEffort, thinkingPanelOpen,
                     // 人格 tab + chibi 气泡
-                    PERSONA_OPTIONS, personaMode, personaMenuOpen, personaLabel,
+                    PERSONA_OPTIONS, personaMode, personaMenuOpen, personaLabel, personaHint,
                     setPersonaMode, chibiBubbles, dismissChibi,
+                    showScrollToBottom, _onMessagesScroll, jumpToBottom,
                     toggleThinkingMode, setEffort, toggleEffortPanel,
                     // 消息操作
                     copyMessage, shareMessage, regenerateMessage,
