@@ -2,24 +2,24 @@
   "ragas_test": "routing_unified",
   "target": "graphs.nodes.router_node.router_node（H-11 合并后现役节点）",
   "total": 37,
-  "need_accuracy": 0.9143,
-  "retrieval_recall": 0.9,
+  "need_accuracy": 0.9429,
+  "retrieval_recall": 1.0,
   "retrieval_false_positive": 0.08,
-  "need_tp": 9,
+  "need_tp": 10,
   "need_fp": 2,
   "need_tn": 23,
-  "need_fn": 1,
+  "need_fn": 0,
   "need_scored": 35,
   "persona_accuracy": 1.0,
   "persona_scored": 32,
   "persona_correct": 32,
-  "joint_accuracy": 0.9,
+  "joint_accuracy": 0.9333,
   "joint_scored": 30,
   "shortcut_hits": 3,
   "shortcut_need_correct": 3,
-  "avg_latency_ms": 1212.81,
-  "p95_latency_ms": 2140.73,
-  "p99_latency_ms": 2957.6,
+  "avg_latency_ms": 1290.17,
+  "p95_latency_ms": 2824.07,
+  "p99_latency_ms": 2831.83,
   "details": [
     {
       "query": "TypedDict 和 BaseModel 的区别是什么？各自适用于什么场景？",
@@ -31,12 +31,12 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1505.34,
+      "avg_latency_ms": 1440.87,
       "repeat": 3,
       "votes_need": [
         true,
         true,
-        false
+        true
       ],
       "votes_persona": [
         "manager",
@@ -54,7 +54,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1340.29,
+      "avg_latency_ms": 1620.84,
       "repeat": 3,
       "votes_need": [
         true,
@@ -77,7 +77,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1205.08,
+      "avg_latency_ms": 1276.53,
       "repeat": 3,
       "votes_need": [
         true,
@@ -94,18 +94,18 @@
       "query": "RAG 检索中为什么需要 Query 改写？直接用用户问题检索不行吗？",
       "src": "E1-retrieval",
       "expected_need": true,
-      "predicted_need": false,
-      "need_correct": false,
+      "predicted_need": true,
+      "need_correct": true,
       "expected_persona": "manager",
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 2038.79,
+      "avg_latency_ms": 2824.07,
       "repeat": 3,
       "votes_need": [
         true,
-        false,
-        false
+        true,
+        true
       ],
       "votes_persona": [
         "manager",
@@ -123,7 +123,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1279.59,
+      "avg_latency_ms": 1332.54,
       "repeat": 3,
       "votes_need": [
         true,
@@ -146,7 +146,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1700.58,
+      "avg_latency_ms": 2831.83,
       "repeat": 3,
       "votes_need": [
         false,
@@ -169,10 +169,10 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1915.9,
+      "avg_latency_ms": 1693.88,
       "repeat": 3,
       "votes_need": [
-        false,
+        true,
         true,
         true
       ],
@@ -192,7 +192,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 973.77,
+      "avg_latency_ms": 1041.32,
       "repeat": 3,
       "votes_need": [
         true,
@@ -215,7 +215,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 964.71,
+      "avg_latency_ms": 1243.71,
       "repeat": 3,
       "votes_need": [
         true,
@@ -238,7 +238,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1839.23,
+      "avg_latency_ms": 1675.61,
       "repeat": 3,
       "votes_need": [
         true,
@@ -261,7 +261,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 536.38,
+      "avg_latency_ms": 616.13,
       "repeat": 3,
       "votes_need": [
         false,
@@ -284,7 +284,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 846.47,
+      "avg_latency_ms": 832.46,
       "repeat": 3,
       "votes_need": [
         false,
@@ -307,7 +307,7 @@
       "predicted_persona": "cappie",
       "persona_correct": null,
       "shortcut": false,
-      "avg_latency_ms": 1333.17,
+      "avg_latency_ms": 1403.11,
       "repeat": 3,
       "votes_need": [
         false,
@@ -316,7 +316,7 @@
       ],
       "votes_persona": [
         "cappie",
-        "kind",
+        "cappie",
         "cappie"
       ]
     },
@@ -330,7 +330,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 810.37,
+      "avg_latency_ms": 653.13,
       "repeat": 3,
       "votes_need": [
         false,
@@ -353,7 +353,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 740.51,
+      "avg_latency_ms": 547.37,
       "repeat": 3,
       "votes_need": [
         false,
@@ -376,7 +376,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 567.63,
+      "avg_latency_ms": 887.01,
       "repeat": 3,
       "votes_need": [
         false,
@@ -399,7 +399,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 748.21,
+      "avg_latency_ms": 714.57,
       "repeat": 3,
       "votes_need": [
         false,
@@ -419,10 +419,10 @@
       "predicted_need": false,
       "need_correct": true,
       "expected_persona": null,
-      "predicted_persona": "crazy",
+      "predicted_persona": "kind",
       "persona_correct": null,
       "shortcut": false,
-      "avg_latency_ms": 2957.6,
+      "avg_latency_ms": 2255.52,
       "repeat": 3,
       "votes_need": [
         false,
@@ -430,7 +430,7 @@
         false
       ],
       "votes_persona": [
-        "crazy",
+        "kind",
         "kind",
         "crazy"
       ]
@@ -445,7 +445,7 @@
       "predicted_persona": "cappie",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 925.57,
+      "avg_latency_ms": 1381.51,
       "repeat": 3,
       "votes_need": [
         false,
@@ -468,7 +468,7 @@
       "predicted_persona": "cappie",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 661.8,
+      "avg_latency_ms": 760.69,
       "repeat": 3,
       "votes_need": [
         false,
@@ -491,12 +491,12 @@
       "predicted_persona": "cappie",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1613.03,
+      "avg_latency_ms": 2293.86,
       "repeat": 3,
       "votes_need": [
-        false,
         true,
-        true
+        true,
+        false
       ],
       "votes_persona": [
         "cappie",
@@ -514,7 +514,7 @@
       "predicted_persona": "cappie",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1278.69,
+      "avg_latency_ms": 889.69,
       "repeat": 3,
       "votes_need": [
         true,
@@ -537,7 +537,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 887.91,
+      "avg_latency_ms": 821.17,
       "repeat": 3,
       "votes_need": [
         false,
@@ -560,7 +560,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1251.59,
+      "avg_latency_ms": 846.41,
       "repeat": 3,
       "votes_need": [
         false,
@@ -583,7 +583,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 620.53,
+      "avg_latency_ms": 732.3,
       "repeat": 3,
       "votes_need": [
         false,
@@ -606,7 +606,7 @@
       "predicted_persona": "kind",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 922.08,
+      "avg_latency_ms": 867.43,
       "repeat": 3,
       "votes_need": [
         false,
@@ -629,7 +629,7 @@
       "predicted_persona": "crazy",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 949.9,
+      "avg_latency_ms": 703.15,
       "repeat": 3,
       "votes_need": [
         false,
@@ -652,12 +652,12 @@
       "predicted_persona": "crazy",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 2140.73,
+      "avg_latency_ms": 1608.54,
       "repeat": 3,
       "votes_need": [
-        true,
         false,
-        false
+        false,
+        true
       ],
       "votes_persona": [
         "crazy",
@@ -675,7 +675,7 @@
       "predicted_persona": "crazy",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1050.56,
+      "avg_latency_ms": 2327.47,
       "repeat": 3,
       "votes_need": [
         false,
@@ -698,7 +698,7 @@
       "predicted_persona": "crazy",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 789.12,
+      "avg_latency_ms": 752.76,
       "repeat": 3,
       "votes_need": [
         false,
@@ -721,7 +721,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1050.19,
+      "avg_latency_ms": 864.98,
       "repeat": 3,
       "votes_need": [
         false,
@@ -744,7 +744,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 825.3,
+      "avg_latency_ms": 1472.74,
       "repeat": 3,
       "votes_need": [
         false,
@@ -767,7 +767,7 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1522.57,
+      "avg_latency_ms": 1228.75,
       "repeat": 3,
       "votes_need": [
         true,
@@ -790,10 +790,10 @@
       "predicted_persona": "manager",
       "persona_correct": true,
       "shortcut": false,
-      "avg_latency_ms": 1442.5,
+      "avg_latency_ms": 1423.93,
       "repeat": 3,
       "votes_need": [
-        true,
+        false,
         true,
         true
       ],
@@ -813,7 +813,7 @@
       "predicted_persona": "cappie",
       "persona_correct": null,
       "shortcut": true,
-      "avg_latency_ms": 0.18,
+      "avg_latency_ms": 0.08,
       "repeat": 3,
       "votes_need": [
         false,
@@ -836,7 +836,7 @@
       "predicted_persona": "cappie",
       "persona_correct": null,
       "shortcut": true,
-      "avg_latency_ms": 0.09,
+      "avg_latency_ms": 0.11,
       "repeat": 3,
       "votes_need": [
         false,
@@ -859,7 +859,7 @@
       "predicted_persona": "cappie",
       "persona_correct": null,
       "shortcut": true,
-      "avg_latency_ms": 0.07,
+      "avg_latency_ms": 0.04,
       "repeat": 3,
       "votes_need": [
         false,

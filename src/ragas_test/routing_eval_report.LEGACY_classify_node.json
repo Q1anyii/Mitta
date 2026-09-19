@@ -1,0 +1,136 @@
+{
+  "ragas_test": "routing",
+  "total": 17,
+  "accuracy": 0.9412,
+  "retrieval_recall": 0.8889,
+  "retrieval_false_positive": 0.0,
+  "non_retrieval_precision": 0.8889,
+  "tp": 8,
+  "fp": 0,
+  "tn": 8,
+  "fn": 1,
+  "avg_latency_ms": 967.09,
+  "p95_latency_ms": 1837.98,
+  "details": [
+    {
+      "query": "TypedDict 和 BaseModel 的区别是什么？各自适用于什么场景？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1148.31
+    },
+    {
+      "query": "FastAPI 的 Depends 依赖注入有什么优势？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1316.15
+    },
+    {
+      "query": "LangGraph 的 Checkpointer 和 Store 有什么区别？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 698.36
+    },
+    {
+      "query": "RAG 检索中为什么需要 Query 改写？直接用用户问题检索不行吗？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1192.45
+    },
+    {
+      "query": "RRF（Reciprocal Rank Fusion）融合算法的原理是什么？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 734.61
+    },
+    {
+      "query": "为什么 RAG 检索后还需要重排序（Rerank）？",
+      "expected": true,
+      "predicted": false,
+      "correct": false,
+      "latency_ms": 1837.98
+    },
+    {
+      "query": "JWT 认证中为什么还要用 Redis 存储 token？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 1913.5
+    },
+    {
+      "query": "LangGraph 的 CachePolicy 是怎么工作的？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 681.29
+    },
+    {
+      "query": "PostgresSaver 和 PostgresStore 的区别是什么？",
+      "expected": true,
+      "predicted": true,
+      "correct": true,
+      "latency_ms": 751.98
+    },
+    {
+      "query": "你好呀，今天过得怎么样？",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 928.72
+    },
+    {
+      "query": "谢谢你的帮助！",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 518.21
+    },
+    {
+      "query": "你能帮我算一下 12 加 34 等于多少吗？",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 808.79
+    },
+    {
+      "query": "讲个冷笑话听听。",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 784.79
+    },
+    {
+      "query": "再见，下次聊。",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 521.98
+    },
+    {
+      "query": "你觉得今天天气怎么样？",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 856.23
+    },
+    {
+      "query": "我心情不太好，能陪我聊聊吗？",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 774.96
+    },
+    {
+      "query": "你能直接告诉我你的名字吗？",
+      "expected": false,
+      "predicted": false,
+      "correct": true,
+      "latency_ms": 972.15
+    }
+  ],
+  "note": "发现：constant/prompt_constants.py CLASSIFIER_PROMPT 仍为「在线学习平台」路由文案，与实际知识库（Mitta 技术文档）主题不一致；技术概念题被判无需检索。需确认是否应更新路由 prompt 以匹配实际知识库主题。"
+}

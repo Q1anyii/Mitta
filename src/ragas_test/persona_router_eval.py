@@ -1,4 +1,12 @@
-"""persona_router 四分类准确率离线评测（H-20260919-01 任务①，H-20260919-11 合并后回归）。
+"""[DEPRECATED 2026-09-19] persona_router 四分类准确率离线评测。
+
+本脚本的 16 条人格用例**已并入统一路由评测 `eval_routing.py`**（37 条，一次 LLM 调用
+同时统计 persona + need_retrieval 双维度，支持 --temperature/--repeat 取众数）。
+新评测覆盖本脚本全部用例且样本更大、可复现性更好，**新数据请以 `routing_eval_report.json`
+为准**。本报告冻结为 `persona_router_eval_report.LEGACY.json`，仅作合并前快照保留。
+
+（以下为原始说明）
+H-20260919-01 任务①，H-20260919-11 合并后回归。
 
 绕过手选短路，直接复用 ROUTER_PROMPT（合并后的统一路由 prompt，人格判定规则
 与原 PERSONA_ROUTER_PROMPT 语义等价）调生产同款分类模型
