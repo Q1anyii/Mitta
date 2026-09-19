@@ -94,6 +94,6 @@
     "args": [
       "src/mcp_client/mcp_server/mitta_tools_server.py"
     ],
-    "cwd": "/app/user_files/user_01/AgentProject"
+    "cwd": "/app"
   }
 ]
