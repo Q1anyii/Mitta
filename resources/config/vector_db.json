@@ -1,4 +1,5 @@
 {
+
   "type": "chroma",
   "persist_path": "resources/chroma_db",
   "collection": "FAQ_KNOWLEDGE_BASE"
