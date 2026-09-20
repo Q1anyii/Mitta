@@ -379,7 +379,7 @@
             return ok ? (data.data ?? null) : null;
         }
 
-        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId, persona, onChibi) {
+        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId, persona, onChibi, onDone) {
             const body = { query, thread_id: threadId };
             if (fileIds && fileIds.length > 0) {
                 body.file_ids = fileIds;
@@ -466,6 +466,12 @@
                     // chibi 小气泡吐槽：不进主消息流，右侧独立浮动展示（30s 自动收起）
                     if (chunk.chibi && onChibi) {
                         onChibi(chunk.chibi);
+                    }
+                    // 正文流完事件（H-20260920-01）：后端图执行结束（memory/chibi 后处理
+                    // 已移出阻塞路径），前端据此立即结束加载态、解锁发送按钮。
+                    // 后续仍可能有 chibi 事件晚到，因此这里只收尾不停流。
+                    if (chunk.done && onDone) {
+                        onDone();
                     }
                     const text = extractContentText(chunk.content);
                     if (text) {
@@ -1150,8 +1156,11 @@
                     <!-- chibi 浮动气泡层（fixed 定位右侧，不影响主对话布局） -->
                     <div class="chibi-dock">
                         <div v-for="b in chibiBubbles" :key="b.id" class="chibi-bubble">
-                            <span class="chibi-text">{{ b.text }}</span>
-                            <button class="chibi-close" @click="dismissChibi(b.id)" aria-label="关闭">×</button>
+                            <img class="chibi-avatar" :src="b.avatar" alt="">
+                            <div class="chibi-bubble-main">
+                                <span class="chibi-text">{{ b.text }}</span>
+                                <button class="chibi-close" @click="dismissChibi(b.id)" aria-label="关闭">×</button>
+                            </div>
                         </div>
                     </div>
                     <!-- ══════════ 侧边栏 ══════════ -->
@@ -1721,9 +1730,17 @@
                 });
                 // chibi 浮动气泡：右侧独立窗口，不进主消息流、不影响主对话
                 const chibiBubbles = ref([]);
+                // chibi 头像按当前人格映射：crazy→疯狂米塔、kind→善良米塔、其他→睡衣米塔
+                const CHIBI_AVATAR_MAP = {
+                    crazy: '/assets/img/mita_crazy.png',
+                    kind: '/assets/img/mita_kind.png',
+                };
+                function chibiAvatarFor(persona) {
+                    return CHIBI_AVATAR_MAP[persona] || '/assets/img/mita_pajama.png';
+                }
                 function handleChibi(text) {
                     const id = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-                    chibiBubbles.value.push({ id, text });
+                    chibiBubbles.value.push({ id, text, avatar: chibiAvatarFor(personaMode.value) });
                     setTimeout(() => dismissChibi(id), 30000);
                 }
                 function dismissChibi(id) {
@@ -2605,6 +2622,26 @@
                     // 消息唯一 ID：后端幂等去重键（user_id + client_message_id）。
                     // 刷新重试/多标签页重复 POST 同一消息时，后端 SETNX 拦截，不重复生成
                     const clientMessageId = `cm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+                    // 正文流完收尾（H-20260920-01）：done 事件到达即停加载态、解锁发送按钮；
+                    // finalized 防重：后续流结束/异常路径不再重复渲染收尾
+                    let finalized = false;
+                    const finalizeReply = () => {
+                        if (finalized || currentThreadId.value !== sendThreadId) return;
+                        finalized = true;
+                        if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+                        if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+                        currentToolCall.value = null;
+                        const finalText = latestText || '（无回复）';
+                        aiMsg.content = finalText;
+                        _syncReasoningBlock(aiMsg, aiMsg.reasoning);
+                        _syncTextBlock(aiMsg, finalText);
+                        _interleaveReasoningAndContent(aiMsg);
+                        streaming.value = false;
+                        isLoading.value = false;
+                        saveMessages();
+                        saveSessions();
+                        scrollToBottom({ force: true });
+                    };
 
                     try {
                         // 注意：push 后必须从响应式代理中取回引用。Vue 3 的 proxy 是惰性转换的，
@@ -2692,14 +2729,14 @@
                                     if (shouldScroll) scrollToBottom();
                                 }, 100);
                             }
-                        }, thinkingMode.value, reasoningEffort.value, clientMessageId, personaMode.value, handleChibi);
+                        }, thinkingMode.value, reasoningEffort.value, clientMessageId, personaMode.value, handleChibi, finalizeReply);
 
                         // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染。
                         // 若已切换到其他会话，跳过 UI 更新（后台 checkpoint 已提交，
                         // 切回时 loadCurrentMessages 从后端恢复完整回复）
                         if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
                         if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-                        if (currentThreadId.value === sendThreadId) {
+                        if (currentThreadId.value === sendThreadId && !finalized) {
                             currentToolCall.value = null;  // 清除工具调用状态
                             aiMsg.content = answer || '（无回复）';
                             _syncReasoningBlock(aiMsg, aiMsg.reasoning);

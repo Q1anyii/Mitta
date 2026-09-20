@@ -388,6 +388,9 @@ class ChatService:
         # 使用用户专属图（含自定义 MCP 工具），无配置时自动降级为全局图
         graph = self._get_user_graph(user_id)
         result = graph.invoke({"input_str": query}, config=config)
+        # H-20260920-01：memory_node 移出主图，非流式入口（MCP agent server）同样
+        # 需要补长期记忆持久化；失败静默，不影响回复返回
+        self._persist_long_term_memory(user_id, thread_id, config, graph)
         ai_msg = result["messages"][-1]
         return ai_msg.content
 
@@ -555,6 +558,40 @@ class ChatService:
             logger.debug(f"[chibi] 吐槽生成失败（静默）: {e}")
             return ""
 
+    def _persist_long_term_memory(self, user_id: str, thread_id: str, config: dict, graph) -> None:
+        """图跑完后的后台内务：长期记忆 LLM 提取 + store.put（复用 memory_node 逻辑）。
+
+        自 H-20260920-01 起 memory_node 移出主图，改为本方法在图 stream 结束后
+        （done 事件已推送）于同一 worker 线程执行，前端完成态不被 1~3s 的 LLM
+        提取阻塞；失败静默打日志，不中断对话。短期记忆入库由 checkpointer 在
+        图执行期间完成，不在此重复处理。
+
+        Args:
+            user_id: 用户 ID
+            thread_id: 会话 ID
+            config: 与图执行相同的 LangGraph config
+            graph: 本次执行用的图实例（用户专属图或全局图）
+        """
+        try:
+            from graphs.nodes.memory_node import memory_node
+            store = getattr(self, "store", None)
+            if store is None:
+                logger.debug(f"[memory-bg] store 未初始化，跳过长期记忆持久化 user_id={user_id}")
+                return
+            model = getattr(self, "_deps", None) and getattr(self._deps, "model", None)
+            if model is None:
+                from init import model as _model
+                model = _model
+            snapshot = graph.get_state(config)
+            state = snapshot.values if snapshot is not None else None
+            if not state:
+                logger.debug(f"[memory-bg] 图状态为空，跳过长期记忆持久化 thread_id={thread_id}")
+                return
+            memory_node(state, config, store, model)
+            logger.info(f"[memory-bg] 长期记忆持久化完成 user_id={user_id} thread_id={thread_id}")
+        except Exception as e:
+            logger.exception(f"[memory-bg] 长期记忆持久化失败（静默，不影响已完成的回复）user_id={user_id}: {e}")
+
     def _append_thread_event(self, thread_id: str, event: dict):
         """将单个流式事件追加到 Redis List（key=chat:events:{thread_id}），带全局序号。
 
@@ -664,7 +701,17 @@ class ChatService:
                             ai_content_parts.append(ev["content"])
                         self._append_thread_event(thread_id, ev)
                         event_queue.put(_format_sse(ev))
-                # 图正常跑完：袖珍米塔后置 hook（30% 随机，失败静默）
+                # 图正常跑完 = 正文流完（memory_node 已移出图，见 main_graph.py 注释，
+                # 无 1~3s 长期记忆 LLM 提取阻塞）：
+                # 先推 done 让前端立即结束加载态、解锁发送按钮；
+                # memory 入库 / 长期记忆提取 / chibi 在后台继续执行（失败静默）。
+                # done 是控制信号，只推送不落库——刷新续接由 generation-status 判定，
+                # 事件流里无需重放 done。
+                event_queue.put(_format_sse({"done": True}))
+                # 后台内务一：长期记忆 LLM 提取 + store.put（复用 memory_node 逻辑；
+                # 短期记忆入库已由 checkpointer 在图执行期间完成，不在此重复）
+                self._persist_long_term_memory(user_id, thread_id, config, graph)
+                # 后台内务二：袖珍米塔后置 hook（30% 随机，失败静默）
                 chibi_text = self._maybe_add_chibi("".join(ai_content_parts))
                 if chibi_text:
                     chibi_event = {"chibi": chibi_text}
