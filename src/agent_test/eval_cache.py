@@ -10,10 +10,10 @@ Mitta 缓存效果评估脚本
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.test_cache                    # 默认测试
-    python -m ragas_test.test_cache --rounds 3         # 重复请求轮次
-    python -m ragas_test.test_cache --queries 20       # 每轮 query 数
-    python -m ragas_test.test_cache --clear-first       # 测试前清空缓存
+    python -m agent_test.test_cache                    # 默认测试
+    python -m agent_test.test_cache --rounds 3         # 重复请求轮次
+    python -m agent_test.test_cache --queries 20       # 每轮 query 数
+    python -m agent_test.test_cache --clear-first       # 测试前清空缓存
 
 测试原理：
     1. 第一轮：无缓存，所有请求走完整检索链路，统计 Embedding 调用次数

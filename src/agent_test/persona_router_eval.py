@@ -13,8 +13,8 @@ H-20260919-01 任务①，H-20260919-11 合并后回归。
 （container.py 的 deepseek-v4-flash），只取 JSON 里的 persona 字段，
 输出准确率 + 混淆矩阵 + 错分 case。
 
-用法: D:\\Develop\\conda_envs\\langchain1.2\\python.exe src\\ragas_test\\persona_router_eval.py
-产物: src/ragas_test/persona_router_eval_report.json
+用法: D:\\Develop\\conda_envs\\langchain1.2\\python.exe src\\agent_test\\persona_router_eval.py
+产物: src/agent_test/persona_router_eval_report.json
 """
 import json
 import os

@@ -2,8 +2,8 @@
 
 用法：
     conda activate langchain1.2
-    cd src && python -m ragas_test.evaluate_tool_filter
-    cd src && python -m ragas_test.evaluate_tool_filter --max-cases 22
+    cd src && python -m agent_test.evaluate_tool_filter
+    cd src && python -m agent_test.evaluate_tool_filter --max-cases 22
 
 按实际 MCP 工具名调整 TEST_CASES 的期望命中工具，运行后输出各 query 的
 命中情况与汇总指标，据此调整 TOP_FILTER_TOOLS / TOOL_DISTANCE_THRESHOLD。
@@ -37,7 +37,7 @@ def _localize_mcp_configs(servers: list[dict]) -> list[dict]:
     （/app/...）覆盖为本地项目根，并前置 conda python 到 PATH，使裸 `python`
     命令解析到带 fastmcp 的解释器。线上运行时（容器内）不生效。
     """
-    project_root = Path(__file__).resolve().parent.parent.parent  # ragas_test -> src -> 项目根
+    project_root = Path(__file__).resolve().parent.parent.parent  # agent_test -> src -> 项目根
     conda_py = Path(r"D:\Develop\conda_envs\langchain1.2\python.exe")
     if conda_py.is_file():
         conda_dir = str(conda_py.parent)

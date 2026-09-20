@@ -14,10 +14,10 @@ Mitta 在线实测（E13）
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_online                     # 默认在线实测
-    python -m ragas_test.eval_online --base-url http://www.mittaai.xyz
-    python -m ragas_test.eval_online --username USER --password PASS   # 指定账号
-    python -m ragas_test.eval_online --rate-limit-check  # 启用限流实测（消耗配额）
+    python -m agent_test.eval_online                     # 默认在线实测
+    python -m agent_test.eval_online --base-url http://www.mittaai.xyz
+    python -m agent_test.eval_online --username USER --password PASS   # 指定账号
+    python -m agent_test.eval_online --rate-limit-check  # 启用限流实测（消耗配额）
 
 说明：
   - 默认 base_url https://www.mittaai.xyz；也可指向本地 http://127.0.0.1:8090。
@@ -63,7 +63,7 @@ def check_health(base_url: str) -> Dict:
         ok = resp.status_code == 200
         logger.info(f"  {'✓' if ok else '✗'} HTTP {resp.status_code}（{elapsed:.0f}ms）")
         return {
-            "ragas_test": "health",
+            "agent_test": "health",
             "url": base_url,
             "status_code": resp.status_code,
             "ok": ok,
@@ -72,7 +72,7 @@ def check_health(base_url: str) -> Dict:
         }
     except Exception as e:
         logger.error(f"  ✗ 健康检查失败: {e}")
-        return {"ragas_test": "health", "url": base_url, "ok": False, "error": str(e)}
+        return {"agent_test": "health", "url": base_url, "ok": False, "error": str(e)}
 
 
 def login(base_url: str, username: Optional[str], password: Optional[str]) -> Dict:
@@ -91,7 +91,7 @@ def login(base_url: str, username: Optional[str], password: Optional[str]) -> Di
                 token = data.get("token") or data.get("data", {}).get("token")
                 if token:
                     logger.info(f"  ✓ 登录成功: {user['userId']}")
-                    return {"ragas_test": "login", "ok": True, "token": token, "user": user["userId"]}
+                    return {"agent_test": "login", "ok": True, "token": token, "user": user["userId"]}
                 logger.warning(f"  200 但无 token: {user['userId']} -> {str(data)[:150]}")
             else:
                 logger.warning(f"  ✗ 登录失败 HTTP {resp.status_code}: {user['userId']}")
@@ -107,10 +107,10 @@ def login(base_url: str, username: Optional[str], password: Optional[str]) -> Di
         )
         rejected = resp.status_code in (401, 400) or (resp.status_code == 200 and not resp.json().get("ok", True))
         logger.info(f"  {'✓ 错误凭证被拒绝' if rejected else '✗ 错误凭证未被拒绝'} HTTP {resp.status_code}")
-        return {"ragas_test": "login", "ok": False, "wrong_credential_rejected": rejected,
+        return {"agent_test": "login", "ok": False, "wrong_credential_rejected": rejected,
                 "note": "无可用测试账号", "status_code": resp.status_code}
     except Exception as e:
-        return {"ragas_test": "login", "ok": False, "error": str(e)}
+        return {"agent_test": "login", "ok": False, "error": str(e)}
 
 
 def chat_sse(base_url: str, token: str, query: str) -> Dict:
@@ -131,7 +131,7 @@ def chat_sse(base_url: str, token: str, query: str) -> Dict:
         ) as resp:
             request_start = time.perf_counter()
             if resp.status_code != 200:
-                return {"ragas_test": "chat_sse", "ok": False, "error": f"HTTP {resp.status_code}", "detail": resp.text[:500]}
+                return {"agent_test": "chat_sse", "ok": False, "error": f"HTTP {resp.status_code}", "detail": resp.text[:500]}
             for line in resp.iter_lines():
                 if not line or not line.startswith("data:"):
                     continue
@@ -150,10 +150,10 @@ def chat_sse(base_url: str, token: str, query: str) -> Dict:
                 elif "error" in event:
                     error_events.append(event["error"])
     except Exception as e:
-        return {"ragas_test": "chat_sse", "ok": False, "error": str(e), "type": type(e).__name__}
+        return {"agent_test": "chat_sse", "ok": False, "error": str(e), "type": type(e).__name__}
 
     if request_start is None:
-        return {"ragas_test": "chat_sse", "ok": False, "error": "请求未发出"}
+        return {"agent_test": "chat_sse", "ok": False, "error": "请求未发出"}
 
     total_time = (done_time or time.perf_counter()) - request_start
     first_token = (first_content_time - request_start) if first_content_time else None
@@ -164,7 +164,7 @@ def chat_sse(base_url: str, token: str, query: str) -> Dict:
     logger.info(f"  {'✓' if ok else '✗'} 内容块 {len(content_chunks)}，首 token {first_token*1000:.0f}ms 若命中，"
                 f"总耗时 {total_time:.1f}s，污染 {contamination if contamination else '无'}")
     return {
-        "ragas_test": "chat_sse",
+        "agent_test": "chat_sse",
         "ok": ok,
         "first_token_latency_ms": round(first_token * 1000, 2) if first_token else None,
         "total_time_s": round(total_time, 2),
@@ -188,10 +188,10 @@ def logout_invalidation(base_url: str, token: str) -> Dict:
         invalidated = resp2.status_code == 401
         ok = logout_ok and invalidated
         logger.info(f"  {'✓' if ok else '✗'} 登出 HTTP {resp.status_code}，登出后访问 HTTP {resp2.status_code}")
-        return {"ragas_test": "logout_invalidation", "ok": ok, "logout_status": resp.status_code,
+        return {"agent_test": "logout_invalidation", "ok": ok, "logout_status": resp.status_code,
                 "after_logout_status": resp2.status_code}
     except Exception as e:
-        return {"ragas_test": "logout_invalidation", "ok": False, "error": str(e)}
+        return {"agent_test": "logout_invalidation", "ok": False, "error": str(e)}
 
 
 def rate_limit_check(base_url: str, token: str, burst: int = 31) -> Dict:
@@ -218,7 +218,7 @@ def rate_limit_check(base_url: str, token: str, burst: int = 31) -> Dict:
     ok = rate_limited >= 1
     logger.info(f"  {'✓' if ok else '✗'} 429 次数 {rate_limited}/{burst}（耗时 {elapsed:.0f}s）")
     return {
-        "ragas_test": "rate_limit_online",
+        "agent_test": "rate_limit_online",
         "burst": burst,
         "rate_limited_count": rate_limited,
         "ok": ok,
@@ -260,12 +260,12 @@ def main():
 
     logger.info("\n【在线实测汇总】")
     for r in results:
-        test = r.get("ragas_test", "?")
+        test = r.get("agent_test", "?")
         ok = r.get("ok", None)
         mark = "✓" if ok else ("-" if ok is None else "✗")
         logger.info(f"  [{mark}] {test}")
 
-    summary = {"ragas_test": "online", "base_url": args.base_url, "results": results}
+    summary = {"agent_test": "online", "base_url": args.base_url, "results": results}
     output_path = Path(__file__).parent / "online_eval_report.json"
     output_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(f"在线实测报告已保存: {output_path}")

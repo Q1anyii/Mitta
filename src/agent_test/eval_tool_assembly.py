@@ -13,7 +13,7 @@ Mitta 工具装配评测（E3）
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_tool_assembly
+    python -m agent_test.eval_tool_assembly
 
 说明：
   - 白盒测试：使用 stub 工具 + stub 向量库，不依赖真实 MCP 工具/外部服务。
@@ -176,7 +176,7 @@ def main():
             logger.error(f"  ✗ {desc}: {repr(e)}")
 
     summary = {
-        "ragas_test": "tool_assembly",
+        "agent_test": "tool_assembly",
         "total": len(tests),
         "passed": passed,
         "pass_rate": round(passed / len(tests), 4),

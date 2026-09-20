@@ -13,8 +13,8 @@ Mitta 语义缓存评测（E6）
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_semantic_cache                # 默认评测
-    python -m ragas_test.eval_semantic_cache --thread eval_cache_sem
+    python -m agent_test.eval_semantic_cache                # 默认评测
+    python -m agent_test.eval_semantic_cache --thread eval_cache_sem
 
 说明：
   - 白盒评测：真实 Redis + embed_model + online_rerank（与生产同一链路）。
@@ -87,7 +87,7 @@ def test_semantic_hit(cache, thread_id: str) -> Dict:
     cache.clear_thread_cache(thread_id)
     hit_rate = hit_count / len(synonyms) if synonyms else 0
     return {
-        "ragas_test": "semantic_hit_rate",
+        "agent_test": "semantic_hit_rate",
         "thread_id": thread_id,
         "synonym_count": len(synonyms),
         "hit_count": hit_count,
@@ -123,7 +123,7 @@ def test_unrelated_miss(cache, thread_id: str) -> Dict:
     cache.clear_thread_cache(thread_id)
     false_hit_rate = false_hit / len(unrelated) if unrelated else 0
     return {
-        "ragas_test": "unrelated_false_hit_rate",
+        "agent_test": "unrelated_false_hit_rate",
         "thread_id": thread_id,
         "unrelated_count": len(unrelated),
         "false_hit_count": false_hit,
@@ -144,7 +144,7 @@ def test_exact_duplicate(cache, thread_id: str) -> Dict:
     hit = res is not None
     cache.clear_thread_cache(thread_id)
     logger.info(f"  {'✓ 命中' if hit else '✗ 未命中'} {query[:40]}")
-    return {"ragas_test": "exact_duplicate_hit", "hit": hit, "hit_rate": 1.0 if hit else 0.0}
+    return {"agent_test": "exact_duplicate_hit", "hit": hit, "hit_rate": 1.0 if hit else 0.0}
 
 
 def main():
@@ -171,14 +171,14 @@ def main():
 
     logger.info("\n【评测汇总】")
     for r in results:
-        if r["ragas_test"] == "semantic_hit_rate":
+        if r["agent_test"] == "semantic_hit_rate":
             logger.info(f"  同义改写命中率: {r['hit_rate']*100:.1f}% ({r['hit_count']}/{r['synonym_count']})")
-        elif r["ragas_test"] == "unrelated_false_hit_rate":
+        elif r["agent_test"] == "unrelated_false_hit_rate":
             logger.info(f"  无关 query 误命中率: {r['false_hit_rate']*100:.1f}% ({r['false_hit_count']}/{r['unrelated_count']})")
-        elif r["ragas_test"] == "exact_duplicate_hit":
+        elif r["agent_test"] == "exact_duplicate_hit":
             logger.info(f"  原文重复命中率: {r['hit_rate']*100:.0f}%")
 
-    summary = {"ragas_test": "semantic_cache", "thread_prefix": args.thread, "results": results}
+    summary = {"agent_test": "semantic_cache", "thread_prefix": args.thread, "results": results}
     output_path = Path(__file__).parent / "semantic_cache_eval_report.json"
     output_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info(f"评测报告已保存: {output_path}")

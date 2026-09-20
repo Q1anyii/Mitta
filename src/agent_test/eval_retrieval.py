@@ -11,11 +11,11 @@ Mitta 检索链路离线评估脚本
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_retrieval                  # 默认 50 条 query
-    python -m ragas_test.eval_retrieval --limit 20       # 指定 query 数量
-    python -m ragas_test.eval_retrieval --no-pipeline    # 只测单路召回
-    python -m ragas_test.eval_retrieval --n-results 20   # 稠密召回数量
-    python -m ragas_test.eval_retrieval --dataset resources/knowledge-base/test-qa/eval_project_dataset.json --output project_retrieval_eval_report.json  # 项目专属评测集
+    python -m agent_test.eval_retrieval                  # 默认 50 条 query
+    python -m agent_test.eval_retrieval --limit 20       # 指定 query 数量
+    python -m agent_test.eval_retrieval --no-pipeline    # 只测单路召回
+    python -m agent_test.eval_retrieval --n-results 20   # 稠密召回数量
+    python -m agent_test.eval_retrieval --dataset resources/knowledge-base/test-qa/eval_project_dataset.json --output project_retrieval_eval_report.json  # 项目专属评测集
 
 测试集：
     resources/knowledge-base/test-qa/eval_dataset.json
@@ -54,7 +54,7 @@ from vector.retrieve_doc import RetrievedDoc
 from graphs.nodes.retrieve.fusion_nodes import _mmr_select, _mmr_embed
 from init import embed_model, online_rerank, model
 from service.cache_service import cache_service
-from ragas_test.report_path import resolve_report_path
+from agent_test.report_path import resolve_report_path
 
 
 # ============================================================

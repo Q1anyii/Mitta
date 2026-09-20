@@ -9,10 +9,10 @@ Mitta 限流中间件评估脚本
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.test_rate_limit                  # 默认测试
-    python -m ragas_test.test_rate_limit --concurrent 50  # 并发数
-    python -m ragas_test.test_rate_limit --max-req 30     # 限流阈值
-    python -m ragas_test.test_rate_limit --ragas_test-degrade    # 测试 Redis 降级
+    python -m agent_test.test_rate_limit                  # 默认测试
+    python -m agent_test.test_rate_limit --concurrent 50  # 并发数
+    python -m agent_test.test_rate_limit --max-req 30     # 限流阈值
+    python -m agent_test.test_rate_limit --agent_test-degrade    # 测试 Redis 降级
 
 注意：
   - 本脚本直接调用 RateLimitMiddleware 的内部方法，不启动 HTTP 服务
@@ -87,7 +87,7 @@ def test_normal_traffic(max_requests: int, window: int) -> Dict:
             blocked += 1
 
     result = {
-        "ragas_test": "normal_traffic",
+        "agent_test": "normal_traffic",
         "total": max_requests,
         "passed": passed,
         "blocked": blocked,
@@ -137,7 +137,7 @@ def test_over_limit(max_requests: int, window: int) -> Dict:
     accuracy = 1 - abs(blocked - expected_blocked) / total
 
     result = {
-        "ragas_test": "over_limit",
+        "agent_test": "over_limit",
         "total": total,
         "threshold": max_requests,
         "passed": passed,
@@ -178,7 +178,7 @@ def test_path_filtering() -> Dict:
         logger.info(f"  {path}: 应限流={should_limit}, 实际={is_limited}, {'✓' if match else '✗'}")
 
     accuracy = sum(1 for r in results if r["match"]) / len(results)
-    return {"ragas_test": "path_filtering", "accuracy": accuracy, "details": results}
+    return {"agent_test": "path_filtering", "accuracy": accuracy, "details": results}
 
 
 def test_memory_fallback() -> Dict:
@@ -221,7 +221,7 @@ def test_memory_fallback() -> Dict:
     overhead = avg_memory - avg_redis
 
     result = {
-        "ragas_test": "memory_fallback",
+        "agent_test": "memory_fallback",
         "redis_avg_latency_ms": avg_redis,
         "memory_avg_latency_ms": avg_memory,
         "degrade_overhead_ms": overhead,
@@ -287,7 +287,7 @@ def test_degrade_switch_time() -> Dict:
     subsequent_avg = sum(switch_latencies[1:]) / len(switch_latencies[1:]) if len(switch_latencies) > 1 else 0
 
     result = {
-        "ragas_test": "degrade_switch_time",
+        "agent_test": "degrade_switch_time",
         "first_switch_ms": first_switch,
         "subsequent_avg_ms": subsequent_avg,
         "all_latencies_ms": switch_latencies,
@@ -333,7 +333,7 @@ def test_window_reset(max_requests: int, window: int) -> Dict:
     blocked_after = not middleware.sliding_window_limit(key)
 
     result = {
-        "ragas_test": "window_reset",
+        "agent_test": "window_reset",
         "window_seconds": window,
         "current_ttl": ttl,
         "blocked_after_threshold": blocked_after,
@@ -404,7 +404,7 @@ def main():
     parser.add_argument("--concurrent", type=int, default=100000, help="并发压测请求数（默认 50）")
     parser.add_argument("--max-req", type=int, default=RATE_LIMIT_MAX_REQUESTS, help=f"限流阈值（默认 {RATE_LIMIT_MAX_REQUESTS}）")
     parser.add_argument("--window", type=int, default=RATE_LIMIT_WINDOW_SECONDS, help=f"时间窗口秒数（默认 {RATE_LIMIT_WINDOW_SECONDS}）")
-    parser.add_argument("--ragas_test-degrade", action="store_true", help="包含 Redis 降级测试")
+    parser.add_argument("--agent_test-degrade", action="store_true", help="包含 Redis 降级测试")
     parser.add_argument("--skip-concurrent", action="store_true", help="跳过高并发压测")
     parser.add_argument("--test-degrade", action="store_true", help="是否开启降级测试")
     args = parser.parse_args()
@@ -444,7 +444,7 @@ def main():
     # 并发压测
     if not args.skip_concurrent:
         concurrent_result = asyncio.run(run_dispatch_test(args.concurrent, args.max_req))
-        all_results.append({"ragas_test": "concurrent_stress", **concurrent_result})
+        all_results.append({"agent_test": "concurrent_stress", **concurrent_result})
 
     # ---- 汇总报告 ----
     logger.info(f"\n{'='*60}")
@@ -452,7 +452,7 @@ def main():
     logger.info("")
 
     for r in all_results:
-        test_name = r.get("ragas_test", "unknown")
+        test_name = r.get("agent_test", "unknown")
         if test_name == "normal_traffic":
             logger.info(f"  正常流量通过率: {r['pass_rate']*100:.1f}% (期望 100%)")
         elif test_name == "over_limit":

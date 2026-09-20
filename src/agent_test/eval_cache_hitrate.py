@@ -19,10 +19,10 @@ Mitta 检索语义缓存专项评测（E6-B）
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_cache_hitrate                    # 全量
-    python -m ragas_test.eval_cache_hitrate --bases 6          # 缩小规模冒烟
-    python -m ragas_test.eval_cache_hitrate --skip-rate        # 只跑命中率
-    python -m ragas_test.eval_cache_hitrate --tag run2         # 输出文件名加后缀，保留多版本
+    python -m agent_test.eval_cache_hitrate                    # 全量
+    python -m agent_test.eval_cache_hitrate --bases 6          # 缩小规模冒烟
+    python -m agent_test.eval_cache_hitrate --skip-rate        # 只跑命中率
+    python -m agent_test.eval_cache_hitrate --tag run2         # 输出文件名加后缀，保留多版本
 
 说明：
   - 白盒评测：真实 Redis（需 RedisSearch）+ 真实 embed_model + 真实 online_rerank。
@@ -55,7 +55,7 @@ from service.cache_service import CacheService
 from constant.cache_constant import CACHE_RERANK_HIT_SCORE
 from init import embed_model, online_rerank, model
 from graphs.nodes.retrieve.query_nodes import rewrite_query
-from ragas_test.report_path import resolve_report_path
+from agent_test.report_path import resolve_report_path
 
 # 语义缓存评测默认使用本地 redis-stack（RedisSearch）；
 # 生产 .env 的 REDIS_DB_URL 由 load_dotenv(override=True) 强制注入且不可用，

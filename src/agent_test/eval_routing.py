@@ -40,11 +40,11 @@ H-11（`a42e5e3`）把原 `persona_router_node`（人格四分类）与 `classif
 用法
 ----
     cd src
-    python -m ragas_test.eval_routing                 # 默认 temperature=0，重复 3 次取众数
-    python -m ragas_test.eval_routing --repeat 1      # 单次（快，但受采样波动影响）
-    python -m ragas_test.eval_routing --temperature 1.0 --repeat 3   # 对照：复现生产默认采样
+    python -m agent_test.eval_routing                 # 默认 temperature=0，重复 3 次取众数
+    python -m agent_test.eval_routing --repeat 1      # 单次（快，但受采样波动影响）
+    python -m agent_test.eval_routing --temperature 1.0 --repeat 3   # 对照：复现生产默认采样
 
-产物：src/ragas_test/routing_eval_report.json
+产物：src/agent_test/routing_eval_report.json
 """
 import argparse
 import json
@@ -61,7 +61,7 @@ from loguru import logger
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 显式加载项目根 .env：本脚本以 `python -m ragas_test.eval_routing` 在 src/ 下运行，
+# 显式加载项目根 .env：本脚本以 `python -m agent_test.eval_routing` 在 src/ 下运行，
 # cwd 不含 .env，不显式指定路径会拿到空的 DEEPSEEK_API_KEY。
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 
@@ -253,7 +253,7 @@ def run(model, cases: List[Dict], repeat: int) -> Dict:
         return round(latencies[idx], 2)
 
     return {
-        "ragas_test": "routing_unified",
+        "agent_test": "routing_unified",
         "target": "graphs.nodes.router_node.router_node（H-11 合并后现役节点）",
         "total": len(cases),
         # 意图路由（检索/非检索）

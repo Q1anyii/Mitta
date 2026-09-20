@@ -14,7 +14,7 @@ Mitta MCP 安全校验评测（E4）
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_tool_safety
+    python -m agent_test.eval_tool_safety
 
 说明：
   - 纯函数白盒测试，无外部依赖，可进 CI。
@@ -189,7 +189,7 @@ def main():
     total = len(cases)
     passed = sum(1 for r in results if r["correct"])
     summary = {
-        "ragas_test": "tool_safety",
+        "agent_test": "tool_safety",
         "total": total,
         "passed": passed,
         "pass_rate": round(passed / total, 4),

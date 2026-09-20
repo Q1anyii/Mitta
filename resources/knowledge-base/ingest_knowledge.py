@@ -56,7 +56,7 @@ CATEGORY_MAP = {
     "README": "knowledge_base_index",
 }
 
-# ragas_test-qa 子目录下的文件分类
+# agent_test-qa 子目录下的文件分类
 QA_CATEGORY_MAP = {
     "01": "test_qa_basic",
     "02": "test_qa_debugging",
@@ -67,8 +67,8 @@ QA_CATEGORY_MAP = {
 
 def get_category(file_path: Path) -> tuple[str, str]:
     """根据文件路径确定 (category, base_id)。"""
-    # ragas_test-qa 子目录
-    if "ragas_test-qa" in file_path.parts:
+    # agent_test-qa 子目录
+    if "agent_test-qa" in file_path.parts:
         prefix = file_path.stem.split("-")[0]
         return QA_CATEGORY_MAP.get(prefix, "test_qa"), prefix
 

@@ -9,9 +9,9 @@ Mitta JWT 性能与续签评估
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_jwt                  # 默认测试
-    python -m ragas_test.eval_jwt --iterations 100 # 校验迭代次数
-    python -m ragas_test.eval_jwt --concurrent 20  # 并发数
+    python -m agent_test.eval_jwt                  # 默认测试
+    python -m agent_test.eval_jwt --iterations 100 # 校验迭代次数
+    python -m agent_test.eval_jwt --concurrent 20  # 并发数
 """
 import argparse
 import asyncio
@@ -85,7 +85,7 @@ def test_verify_performance(iterations: int = 100) -> Dict:
     p99 = sorted(latencies)[int(len(latencies) * 0.99) - 1]
 
     result = {
-        "ragas_test": "verify_performance",
+        "agent_test": "verify_performance",
         "iterations": iterations,
         "avg_ms": avg,
         "p50_ms": p50,
@@ -172,7 +172,7 @@ def test_token_renewal() -> Dict:
 
     success_rate = success / total if total else 0
     result = {
-        "ragas_test": "token_renewal",
+        "agent_test": "token_renewal",
         "total": total,
         "success": success,
         "success_rate": success_rate,
@@ -222,7 +222,7 @@ def test_concurrent_verify(concurrent: int = 20) -> Dict:
     p95 = sorted(latencies)[int(len(latencies) * 0.95) - 1]
 
     result = {
-        "ragas_test": "concurrent_verify",
+        "agent_test": "concurrent_verify",
         "concurrent": concurrent,
         "total_requests": len(latencies),
         "avg_ms": avg,
@@ -267,11 +267,11 @@ def main():
     logger.info(f"\n{'='*60}")
     logger.info("【JWT 评估汇总】")
     for r in results:
-        if r["ragas_test"] == "verify_performance":
+        if r["agent_test"] == "verify_performance":
             logger.info(f"  校验延迟: 平均 {r['avg_ms']:.2f}ms, P95 {r['p95_ms']:.2f}ms")
-        elif r["ragas_test"] == "token_renewal":
+        elif r["agent_test"] == "token_renewal":
             logger.info(f"  续签成功率: {r['success_rate']*100:.1f}% ({r['success']}/{r['total']})")
-        elif r["ragas_test"] == "concurrent_verify":
+        elif r["agent_test"] == "concurrent_verify":
             logger.info(f"  并发({r['concurrent']}): 平均 {r['avg_ms']:.2f}ms, P95 {r['p95_ms']:.2f}ms")
     logger.info(f"{'='*60}")
 

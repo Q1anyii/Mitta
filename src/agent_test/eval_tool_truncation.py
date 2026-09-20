@@ -14,7 +14,7 @@ Mitta 工具结果兜底评测（E5）
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_tool_truncation
+    python -m agent_test.eval_tool_truncation
 
 说明：
   - 纯函数/常量白盒测试，无外部依赖，可进 CI。
@@ -273,7 +273,7 @@ def main():
     total = len(cases)
     passed = sum(1 for r in results if r["passed"])
     summary = {
-        "ragas_test": "tool_truncation",
+        "agent_test": "tool_truncation",
         "total": total,
         "passed": passed,
         "pass_rate": round(passed / total, 4),

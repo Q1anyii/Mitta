@@ -31,10 +31,10 @@ H-11 把 `persona_router_node` + `classify_node` 两次串行 LLM 合并为单�
 用法
 ----
     cd src
-    python -m ragas_test.eval_sse --base-url https://www.mittaai.xyz --rounds 2
-    python -m ragas_test.eval_sse --base-url http://127.0.0.1:18000 --scenario retrieval
+    python -m agent_test.eval_sse --base-url https://www.mittaai.xyz --rounds 2
+    python -m agent_test.eval_sse --base-url http://127.0.0.1:18000 --scenario retrieval
 
-产物：src/ragas_test/sse_eval_report.json
+产物：src/agent_test/sse_eval_report.json
 """
 import argparse
 import json
@@ -274,7 +274,7 @@ def main():
 
     targets = SCENARIOS if args.scenario == "all" else {args.scenario: SCENARIOS[args.scenario]}
     report = {
-        "ragas_test": "sse_first_token_by_scenario",
+        "agent_test": "sse_first_token_by_scenario",
         "base_url": args.base_url,
         "rounds": args.rounds,
         "warmup": not args.no_warmup,

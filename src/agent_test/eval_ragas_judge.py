@@ -12,7 +12,7 @@ Mitta RAG 全链路 LLM-as-judge 五指标评测（H-20260919-07 P3）
 
 用法：
     cd src
-    python -m ragas_test.eval_ragas_judge --dataset resources/knowledge-base/test-qa/eval_project_dataset.json --limit 21
+    python -m agent_test.eval_ragas_judge --dataset resources/knowledge-base/test-qa/eval_project_dataset.json --limit 21
 """
 import argparse
 import json
@@ -30,7 +30,7 @@ from config import load_vector_db_config
 from vector.vector_store import create_vector_store
 from init import model
 from constant.retrieval_constants import RERANK_FILTER_THRESHOLD
-from ragas_test.eval_retrieval import hybrid_retrieve, load_test_queries
+from agent_test.eval_retrieval import hybrid_retrieve, load_test_queries
 
 
 JUDGE_MODEL_NAME = "deepseek-chat"  # 复用 init.model 的 DeepSeek；temp=0 由 judge 调用层控制

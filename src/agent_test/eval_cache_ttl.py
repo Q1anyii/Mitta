@@ -11,9 +11,9 @@ Mitta 缓存 TTL 策略对比评估
 用法：
     conda activate langchain1.2
     cd src
-    python -m ragas_test.eval_cache_ttl                  # 默认测试
-    python -m ragas_test.eval_cache_ttl --queries 20     # query 数量
-    python -m ragas_test.eval_cache_ttl --ttl 5          # 短 TTL（秒），加速测试
+    python -m agent_test.eval_cache_ttl                  # 默认测试
+    python -m agent_test.eval_cache_ttl --queries 20     # query 数量
+    python -m agent_test.eval_cache_ttl --ttl 5          # 短 TTL（秒），加速测试
 """
 import argparse
 import json
