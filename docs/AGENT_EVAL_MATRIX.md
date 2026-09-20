@@ -1,6 +1,6 @@
 # Agent 系统评测体系（Agent-Level Evaluation Matrix）
 
-> 定位：将原有 `ragas_test/` 从「RAG 检索评测」升级为「**整个 Agent 系统**」的评测体系，
+> 定位：将原有 `ragas_test/`（2026-09-20 改名 `agent_test/`）从「RAG 检索评测」升级为「**整个 Agent 系统**」的评测体系，
 > 覆盖路由、检索、生成、工具装配/安全/兜底、记忆、缓存、限流、认证、在线实测全链路。
 > 每个项目描述中的指标都有对应评测，没有指标的也为其定义指标测试。
 
@@ -16,7 +16,7 @@
 | E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中率、误命中率、embedding 调用降低、延迟对比 | LSH+KNN+reranker 两级判定、embedding 减少 67%、573→350ms | 离线白盒（真实 Redis） |
 | E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**、P95 延迟、单路 vs 混合、`--diagnose` | 21 条项目专属集：单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**（H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667 与 coverage 0.77 均为历史口径） | 离线白盒 |
 | E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness | RAG 检索增强五大指标；21 条集 LLM-judge 实测 0.6381/0.8005/0.959/0.9881/0.7976 | 离线（LLM 评分，**不入 CI**） |
-| E9 | 记忆 | `eval_memory.py` | 写入 P95、重复写入减少 | 长期记忆写入 P95 ≈ 46ms | 离线白盒 |
+| E9 | 记忆 | `eval_memory.py` | 写入/读取延迟、重复写入减少 | 生产容器内实测（2026-09-20）：写 P95 3.01 / 读 P95 2.09 ms；公网对照 28.00 / 51.87 ms | 离线白盒（公网直连 / 容器内） |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存、路径过滤 | 30 次/60s、Redis 异常降级内存 deque | 离线白盒 |
 | E11 | 认证 | `eval_jwt.py` | 续签成功率、校验耗时、并发 | JWT 双 Token 无感续签 100% | 离线白盒 |
 | E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 | SSE 流式对话 | 在线 HTTP |
@@ -40,11 +40,11 @@
 
 ## 执行约定
 
-1. 环境：`conda activate langchain1.2`，`cd src`，`python -m ragas_test.<script>`。
+1. 环境：`conda activate langchain1.2`，`cd src`，`python -m agent_test.<script>`。
 2. 离线白盒脚本直接调用内部模块（需 Redis/Postgres/LLM 可用）；纯函数脚本无外部依赖。
 3. 在线实测脚本需要服务器在线（默认 `https://www.mittaai.xyz`）。
 4. **RAGAS 五指标（E8）耗时大，只做线下评估，不接入 CI。**
-5. 每个脚本输出 `*_eval_report.json` 到 `ragas_test/` 目录，可与历史报告对比。
+5. 每个脚本输出 `*_eval_report.json` 到 `agent_test/reports/<日期>/` 目录，可与历史报告对比。
 6. 评测阈值校准基准（与代码现状一致）：重排过滤 `>= 0.15`（`RERANK_FILTER_THRESHOLD`，2026-09-19 H-07 由 0.25 放宽；此前 0.3→0.25 为 9/18 第一次放宽）、MMR 默认关闭（`MMR_ENABLED=False`，fair 评测证伪无增益）、
    缓存 rerank 命中 `CACHE_RERANK_HIT_SCORE=0.5`、限流 30 次/60s、工具语义阈值 `TOOL_DISTANCE_THRESHOLD=0.6`、`TOP_FILTER_TOOLS=12`。
 
@@ -79,7 +79,7 @@
 ### 实测记录补充（2026-09-18 晚）
 
 - **E7 检索 recall 口径已改 boolean**：`eval_retrieval.py` 新增 `--metric boolean|coverage`（默认 boolean，句级要点覆盖：句子关键词命中≥60%、覆盖句占比≥50% 即 1），并修复过滤后不足 5 条按 RRF 顺序补足的口径问题；实测 45 条：单路 avg **0.3111** / 混合 avg **0.2667**（阈值 0.25）。
-- **E2 工具筛选已实测**：22 条用例 / 41 工具 / top_k=12，`avg_recall=0.8939`、`avg_precision=0.1406`、`zero_hit=0`；脚本含本地化 MCP 配置适配（`_localize_mcp_configs`）与显式关连接修复，`cd src && python -m ragas_test.evaluate_tool_filter --max-cases 22` 可复现。
+- **E2 工具筛选已实测**：22 条用例 / 41 工具 / top_k=12，`avg_recall=0.8939`、`avg_precision=0.1406`、`zero_hit=0`；脚本含本地化 MCP 配置适配（`_localize_mcp_configs`）与显式关连接修复，`cd src && python -m agent_test.evaluate_tool_filter --max-cases 22` 可复现。
 
 ### 实测记录补充（2026-09-19 深夜）
 

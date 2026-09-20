@@ -274,7 +274,7 @@ AgentProject/
 │   │       └── mitta_tools_server.py     # 本地实用工具集 FastMCP 服务器（git/搜索/文件，12 工具）
 │   ├── middleware/
 │   │   └── rate_limit_middleware.py      # 基于 Redis 的请求限流中间件
-│   ├── ragas_test/                       # Agent 系统评测（评测矩阵 E1–E14，见 docs/AGENT_EVAL_MATRIX.md）
+│   ├── agent_test/                       # Agent 系统评测（评测矩阵 E1–E14，见 docs/AGENT_EVAL_MATRIX.md；2026-09-20 由 ragas_test 改名）
 │   │   ├── ragas_eval.py                 # RAGAS 五项指标评估（E8，LLM-as-judge，不进 CI）
 │   │   ├── eval_routing.py               # 动态路由评测（E1：意图分类准确率/检索召回）
 │   │   ├── evaluate_tool_filter.py       # 工具筛选规则层+语义层准确率评估（E2，22 条用例 recall 0.89）
@@ -285,7 +285,7 @@ AgentProject/
 │   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（E7：单路 vs 混合，key_points 口径 + --diagnose）
 │   │   ├── eval_ragas_judge.py             # 生成质量 LLM-judge 五指标（H-07 P3，生产链路，21 条集实测）
 │   │   ├── persona_router_eval.py          # 人格路由四分类评测（E15：16/16 乐观基线；已随 H-11 路由合并改为复用 ROUTER_PROMPT）
-│   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估（E9）
+│   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估（E9，2026-09-20 起含生产容器内实测）
 │   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测（E10）
 │   │   ├── eval_jwt.py                   # JWT 登录态校验耗时/token 自动续签成功率（E11）
 │   │   ├── eval_sse.py                   # SSE 首 token 延迟/流纯净度评估（E12）
@@ -718,7 +718,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 ### Agent 系统评测（评测矩阵 E1–E14）
 
-项目把 `src/ragas_test/` 从「RAG 检索评测」升级为**覆盖整个 Agent 系统的评测矩阵**，完整定义见 `docs/AGENT_EVAL_MATRIX.md`——项目描述中的每条指标都有对应评测，没有指标的维度也为其定义了指标测试：
+项目把 `src/agent_test/`（2026-09-20 由 `ragas_test` 改名）从「RAG 检索评测」升级为**覆盖整个 Agent 系统的评测矩阵**，完整定义见 `docs/AGENT_EVAL_MATRIX.md`——项目描述中的每条指标都有对应评测，没有指标的维度也为其定义了指标测试：
 
 | 编号 | 维度 | 脚本 | 关键指标 |
 | --- | --- | --- | --- |
@@ -730,7 +730,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E6 | 语义缓存 | `eval_semantic_cache.py` + 冒烟脚本 | 同义改写命中 100%、无关 query 误命中 0%；H-12 拆分为 L1 改写 / L2 向量 / L3a 精确 / L3b 语义四层，L2 实测首次 469 ms → 二次 2 ms |
 | E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall**：21 条项目专属集 kp 覆盖 单路 **0.7476** / 混合 **0.7119**、kp 全覆盖比 0.619 / 0.4762、boolean avg 单/混均 **0.8095**（`h07_p0p1_report.json`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667、coverage 0.7732 均为历史口径）。**2026-09-19 H-12 修正**：脚本原按中文键 `主查询/子查询` 读取改写结果，而 `REWRITE_PROMPT` 输出的是 `main_query/sub_queries`，两键从未匹配 → 历史评测**实际只跑了 1 路稠密**（生产是 4 路）。修复后重跑四档 A/B，`pre_lex` 定档为默认（详见「混合检索设计思路」）；含稠密项的端到端延迟受外部 embedding API 抖动污染（1280~9386 ms），**不可跨臂比较** |
 | E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3，生产链路 judge） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**）；21 条集实测 0.6381/0.8005/0.959/0.9881/0.7976 |
-| E9 | 记忆 | `eval_memory.py` | 写入 P95 ≈ 46ms（历史产物） |
+| E9 | 记忆 | `eval_memory.py` | **生产容器内实测（2026-09-20，3 轮中位数）**：写 avg 1.77 / P95 3.01 / max 3.74 ms、读 avg 1.34 / P95 2.09 / max 7.58 ms，生产链路读写 **P95 ≤ 5ms**（`reports/2026-09-20/memory_eval_report.production.json`）；公网直连对照写 P95 28.00 / 读 P95 51.87 ms（差距来自公网 RTT）；历史本机 4.56/2.49 ms（n=5/20） |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存 deque |
 | E11 | 认证 | `eval_jwt.py` | 续签成功率、校验耗时 |
 | E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 |
@@ -742,7 +742,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 **B 项目专属评测集（双轨制，2026-09-19）**：`resources/knowledge-base/test-qa/eval_project_dataset.json` 含 **21 条**，以真实入库内容 `01~10.md` 为唯一出题源（query/ground_truth/key_points 3~5 点/category），88 个 key_points 逐一在生产 chunks grep 反作弊验证存在原句（重切后 270 chunks，原 405 为旧 300 切分）；`eval_retrieval.py` 支持 `--dataset`/`--output` 参数分别评估。**H-07 优化后重跑**：key_points 单路 0.7476 / 混合 0.7119、boolean avg 单/混均 0.8095（`h07_p0p1_report.json`），生成质量由 `eval_ragas_judge.py` 给出五指标（faithfulness 0.959 / answer_relevancy 0.988 / answer_correctness 0.7976 / context_recall 0.8005 / context_precision 0.6381，`ragas_judge_report.json`）。
 
-所有评估脚本输出 JSON 报告到 `src/ragas_test/`（`*_eval_report.json`），可用于版本间性能对比；E1/E6/E13 为 2026-09-18 实测，其余标注历史产物。
+所有评估脚本输出 JSON 报告到 `src/agent_test/reports/<日期>/`（`*_eval_report.json`），可用于版本间性能对比；E1/E6/E13 为 2026-09-18 实测，其余标注历史产物。
 
 ## 测试
 
@@ -768,15 +768,15 @@ pytest ../tests/ -v
 
 ### 评测运行方式
 
-评测矩阵脚本统一约定：`conda activate langchain1.2`，`cd src`，`python -m ragas_test.<script>`；离线白盒脚本需 Redis/PostgreSQL/在线 LLM/Embedding 可用，纯函数脚本无外部依赖。运行示例：
+评测矩阵脚本统一约定：`conda activate langchain1.2`，`cd src`，`python -m agent_test.<script>`；离线白盒脚本需 Redis/PostgreSQL/在线 LLM/Embedding 可用，纯函数脚本无外部依赖。运行示例：
 
 ```bash
 cd src
-python -m ragas_test.eval_routing         # E1 动态路由（需 LLM）
-python -m ragas_test.eval_tool_safety     # E4 MCP 安全（纯函数）
-python -m ragas_test.eval_semantic_cache  # E6 语义缓存（需 WSL RedisSearch + embed + reranker）
-python -m ragas_test.eval_online --username qianyi --password xxx  # E13 线上实测（默认 https://www.mittaai.xyz）
-python -m ragas_test.ragas_eval           # E8 RAGAS 五项指标（LLM-as-judge，耗时大，仅线下评估，不进 CI）
+python -m agent_test.eval_routing         # E1 动态路由（需 LLM）
+python -m agent_test.eval_tool_safety     # E4 MCP 安全（纯函数）
+python -m agent_test.eval_semantic_cache  # E6 语义缓存（需 WSL RedisSearch + embed + reranker）
+python -m agent_test.eval_online --username qianyi --password xxx  # E13 线上实测（默认 https://www.mittaai.xyz）
+python -m agent_test.ragas_eval           # E8 RAGAS 五项指标（LLM-as-judge，耗时大，仅线下评估，不进 CI）
 pytest ../tests/ -v                       # E14 CI 回归（73 用例，含 test_agent_regression.py）
 ```
 
@@ -887,7 +887,7 @@ flowchart TD
 
 **回归门禁覆盖什么**（都是纯函数、确定性断言，秒级出结果）：动态路由分流规则、MCP 安全白名单（命令/包名/env/sse/type）、工具结果兜底与按轮计数、记忆缓存 key 构造、工具名解析、配置与 JWT/ID 生成。
 
-**为什么不把重活放进 CI**：RAGAS 五指标要用 LLM 打分（分钟级 + 抖动大），离线白盒评测要连 Redis/Postgres/向量库/在线 LLM——放进 CI 既不划算也不稳定，因此只在本地跑，结果归档到 `src/ragas_test/reports/<日期>/` 做版本间对比。
+**为什么不把重活放进 CI**：RAGAS 五指标要用 LLM 打分（分钟级 + 抖动大），离线白盒评测要连 Redis/Postgres/向量库/在线 LLM——放进 CI 既不划算也不稳定，因此只在本地跑，结果归档到 `src/agent_test/reports/<日期>/` 做版本间对比。
 
 ### 镜像构建跳过机制（提速核心）
 

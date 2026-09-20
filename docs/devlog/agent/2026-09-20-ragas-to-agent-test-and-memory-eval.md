@@ -1,6 +1,6 @@
 # 2026-09-20 评测目录改名 ragas_test → agent_test + eval_memory 数据集改造与公网实测
 
-docs_sync: required
+docs_sync: none
 
 ## 类别
 agent（评测体系改造）

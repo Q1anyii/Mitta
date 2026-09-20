@@ -91,7 +91,7 @@ Mitta/
 │   ├── utils/               # 工具函数（jwt / response / lsh 等）
 │   ├── vector/              # 向量库抽象层（Chroma / Milvus）
 │   ├── constant/            # 常量定义
-│   └── ragas_test/          # RAGAS 评估脚本
+│   └── agent_test/          # Agent 系统评测脚本（2026-09-20 由 ragas_test 改名）
 ├── resources/
 │   ├── frontend/            # 前端（Vue 3 CDN SPA）
 │   │   ├── index.html
