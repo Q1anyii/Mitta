@@ -722,12 +722,12 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 | 编号 | 维度 | 脚本 | 关键指标 |
 | --- | --- | --- | --- |
-| E1 | 动态路由 | `eval_routing.py` | **单次采样值，勿引用绝对值**：2026-09-18 首跑 17/17（准确率 100%、召回 100%、误报 0%）；2026-09-19 复跑 **16/17（94.12%）**，唯一失败项「为什么 RAG 检索后还需要重排序（Rerank）?」被判无需检索。`CLASSIFIER_PROMPT` 两次之间未改、变量不唯一（H-07 改了 RAG 链路 + 单次 LLM 采样波动），**不构成回退结论**；需 `temperature=0` 重复 3 次取众数定论 |
+| E1 | 动态路由 | `eval_routing.py` | **统一路由评测（2026-09-19 重构，37 条双维度）**：白盒调用现役 `router_node`，一次调用同时判人格与检索（原 E15 16 条 + 短路 3 条并入，旧 `classify_node` 已摘除）。意图路由 **91.43% / 94.29%**（35 条参与，两次 `temperature=0` 重跑仍有波动，**只报区间**）；检索召回 90%→100%；人格四分类 **32/32=100%**（两次稳定）。⚠️ 旧 **94.12% 作废**（测的是已废弃节点） |
 | E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k（22 条用例，avg_recall=0.8939 / zero_hit=0，已实测） |
 | E3 | 工具装配 | `eval_tool_assembly.py` | 并集召回/降级/熔断 6/6 通过 |
 | E4 | MCP 安全 | `eval_tool_safety.py` | 命令/包名/env/sse/type 白名单拦截率 100%（11/11） |
-| E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限/**按轮计数** 9/9 通过（`doc_truncation` 期望值已随 `MAX_RETRIEVAL_DOCS=8` 修正） |
-| E6 | 语义缓存 | `eval_semantic_cache.py` + 冒烟脚本 | 同义改写命中 100%、无关 query 误命中 0%；H-12 拆分为 L1 改写 / L2 向量 / L3a 精确 / L3b 语义四层，L2 实测首次 469 ms → 二次 2 ms |
+| E5 | 工具兜底 | `eval_tool_truncation.py` | 截断/异常转换/轮次上限/按轮计数/**失败熔断** **13/13 通过**（2026-09-19 由 9 条扩至 13 条：新增连续失败 2 次摘工具、成功清零、节点自我强化提示排除、全熔断准确提示 4 条，`MAX_TOOL_FAILURES=2`；`doc_truncation` 期望值已随 `MAX_RETRIEVAL_DOCS=8` 修正） |
+| E6 | 语义缓存 | `eval_semantic_cache.py`（E6）+ `eval_cache_hitrate.py`（E6-B，2026-09-19 新增） | E6 小样本：同义改写命中 100%（3/3）、无关误命中 0%。**E6-B（12 组 × 3 同义改写 = 36 条）**：隔离会话命中率 **97.2%**（35/36）、混合 12 条+候选 3（**生产默认**）**61.1%**、候选 12 → **88.9%**，误命中硬负 0/8 + 跨域 0/6；**embedding 调用实测降 12.5%**（24 query 流 96→84 条文本；旧 66.7% 作废：基线选错 + 计数重复 + 场景是原文重复）；命中率瓶颈在 KNN 候选数非 rerank 阈值；H-12 四层缓存 L2 首次 469 ms → 二次 2 ms |
 | E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall**：21 条项目专属集 kp 覆盖 单路 **0.7476** / 混合 **0.7119**、kp 全覆盖比 0.619 / 0.4762、boolean avg 单/混均 **0.8095**（`h07_p0p1_report.json`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667、coverage 0.7732 均为历史口径）。**2026-09-19 H-12 修正**：脚本原按中文键 `主查询/子查询` 读取改写结果，而 `REWRITE_PROMPT` 输出的是 `main_query/sub_queries`，两键从未匹配 → 历史评测**实际只跑了 1 路稠密**（生产是 4 路）。修复后重跑四档 A/B，`pre_lex` 定档为默认（详见「混合检索设计思路」）；含稠密项的端到端延迟受外部 embedding API 抖动污染（1280~9386 ms），**不可跨臂比较** |
 | E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3，生产链路 judge） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**）；21 条集实测 0.6381/0.8005/0.959/0.9881/0.7976 |
 | E9 | 记忆 | `eval_memory.py` | **生产容器内实测（2026-09-20，3 轮中位数）**：写 avg 1.77 / P95 3.01 / max 3.74 ms、读 avg 1.34 / P95 2.09 / max 7.58 ms，生产链路读写 **P95 ≤ 5ms**（`reports/2026-09-20/memory_eval_report.production.json`）；公网直连对照写 P95 28.00 / 读 P95 51.87 ms（差距来自公网 RTT）；历史本机 4.56/2.49 ms（n=5/20） |
@@ -736,7 +736,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 |
 | E13 | 在线实测 | `eval_online.py` | health ✓ / 登录 ✓ / SSE 首 token 1348ms 零污染 / 登出失效 401 ✓ / 限流第 30、31 次 429 ✓ |
 | E14 | CI 回归 | `tests/test_agent_regression.py` | 路由/安全/兜底/缓存 key 纯函数断言（pytest，入 CI） |
-| E15 | 人格路由 | `persona_router_eval.py` | 四分类分流准确率 16/16=100%（典型样本，乐观基线；H-11 路由合并后重跑仍 16/16，合并首跑曾 93.8%）；token 用量记录 |
+| E15 | 人格路由 | `persona_router_eval.py`（**2026-09-19 起 deprecated**，16 条已并入 E1 统一评测，报告冻结 `LEGACY`） | 四分类分流准确率 16/16=100%（典型样本，乐观基线；并入统一评测后人格侧 32 条标注用例两次重跑均 100%，合并首跑曾 93.8%）；token 用量记录 |
 
 测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 **45 条**刁钻 QA（基础概念 10 + 代码调试 10 + 架构设计 10 + 刁钻 Badcase 15），覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
 

@@ -1,6 +1,6 @@
 # 工具失败熔断 + 前端发消息跳底 / 登录开新会话
 
-docs_sync: required（待文档撰写 Agent 同步：03 篇 §3.5 工具防线补第三道熔断 / 06 篇或 11 篇 E5 用例 9→13 / 索引 README 冲突节或亮点 / 简历 Bullet B3 或新增 / 根 README E5 行 / `docs/AGENT_EVAL_MATRIX.md` 已在本次同步）
+docs_sync: none
 
 日期：2026-09-19
 类别：agent / 工具 / 前端
