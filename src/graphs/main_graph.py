@@ -6,20 +6,20 @@
 图流程：
     START → router_node → (route) → retrieve_node → llm_node → (route_after_llm)
                                                           ↓              ↓
-                                                         END        tool_node
-                                                                        ↓
-                                                                  llm_node（循环）
+                                                      memory_node    tool_node
+                                                          ↓              ↓
+                                                         END         llm_node（循环）
 
-注：memory_node（长期记忆提取）自 H-20260920-01 起移出主图——它在图内会让
-SSE 流末尾阻塞 1~3s（LLM 提取）。现由 chat_service._run_graph 在图 stream
-结束后（正文流完）先推 done 事件，再于后台线程执行 memory_node 逻辑，
-短期记忆入库（checkpointer）与长期记忆 store.put 均不丢失。
+注：H-20260920-01 二轮方案——memory_node 保留在主图内（不拆分），但节点内部
+改为 fire-and-forget：长期记忆 LLM 提取 + store.put 放后台线程，节点立即返回，
+不再阻塞 SSE 完成态。done 事件由 chat_service._run_graph 在 stream 结束后推送。
 """
 
 from functools import partial
 
 from langchain_core.tools import BaseTool
 from langchain_core.tools.base import ToolException
+from langgraph.types import CachePolicy
 from langgraph.store.base import BaseStore
 from langgraph.constants import START, END
 from langgraph.graph.state import StateGraph
@@ -59,7 +59,9 @@ from graphs.tool_filter import ToolFilter
 from graphs.nodes.router_node import router_node
 from graphs.nodes.retrieve_node import retrieve_node
 from graphs.nodes.llm_node import llm_node
+from graphs.nodes.memory_node import memory_node, _memory_cache_key
 from graphs.nodes.routes import route, route_after_llm
+from constant.cache_constant import CACHE_MEMORY_NODE_TTL
 
 
 def _tool_error_message(e: Exception) -> str:
@@ -142,6 +144,7 @@ def build_main_graph(
         get_user_system_prompt=get_user_system_prompt,
         lazy_loader=lazy_loader,
     )
+    memory_node_bound = partial(memory_node, store=store, model=model)
 
     # ── 图构建 ──
     builder = StateGraph(state_schema=OverAllState)
@@ -154,6 +157,15 @@ def build_main_graph(
     # ToolMessage（携带旧 tool_call_id），与当前轮 AI 消息的新 tool_calls id 不匹配，
     # 透传给 API 会双向 400（悬空调用 / 孤儿 ToolMessage）
     builder.add_node("tool_node", tool_node)
+    # memory_node：仅 executed/unavailable 轮写入缓存（见 _memory_cache_key），
+    # 命中时跳过 LLM 记忆提取与 store 写入，省一次模型调用。
+    # H-20260920-01 二轮：节点内部已 fire-and-forget（LLM 提取放后台线程），
+    # 节点函数立即返回，SSE 完成态不被 1~3s 的提取阻塞。
+    builder.add_node(
+        "memory_node",
+        memory_node_bound,
+        cache_policy=CachePolicy(ttl=CACHE_MEMORY_NODE_TTL, key_func=_memory_cache_key),
+    )
 
     builder.add_edge(START, "router_node")
     builder.add_conditional_edges(
@@ -162,15 +174,15 @@ def build_main_graph(
         ["retrieve_node", "llm_node"],
     )
     builder.add_edge("retrieve_node", "llm_node")
-    # llm_node 后：有工具调用回环 tool_node，否则直达 END（正文流完）。
-    # memory_node 已移出图（H-20260920-01）：长期记忆提取改由 chat_service
-    # 在图 stream 结束后后台执行，避免阻塞 SSE 完成态。
+    # llm_node 后：有工具调用回环 tool_node，否则 memory_node（内部异步化，
+    # 快速返回）→ END。memory_node 保留在图内，checkpointer/老会话兼容不变。
     builder.add_conditional_edges(
         "llm_node",
         route_after_llm,
-        ["tool_node", END],
+        ["tool_node", "memory_node"],
     )
     builder.add_edge("tool_node", "llm_node")  # 工具执行结果回到 LLM，生成最终回答
+    builder.add_edge("memory_node", END)
 
     # 创建连接池（open=True 表示立即打开连接）
     # 必须开启 autocommit：迁移脚本含 CREATE INDEX CONCURRENTLY，不能在事务块中执行

@@ -4,7 +4,6 @@
 纯函数，无外部依赖。
 """
 
-from langgraph.constants import END
 from langgraph.types import Send
 from loguru import logger
 
@@ -36,18 +35,18 @@ def route(state: OverAllState) -> list[Send]:
 
 
 def route_after_llm(state: OverAllState) -> str:
-    """llm_node 之后：有工具调用则执行 ToolNode，否则直接 END（正文流完）。
+    """llm_node 之后：有工具调用则执行 ToolNode，否则进入记忆节点收尾。
 
-    memory_node 自 H-20260920-01 起移出主图（长期记忆提取改由 chat_service
-    在图 stream 结束后后台执行），因此无工具分支不再路由到记忆节点，直接 END。
+    memory_node 保留在主图内（H-20260920-01 二轮方案：节点内部 fire-and-forget，
+    快速返回），无工具分支照旧路由到 memory_node。
 
     Args:
         state: 当前图状态
 
     Returns:
-        "tool_node" 或 END
+        "tool_node" 或 "memory_node"
     """
     last = state["messages"][-1]
-    target = "tool_node" if getattr(last, "tool_calls", None) else END
+    target = "tool_node" if getattr(last, "tool_calls", None) else "memory_node"
     logger.info(f"llm_node 路由：{target}（last={type(last).__name__}）")
     return target
