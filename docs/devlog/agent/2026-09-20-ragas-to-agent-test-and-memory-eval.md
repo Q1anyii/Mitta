@@ -37,5 +37,12 @@ agent（评测体系改造）
 - `pytest tests/test_config.py -q` → 32 passed；
 - 公网实测完整跑通 4 项测试并落盘报告。
 
+## 补充：生产容器内实测（2026-09-20）
+- 方式：`docker exec mitta-api python -X utf8 /tmp/eval_memory.py --db-url "postgresql://root:1234@postgres:5432/agentproject?sslmode=disable"`（容器网络，生产真实链路）。
+- 结果（3 轮中位数）：写入 avg 1.77 / p95 3.01 / max 3.74 ms；读取 avg 1.34 / p95 2.09 / max 7.58 ms；对话画像 10 轮总写入 22 ms。
+- 结论：生产链路读写 P95 ≤ 5ms，存储无瓶颈；公网直连数字（读 p95 52ms）差距几乎全部来自公网 RTT，仅作对照，不代表生产链路。
+- 报告归档：`src/agent_test/reports/2026-09-20/memory_eval_report.production.json`（生产）+ `memory_eval_report.public_net.json`（公网对照）+ `README.md`（环境标注）。
+
 ## 待办（交文档撰写 Agent）
 - README / CONTRIBUTING / docs/AGENT_EVAL_MATRIX.md / docs/DEVELOPMENT_LOG.md / requirements-eval.txt 中 `ragas_test` 引用同步为 `agent_test`（文档侧未改，本次仅动代码）。
+- README 中"长期记忆写入 P95 约 46 ms"旧口径替换为生产容器内实测（写 p95 3.01ms / 读 p95 2.09ms）。
