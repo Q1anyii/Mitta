@@ -59,4 +59,19 @@ def retrieve_node(state: OverAllState, retrieve_graph) -> OverAllState:
     if output and (hasattr(output[0], "page_content") or hasattr(output[0], "text")):
         retrieve_res["output"] = documents_to_dicts(output)
 
+    # H-20260921-02：检索完成后推 citations（top3 出处），前端在回答下方渲染
+    # 可折叠"参考了 N 段项目文档"块。与 H-01 开场白共用 custom stream 通道。
+    try:
+        refs = []
+        for doc in (retrieve_res.get("output") or [])[:3]:
+            meta = doc.get("metadata") or {}
+            file_name = meta.get("source") or meta.get("category") or "未知文档"
+            snippet = (doc.get("page_content") or "").strip().replace("\n", " ")[:50]
+            refs.append({"file": file_name, "snippet": snippet})
+        if refs:
+            writer = get_stream_writer()
+            writer({"type": "citations", "refs": refs})
+    except Exception as e:
+        logger.debug(f"citations 推送失败（静默）: {e}")
+
     return {"retrieve_res": retrieve_res}

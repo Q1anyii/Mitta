@@ -379,7 +379,7 @@
             return ok ? (data.data ?? null) : null;
         }
 
-        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId, persona, onChibi, onDone, onAck) {
+        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId, persona, onChibi, onDone, onAck, onCitations) {
             const body = { query, thread_id: threadId };
             if (fileIds && fileIds.length > 0) {
                 body.file_ids = fileIds;
@@ -447,6 +447,9 @@
                     if (chunk.ack) {
                         answer = chunk.ack;
                         if (onAck) onAck(chunk.ack);
+                    }
+                    if (chunk.type === "citations" && onCitations) {
+                        onCitations(chunk.refs || []);
                     }
                     if (chunk.error) throw new Error(chunk.error);
                     // 幂等拦截：同一条消息（client_message_id）已被处理过。
@@ -1350,7 +1353,20 @@
                                                 </div>
                                                 <div v-if="ragThinking && msg === messages[messages.length - 1]" class="rag-thinking-indicator">
                                                     <div class="thinking-dots"><span></span><span></span><span></span></div>
-                                                    <span class="thinking-text">正在全力思考中...</span>
+
+                                                <div v-if="msg.citations && msg.citations.length" class="citations-block">
+                                                    <div class="citations-toggle" @click="msg.citationsOpen = !msg.citationsOpen">
+                                                        <span class="citations-icon">📚</span>
+                                                        <span class="citations-title">参考了 {{ msg.citations.length }} 段项目文档</span>
+                                                        <svg class="citations-arrow" :class="{ expanded: msg.citationsOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                    </div>
+                                                    <div v-show="msg.citationsOpen" class="citations-list">
+                                                        <div v-for="(cit, i) in msg.citations" :key="i" class="citation-item">
+                                                            <div class="citation-file">{{ cit.file }}</div>
+                                                            <div class="citation-snippet">{{ cit.snippet }}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>                                                    <span class="thinking-text">正在全力思考中...</span>
                                                 </div>
                                                 <div v-if="currentToolCall && msg === messages[messages.length - 1]" class="tool-call-indicator">
                                                     <div class="tool-call-spinner"></div>
@@ -2160,6 +2176,9 @@
                             if (!latestText) latestText = ev.ack;
                             aiMsg.content = latestText;
                         }
+                        if (ev.type === "citations") {
+                            aiMsg.citations = ev.refs || [];
+                        }
                         // 深度思考增量：全量追加到 reasoning，再按增量同步 blocks
                         if (ev.reasoning) {
                             aiMsg.reasoning = (aiMsg.reasoning || '') + ev.reasoning;
@@ -2754,6 +2773,10 @@
                                 aiMsg.ack = ackText;
                                 ragThinking.value = true;
                                 scrollToBottom();
+                            }, (refs) => {
+                                // 检索引用（H-20260921-02）：绑定到当前助手消息，渲染折叠块
+                                if (currentThreadId.value !== sendThreadId) return;
+                                aiMsg.citations = refs;
                             });
 
                         // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染。
