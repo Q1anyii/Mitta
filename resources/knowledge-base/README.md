@@ -7,7 +7,7 @@
 
 本知识库包含两部分内容：
 
-1. **知识文档（10篇）**：系统性的技术总结，涵盖架构设计、最佳实践、常见问题
+1. **知识文档（20篇）**：系统性的技术总结，涵盖架构设计、最佳实践、常见问题，其中 11-20 篇覆盖 Agent 全领域（基础范式/推理规划/工具 MCP/记忆状态/多智能体/安全治理/评估/流式工程/提示工程/工程化部署）
 2. **测试 QA（45条）**：按难度分类的问答对，含基础概念、代码调试、架构设计、刁钻 Badcase
 
 所有内容均基于实际项目代码和开发经验，严禁胡编乱造。对不了解的内容未存入。
@@ -30,6 +30,17 @@ knowledge-base/
 ├── 09-frontend-vue3.md                # 前端 Vue 3 开发实践
 ├── 10-engineering-practices.md        # 工程化实践总结
 │
+├── 11-agent-fundamentals.md          # Agent 基础与范式（ReAct/Plan-and-Execute/混合架构）
+├── 12-agent-reasoning-planning.md    # Agent 推理与规划（CoT/路由/工具选择）
+├── 13-agent-tools-mcp.md             # 工具调用与 MCP（Function Calling/协议/安全/熔断）
+├── 14-agent-memory-state.md          # 记忆与状态管理（双层记忆/画像合并）
+├── 15-multi-agent-collaboration.md   # 多智能体协作（Supervisor/Hierarchical/Swarm/Agent Team）
+├── 16-agent-safety-governance.md     # Agent 安全与治理（提示注入/白名单/沙箱/限流）
+├── 17-agent-evaluation.md            # Agent 评估与可观测性（RAGAS/链路评测/评测集）
+├── 18-llm-streaming-engineering.md   # LLM 流式与接口工程（SSE/首 token/超时重试/成本）
+├── 19-prompt-engineering.md          # 提示工程（System Prompt/结构化输出/工具描述）
+├── 20-agent-engineering-cicd.md      # Agent 工程化与部署（缓存/限流/蓝绿/CI-CD）
+│
 └── test-qa/
     ├── 01-basic-concepts.md           # 基础概念题（10条）
     ├── 02-code-debugging.md           # 代码调试题（10条）
@@ -51,6 +62,16 @@ knowledge-base/
 | 08 | 安全认证 | 安全 | JWT、密码加密、资源归属校验、敏感信息保护、限流、常见漏洞 |
 | 09 | 前端 Vue3 | 前端 | Composition API、SSE 接收、AbortController、多主题、文件上传、状态管理 |
 | 10 | 工程化实践 | 工程化 | 项目结构、代码规范、日志管理、环境配置、依赖管理、测试、部署、Git |
+| 11 | Agent 基础与范式 | Agent | Agent 定义、组件、ReAct/Plan-and-Execute/Reflexion、与 Workflow/RAG 区别、混合架构 |
+| 12 | 推理与规划 | Agent | 思维链、结构化输出、意图路由、工具选择规划、反应式 vs 规划式 |
+| 13 | 工具与 MCP | Agent | Function Calling、MCP 协议、免改代码接入、安全校验、失败熔断降级 |
+| 14 | 记忆与状态 | Agent | 记忆分类、双层记忆、画像提取与增量合并、更新策略、性能口径 |
+| 15 | 多智能体协作 | Agent | Supervisor/Hierarchical/Swarm/Agent Team、通信机制、职责边界与治理 |
+| 16 | 安全与治理 | Agent | 提示注入、工具越权、白名单、沙箱隔离、认证授权、限流防滥用 |
+| 17 | 评估与可观测性 | Agent | RAGAS 指标、链路评测矩阵、评测集建设、成本延迟评估、回归测试 |
+| 18 | LLM 流式工程 | Agent | SSE、首 token 优化、超时重试、上下文管理、成本控制 |
+| 19 | 提示工程 | Agent | System Prompt 设计、结构化输出、工具描述、防幻觉、人格设定 |
+| 20 | 工程化与部署 | Agent | 项目分层、配置管理、四层缓存、限流降级、CI/CD 蓝绿、低配调优 |
 
 ## 测试 QA 分类
 
@@ -86,7 +107,7 @@ python embedding.py
 ### 入库元数据
 
 - **source**: `knowledge_base`
-- **category**: 根据文件名自动分类（python/fastapi/langgraph/rag/database/architecture/exception/security/frontend/engineering/test_qa）
+- **category**: 根据文件名自动分类（python/fastapi/langgraph/rag/database/architecture/exception/security/frontend/engineering/test_qa；11-20 篇 Agent 领域文档未注册新前缀时归入默认 knowledge_base，仅影响 TAG 过滤，不影响内容检索）
 
 ### 检索使用
 
