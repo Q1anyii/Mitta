@@ -5,9 +5,11 @@
 """
 
 from loguru import logger
+from langgraph.config import get_stream_writer
 
 from graphs.state import OverAllState
 from utils.doc_util import documents_to_dicts
+from constant.ack_constant import pick_ack_text
 
 
 def retrieve_node(state: OverAllState, retrieve_graph) -> OverAllState:
@@ -16,6 +18,10 @@ def retrieve_node(state: OverAllState, retrieve_graph) -> OverAllState:
     Document 无法被 checkpointer 正确反序列化：恢复会话时会被还原成 dict，
     导致 llm_node 里 doc.page_content 报 AttributeError。
     统一在入 state 前转成 dict，llm_node 侧兼容两种形态读取。
+
+    H-20260921-01：检索耗时 ~7s，invoke 之前先用 LangGraph custom stream
+    推一句人格化开场白（0 LLM 调用），前端立即出现助手气泡 + "正在全力思考中"
+    loading，消除空白等待。
 
     Args:
         state: 当前图状态，含 input_str 和 messages（历史对话）
@@ -26,6 +32,16 @@ def retrieve_node(state: OverAllState, retrieve_graph) -> OverAllState:
     """
     input_str = state["input_str"]
     logger.info(f"执行知识库检索：{input_str}")
+
+    # 检索期预响应：立即推开场白（0 LLM 调用，按当前 persona 选句）。
+    # 必须在 retrieve_graph.invoke 之前推，否则失去"立即响应"意义。
+    try:
+        persona = state.get("persona")
+        writer = get_stream_writer()
+        writer({"ack": pick_ack_text(persona), "persona": persona or ""})
+    except Exception as e:
+        # stream_writer 不可用（如非 stream 调用）时静默降级，不影响检索主链路
+        logger.debug(f"检索期开场白推送失败（静默）: {e}")
 
     history = [
         {"role": "user" if m.type == "human" else "assistant", "content": m.content}

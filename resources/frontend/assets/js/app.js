@@ -379,7 +379,7 @@
             return ok ? (data.data ?? null) : null;
         }
 
-        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId, persona, onChibi, onDone) {
+        async function apiChat(query, threadId, onStream, signal, onToolCall, fileIds, onReasoning, thinkingMode, reasoningEffort, clientMessageId, persona, onChibi, onDone, onAck) {
             const body = { query, thread_id: threadId };
             if (fileIds && fileIds.length > 0) {
                 body.file_ids = fileIds;
@@ -442,6 +442,12 @@
                         continue; // 跳过损坏的 SSE 数据，不中断整个流
                     }
                     // 服务端图执行异常（工具执行失败等）：抛给调用方展示，不再静默断流
+                    // 检索期开场白（H-20260921-01）：retrieve_node 在 retrieve 前推，0 LLM 调用；
+                    // 作为助手消息第一句，后续正文 content 追加其后。
+                    if (chunk.ack) {
+                        answer = chunk.ack;
+                        if (onAck) onAck(chunk.ack);
+                    }
                     if (chunk.error) throw new Error(chunk.error);
                     // 幂等拦截：同一条消息（client_message_id）已被处理过。
                     // 抛特殊错误码 DUPLICATE，sendMessage catch 中回滚本地占位并触发重放，
@@ -1342,6 +1348,10 @@
                                                     <div class="thinking-dots"><span></span><span></span><span></span></div>
                                                     <span class="thinking-text">正在思考...</span>
                                                 </div>
+                                                <div v-if="ragThinking && msg === messages[messages.length - 1]" class="rag-thinking-indicator">
+                                                    <div class="thinking-dots"><span></span><span></span><span></span></div>
+                                                    <span class="thinking-text">正在全力思考中...</span>
+                                                </div>
                                                 <div v-if="currentToolCall && msg === messages[messages.length - 1]" class="tool-call-indicator">
                                                     <div class="tool-call-spinner"></div>
                                                     <span class="tool-call-text">正在调用工具：<strong>{{ currentToolCall.name }}</strong></span>
@@ -1653,7 +1663,8 @@
                 const inputText = ref('');
                 const isLoading = ref(false);
                 const streaming = ref(false);
-                const currentToolCall = ref(null);  // 当前正在调用的工具 {name, args}，用于显示加载界面
+                const currentToolCall = ref(null);
+                const ragThinking = ref(false);  // 检索期思考中 loading（H-20260921-01）  // 当前正在调用的工具 {name, args}，用于显示加载界面
                 const sidebarOpen = ref(false);
                 const healthStatus = ref('online');
                 const messagesContainer = ref(null);
@@ -2143,6 +2154,12 @@
                     let latestText = aiMsg.content || '';
                     for (const item of events) {
                         const ev = item && item.event ? item.event : item;
+                        // 检索期开场白（H-20260921-01）：作为助手消息第一句，后续 content 追加其后
+                        if (ev.ack) {
+                            aiMsg.ack = ev.ack;
+                            if (!latestText) latestText = ev.ack;
+                            aiMsg.content = latestText;
+                        }
                         // 深度思考增量：全量追加到 reasoning，再按增量同步 blocks
                         if (ev.reasoning) {
                             aiMsg.reasoning = (aiMsg.reasoning || '') + ev.reasoning;
@@ -2661,6 +2678,7 @@
                             // 切回该会话时 loadCurrentMessages 从后端/缓存恢复完整回复）
                             if (currentThreadId.value !== sendThreadId) return;
                             streaming.value = true;
+                            ragThinking.value = false;  // 首个正文 chunk 到达，关闭检索 loading
                             latestText = text;
                             if (!renderTimer) {
                                 renderTimer = setTimeout(() => {
@@ -2729,7 +2747,14 @@
                                     if (shouldScroll) scrollToBottom();
                                 }, 100);
                             }
-                        }, thinkingMode.value, reasoningEffort.value, clientMessageId, personaMode.value, handleChibi, finalizeReply);
+                        }, thinkingMode.value, reasoningEffort.value, clientMessageId, personaMode.value, handleChibi, finalizeReply, (ackText) => {
+                                // 检索期开场白（H-20260921-01）：0 LLM 调用，立即显示助手气泡 + 思考 loading
+                                if (currentThreadId.value !== sendThreadId) return;
+                                aiMsg.content = ackText;
+                                aiMsg.ack = ackText;
+                                ragThinking.value = true;
+                                scrollToBottom();
+                            });
 
                         // 流结束：清掉未触发的节流器，确保最终内容一次性落库渲染。
                         // 若已切换到其他会话，跳过 UI 更新（后台 checkpoint 已提交，
@@ -3332,7 +3357,7 @@
 
                 return {
                     user, sessions, currentThreadId, messages, inputText,
-                    isLoading, streaming, currentToolCall, sidebarOpen, healthStatus, healthText,
+                    isLoading, streaming, currentToolCall, ragThinking, sidebarOpen, healthStatus, healthText,
                     messagesContainer, textarea, fileInput, randomQuestions, refreshQuestions,
                     currentSessionTitle, userAvatar, greetingName, canSend,
                     createNewSession, switchSession, deleteSession,

@@ -609,6 +609,8 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
     color: var(--brand-deep); font-weight: 700; }
 .tool-call-text strong { color: var(--red); }
 .tool-call-indicator .tool-call-spinner { width: 14px; height: 14px; }
+.rag-thinking-indicator { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 4px 2px; color: var(--text-2); }
+.rag-thinking-indicator .thinking-text { color: var(--brand-deep); }
 
 /* 消息操作栏 */
 .message-actions { display: flex; gap: 6px; margin-top: 8px; opacity: 0; transition: opacity .2s; }

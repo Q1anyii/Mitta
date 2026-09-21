@@ -650,11 +650,24 @@ class ChatService:
             ai_content_parts: list[str] = []  # 累积主回答正文，供 chibi 吐槽 hook
             try:
                 graph = self._get_user_graph(user_id)
-                for chunk, meta in graph.stream(
+                # 多模式流：
+                #   messages -> (chunk, meta) 元组，走原节点过滤逻辑；
+                #   custom   -> retrieve_node 用 get_stream_writer 推的 dict
+                #             （H-20260921-01 检索期开场白 {"ack": ..., "persona": ...}），
+                #             直接落库 + 推 SSE，前端立即显示助手气泡。
+                for mode, item in graph.stream(
                     {"input_str": input_str},
                     config=config,
-                    stream_mode="messages",
+                    stream_mode=["messages", "custom"],
                 ):
+                    # custom 事件：retrieve_node 推开场白等，原样落库 + 推送
+                    if mode == "custom":
+                        ev = item
+                        self._append_thread_event(thread_id, ev)
+                        event_queue.put(_format_sse(ev))
+                        continue
+                    # messages 事件：按节点过滤（llm/tool 放行，classify/memory 过滤）
+                    chunk, meta = item
                     # 结构化事件：既落库（供刷新后断点重放），也推送 SSE（实时流）
                     events = _process_graph_chunk_events(chunk, meta)
                     if not events:  # None 表示该 chunk 被过滤（classify/memory 节点）
