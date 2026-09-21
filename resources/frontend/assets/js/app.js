@@ -1343,7 +1343,7 @@
                                                             </div>
                                                             <div v-show="block.expanded" class="reasoning-inline-text" v-html="escapeHtml(block.content)"></div>
                                                         </div>
-                                                        <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(block.content)"></div>
+                                                        <div v-if="block.type === 'text' && block.content" class="markdown-body" v-html="renderMarkdown(stripAckPrefix(block.content, msg.ack))"></div>
                                                         <div v-else-if="block.type === 'tool'" class="tool-call-inline" :class="{ running: block.status === 'running', done: block.status === 'done' }">
                                                             <span class="tool-inline-icon" v-html="toolIcon(block.name, block.status)"></span>
                                                             <span class="tool-inline-summary">{{ toolSummary(block.name, block.args) }}</span>
@@ -1360,7 +1360,7 @@
                                                         </div>
                                                     </template>
                                                 </template>
-                                                <div v-else-if="msg.content" class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
+                                                <div v-else-if="msg.content" class="markdown-body" v-html="renderMarkdown(stripAckPrefix(msg.content, msg.ack))"></div>
                                                 <div v-show="!msg.content" class="thinking-indicator">
                                                     <div class="thinking-dots"><span></span><span></span><span></span></div>
                                                     <span class="thinking-text">正在思考...</span>
@@ -1763,6 +1763,15 @@
                     crazy: '/assets/img/mita_crazy.png',
                     kind: '/assets/img/mita_kind.png',
                 };
+                function stripAckPrefix(text, ack) {
+    if (!text || !ack) return text;
+    const a = ack.trim();
+    // 正文开头与 ack 公共前缀 >= ack 长度-2 即剥掉（容忍末尾标点/空格差异）
+    let i = 0;
+    while (i < a.length && i < text.length && text[i] === a[i]) i++;
+    if (i >= a.length - 2) return text.slice(i).replace(/^[\s，。！、：:；;～~…]+/, '');
+    return text;
+}
                 function chibiAvatarFor(persona) {
                     return CHIBI_AVATAR_MAP[persona] || '/assets/img/mita_pajama.png';
                 }
@@ -2156,7 +2165,7 @@
                         msg.reasoning = msg.reasoning || '';
                         // blocks 不存在时（旧消息），用 content 初始化一个文本块
                         if (!msg.blocks) {
-                            msg.blocks = msg.content ? [{ type: 'text', content: msg.content }] : [];
+                            msg.blocks = msg.content ? [{ type: 'text', content: stripAckPrefix(msg.content, msg.ack) }] : [];
                         }
                     }
                     return msg;
@@ -2175,7 +2184,7 @@
                         if (ev.ack) {
                             aiMsg.ack = ev.ack;
                             if (!latestText) latestText = ev.ack;
-                            aiMsg.content = latestText;
+                            aiMsg.content = stripAckPrefix(latestText, aiMsg.ack);
                         }
                         if (ev.type === "citations") {
                             aiMsg.citations = ev.refs || [];
@@ -2188,7 +2197,7 @@
                         // 正文增量：全量追加到 content，再按增量同步 blocks
                         if (ev.content) {
                             latestText = (latestText || '') + ev.content;
-                            aiMsg.content = latestText;
+                            aiMsg.content = stripAckPrefix(latestText, aiMsg.ack);
                             _syncTextBlock(aiMsg, latestText);
                         }
                         // 工具调用开始：插入 running 工具块
@@ -2345,6 +2354,7 @@
                 // 最后一个块是 text → 更新它；最后一个块是 tool（工具后新文本）→ 新建文本块
                 // 从而实现"文本-工具-文本"的豆包式穿插
                 const _syncTextBlock = (aiMsg, fullText) => {
+                    fullText = stripAckPrefix(fullText, aiMsg.ack);
                     if (!aiMsg.blocks) aiMsg.blocks = [];
                     const blocks = aiMsg.blocks;
                     const lastBlock = blocks[blocks.length - 1];
@@ -2669,7 +2679,7 @@
                         if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
                         currentToolCall.value = null;
                         const finalText = latestText || '（无回复）';
-                        aiMsg.content = finalText;
+                        aiMsg.content = stripAckPrefix(finalText, aiMsg.ack);
                         _syncReasoningBlock(aiMsg, aiMsg.reasoning);
                         _syncTextBlock(aiMsg, finalText);
                         _interleaveReasoningAndContent(aiMsg);
@@ -2705,7 +2715,7 @@
                                     renderTimer = null;
                                     const shouldScroll = dirtyReasoning;  // 只有思考更新才滚
                                     dirtyReasoning = false;
-                                    aiMsg.content = latestText;
+                                    aiMsg.content = stripAckPrefix(latestText, aiMsg.ack);
                                     _syncReasoningBlock(aiMsg, aiMsg.reasoning);
                                     _syncTextBlock(aiMsg, latestText);
                                     if (shouldScroll) scrollToBottom();
@@ -2761,7 +2771,7 @@
                                     if (currentThreadId.value !== sendThreadId) return;
                                     const shouldScroll = dirtyReasoning;
                                     dirtyReasoning = false;
-                                    aiMsg.content = latestText;
+                                    aiMsg.content = stripAckPrefix(latestText, aiMsg.ack);
                                     _syncReasoningBlock(aiMsg, aiMsg.reasoning);
                                     _syncTextBlock(aiMsg, latestText);
                                     if (shouldScroll) scrollToBottom();
@@ -3403,7 +3413,7 @@
                     thinkingMode, reasoningEffort, thinkingPanelOpen,
                     // 人格 tab + chibi 气泡
                     PERSONA_OPTIONS, personaMode, personaMenuOpen, personaLabel, personaHint,
-                    setPersonaMode, chibiBubbles, dismissChibi,
+                    setPersonaMode, chibiBubbles, dismissChibi, stripAckPrefix,
                     showScrollToBottom, canScrollMessages, onMessagesScroll, jumpToBottom,
                     toggleThinkingMode, setEffort, toggleEffortPanel,
                     // 消息操作

@@ -1018,11 +1018,10 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .persona-option:hover { background: var(--surface-2); }
 .persona-option.selected { background: var(--violet); color: #fff; }
 /* ── chibi 浮动气泡（H-20260919-01）── */
-.chibi-dock { position: fixed; right: 24px; top: 96px; display: flex; flex-direction: column; gap: 10px;
-    z-index: 80; pointer-events: none; }
+.chibi-dock { position: fixed; right: 16px; top: 96px; display: flex; flex-direction: column; gap: 10px; z-index: 80; pointer-events: none; max-width: 260px; }
 .chibi-item { pointer-events: auto; display: flex; flex-direction: row; align-items: flex-end; justify-content: flex-end; gap: 8px; }
 .chibi-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid var(--ink); transform: scaleX(-1); flex-shrink: 0; }
-.chibi-bubble-main { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 240px; padding: 10px 12px; background: var(--surface); border: 2px solid var(--ink); border-radius: 14px 14px 4px 14px; box-shadow: var(--shadow-hard); animation: menu-pop .22s var(--ease-pop) both; }
+.chibi-bubble-main { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 200px; padding: 8px 10px; background: var(--surface); border: 2px solid var(--ink); border-radius: 14px 14px 4px 14px; box-shadow: var(--shadow-hard); animation: menu-pop .22s var(--ease-pop) both; }
 .chibi-text { font-size: 12.5px; line-height: 1.5; color: var(--text-2); font-weight: 600; }
 .chibi-close { align-self: flex-end; width: 18px; height: 18px; display: grid; place-items: center; border: none; background: transparent; color: var(--text-3); font-size: 14px; cursor: pointer; line-height: 1; }
 .chibi-close:hover { color: var(--ink); }
