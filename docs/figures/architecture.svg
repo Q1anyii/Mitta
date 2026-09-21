@@ -82,14 +82,14 @@
 
   <!-- 主图 -->
   <rect x="42" y="514" width="876" height="108" rx="8" fill="#FFFFFF" stroke="rgba(201,167,232,0.5)" stroke-width="1"/>
-  <text x="54" y="533" font-size="12.5" font-weight="700" fill="#1A1B1C">主对话图 main_graph（StateGraph + Send 条件路由 + Checkpointer）</text>
+  <text x="54" y="533" font-size="12.5" font-weight="700" fill="#1A1B1C">主对话图 main_graph（StateGraph + 统一路由 + Checkpointer）</text>
 
   <rect x="54" y="542" width="118" height="48" rx="7" fill="#F7F2FC" stroke="rgba(201,167,232,0.6)" stroke-width="1"/>
-  <text x="62" y="559" font-size="11.5" font-weight="700" fill="#1A1B1C">classify_node</text>
-  <text x="62" y="574" font-size="10.5" fill="#6B7280">LLM 判是否需检索</text>
-  <text x="62" y="586" font-size="10.5" fill="#6B7280">返回 yes / no</text>
+  <text x="62" y="559" font-size="11.5" font-weight="700" fill="#1A1B1C">router_node</text>
+  <text x="62" y="574" font-size="10.5" fill="#6B7280">一次 LLM 输出 persona</text>
+  <text x="62" y="586" font-size="10.5" fill="#6B7280">+ need_retrieval</text>
 
-  <text x="180" y="566" text-anchor="middle" font-size="10.5" fill="#C9A7E8" font-weight="700">Send 路由</text>
+  <text x="180" y="566" text-anchor="middle" font-size="10.5" fill="#C9A7E8" font-weight="700">条件路由</text>
 
   <rect x="194" y="542" width="118" height="48" rx="7" fill="#F7F2FC" stroke="rgba(201,167,232,0.6)" stroke-width="1"/>
   <text x="202" y="559" font-size="11.5" font-weight="700" fill="#1A1B1C">retrieve_node</text>
