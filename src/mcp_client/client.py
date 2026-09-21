@@ -198,6 +198,21 @@ class McpServerConnection:
             if params.command in _SCRIPT_RUNNERS and params.args and not params.args[0].startswith("-"):
                 script = Path(params.cwd or ".") / params.args[0]
                 if not script.exists():
+                    # 本地开发 fallback：cwd 可能是容器绝对路径（如 /app），本地不存在；
+                    # 尝试进程 cwd / 项目根定位脚本，并把 cwd 换成 fallback 目录，
+                    # 让容器配置（/app）与本地开发共用同一份 mcp_servers.json。
+                    project_root = Path(__file__).resolve().parents[2]
+                    for fb in (Path.cwd(), project_root):
+                        alt = fb / params.args[0]
+                        if alt.exists():
+                            cwd = str(fb)
+                            params = StdioServerParameters(
+                                command=params.command, args=args, cwd=cwd, env=params.env,
+                            )
+                            script = alt
+                            logger.info(f"MCP [{self.cfg.get('name')}] cwd 回退到本地项目根：{cwd}")
+                            break
+                if not script.exists():
                     raise ConnectionError(f"MCP 服务器脚本不存在：{script}")
             cm = stdio_client(params)
         elif server_type == "sse":
