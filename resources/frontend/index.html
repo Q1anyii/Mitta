@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -92,12 +92,64 @@
         }
     </script>
     <link rel="stylesheet" href="/assets/css/style.css?v=20260911c">
+    <!-- Tauri 自定义标题栏样式 -->
+    <style>
+        #tauri-titlebar {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 36px;
+            background: #16181D;
+            color: #fff;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 0 0 12px;
+            z-index: 9999;
+            -webkit-app-region: drag;
+        }
+        #tauri-titlebar .tb-title {
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0.8;
+        }
+        #tauri-titlebar .tb-controls {
+            display: flex;
+            height: 100%;
+            -webkit-app-region: no-drag;
+        }
+        #tauri-titlebar .tb-btn {
+            width: 46px;
+            height: 100%;
+            border: none;
+            background: transparent;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+        #tauri-titlebar .tb-btn:hover { background: rgba(255,255,255,0.1); }
+        #tauri-titlebar .tb-close:hover { background: #e81123; }
+        body.tauri-app #tauri-titlebar { display: flex; }
+        body.tauri-app #app { padding-top: 36px; }
+    </style>
     <!-- Markdown 渲染 + 代码高亮（本地化，避免 CDN 加载失败导致 md 源码裸露） -->
     <link rel="stylesheet" href="/assets/css/github.min.css">
     <script src="/assets/js/vendor/marked.min.js"></script>
     <script src="/assets/js/vendor/highlight.min.js"></script>
 </head>
 <body>
+    <!-- Tauri 自定义标题栏（仅桌面端显示） -->
+    <div id="tauri-titlebar">
+        <span class="tb-title">Mitta AI</span>
+        <div class="tb-controls">
+            <button class="tb-btn" id="tb-min" title="最小化">&#8211;</button>
+            <button class="tb-btn" id="tb-max" title="最大化">&#9645;</button>
+            <button class="tb-btn tb-close" id="tb-close" title="关闭">&#10005;</button>
+        </div>
+    </div>
     <div id="app">
         <!-- 首屏骨架屏：Vue/CDN 加载期间显示，避免白屏；Vue mount 后自动被替换 -->
         <div id="mitta-skeleton" style="display:flex;min-height:100vh;background:#F4F7FB;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">

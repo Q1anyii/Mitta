@@ -1,4 +1,4 @@
-        /**
+﻿        /**
          * 应用主脚本：等待 Vue/VueRouter CDN 加载完成后再执行
          */
         (function boot() {
