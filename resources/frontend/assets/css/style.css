@@ -1026,6 +1026,7 @@ a { color: var(--brand-deep); text-decoration: none; font-weight: 700; }
 .chibi-text { font-size: 12.5px; line-height: 1.5; color: var(--text-2); font-weight: 600; }
 .chibi-close { align-self: flex-end; width: 18px; height: 18px; display: grid; place-items: center; border: none; background: transparent; color: var(--text-3); font-size: 14px; cursor: pointer; line-height: 1; }
 .chibi-close:hover { color: var(--ink); }
+.ack-banner { font-size: 13px; color: var(--text-2); font-style: italic; margin-bottom: 10px; padding: 6px 10px; background: rgba(0,0,0,0.03); border-left: 3px solid var(--accent, #9BBBF4); border-radius: 0 8px 8px 0; }
 
 /* 2026-09-19 P2: 引用角标 */
 .cite-ref { color: #6b7cff; font-size: 0.75em; vertical-align: super; margin: 0 1px; cursor: pointer; }

@@ -1318,6 +1318,7 @@
                                         <!-- AI 消息：blocks 穿插渲染 -->
                                         <template v-if="msg.role === 'assistant'">
                                             <div class="message-content">
+                                                <div v-if="msg.ack" class="ack-banner">{{ msg.ack }}</div>
                                                 <div v-if="msg.citations && msg.citations.length" class="citations-block">
                                                     <div class="citations-toggle" @click="msg.citationsOpen = !msg.citationsOpen">
                                                         <span class="citations-icon">📚</span>
@@ -2769,7 +2770,6 @@
                         }, thinkingMode.value, reasoningEffort.value, clientMessageId, personaMode.value, handleChibi, finalizeReply, (ackText) => {
                                 // 检索期开场白（H-20260921-01）：0 LLM 调用，立即显示助手气泡 + 思考 loading
                                 if (currentThreadId.value !== sendThreadId) return;
-                                aiMsg.content = ackText;
                                 aiMsg.ack = ackText;
                                 ragThinking.value = true;
                                 scrollToBottom();

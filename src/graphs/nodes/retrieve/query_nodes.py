@@ -122,13 +122,15 @@ def run_bm25(query: str, cache_service, top_k: int = 20) -> list[RetrievedDoc]:
                 if not content:
                     # NOCONTENT 模式下 extra_attributes 不含正文，需从 Hash 读取
                     content = cache_service.redis.hget(raw_id, "content") or b""
+                src = cache_service.redis.hget(raw_id, "source")
+                src = src.decode("utf-8") if isinstance(src, bytes) else (src or "未知文档")
                 text = content.decode("utf-8") if isinstance(content, bytes) else (content or "")
                 score = _get(it, "score") or 0.0
                 docs.append(RetrievedDoc(
                     id=doc_id,
                     text=text,
                     distance=0.0,  # BM25 没有向量距离，用 0 占位，实际分数存 metadata
-                    metadata={"source": "bm25", "bm25_score": float(score)},
+                    metadata={"source": src, "bm25_score": float(score)},
                 ))
             except Exception:
                 continue
@@ -149,12 +151,14 @@ def run_bm25(query: str, cache_service, top_k: int = 20) -> list[RetrievedDoc]:
             score = float(result[i + 1])
             # 从 Redis Hash 中读取文档正文（BM25 索引只存索引，内容存在 HASH 中）
             content = cache_service.redis.hget(raw_id, "content")
+            src = cache_service.redis.hget(raw_id, "source")
+            src = src.decode("utf-8") if isinstance(src, bytes) else (src or "未知文档")
             text = content.decode("utf-8") if isinstance(content, bytes) else (content or "")
             docs.append(RetrievedDoc(
                 id=doc_id,
                 text=text,
                 distance=0.0,  # BM25 没有向量距离，用 0 占位，实际分数存 metadata
-                metadata={"source": "bm25", "bm25_score": score},
+                metadata={"source": src, "bm25_score": score},
             ))
         except Exception:
             continue

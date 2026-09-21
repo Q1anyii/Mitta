@@ -12,6 +12,35 @@ from utils.doc_util import documents_to_dicts
 from constant.ack_constant import pick_ack_text
 
 
+def _snippet_around_query(text: str, query: str, length: int = 160) -> str:
+    """从 chunk 中截取 query 关键词附近的片段，而非固定从开头截。
+
+    先尝试匹配 query 前缀，再按空格/标点拆词找第一个命中位置；
+    找不到则回退从头截。前后各留余量，超出首尾补省略号。
+    """
+    if not text:
+        return ""
+    if not query:
+        return text[:length]
+    q = query.strip()
+    idx = text.find(q[:6])
+    if idx < 0:
+        for w in q.replace("，", " ").replace("？", " ").replace("?", " ").split():
+            if len(w) >= 2:
+                idx = text.find(w)
+                if idx >= 0:
+                    break
+    if idx < 0:
+        return text[:length]
+    start = max(0, idx - 40)
+    end = min(len(text), start + length)
+    snip = text[start:end]
+    if start > 0:
+        snip = "…" + snip
+    if end < len(text):
+        snip = snip + "…"
+    return snip
+
 def retrieve_node(state: OverAllState, retrieve_graph) -> OverAllState:
     """调用检索图获取知识库相关文档。
 
@@ -66,7 +95,8 @@ def retrieve_node(state: OverAllState, retrieve_graph) -> OverAllState:
         for doc in (retrieve_res.get("output") or [])[:3]:
             meta = doc.get("metadata") or {}
             file_name = meta.get("source") or meta.get("category") or "未知文档"
-            snippet = (doc.get("page_content") or "").strip().replace("\n", " ")[:160]
+            raw = (doc.get("page_content") or "").strip().replace("\n", " ")
+            snippet = _snippet_around_query(raw, input_str, 160)
             refs.append({"file": file_name, "snippet": snippet})
         if refs:
             writer = get_stream_writer()
