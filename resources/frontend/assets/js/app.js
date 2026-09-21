@@ -1164,13 +1164,13 @@
                 <div class="chat-layout">
                     <!-- chibi 浮动气泡层（fixed 定位右侧，不影响主对话布局） -->
                     <div class="chibi-dock">
-                        <div v-for="b in chibiBubbles" :key="b.id" class="chibi-bubble">
-                            <img class="chibi-avatar" :src="b.avatar" alt="">
-                            <div class="chibi-bubble-main">
-                                <span class="chibi-text">{{ b.text }}</span>
-                                <button class="chibi-close" @click="dismissChibi(b.id)" aria-label="关闭">×</button>
+                        <div v-for="b in chibiBubbles" :key="b.id" class="chibi-item">
+                                <div class="chibi-bubble-main">
+                                    <span class="chibi-text">{{ b.text }}</span>
+                                    <button class="chibi-close" @click="dismissChibi(b.id)" aria-label="关闭">×</button>
+                                </div>
+                                <img class="chibi-avatar" :src="b.avatar" alt="">
                             </div>
-                        </div>
                     </div>
                     <!-- ══════════ 侧边栏 ══════════ -->
                     <aside class="sidebar" :class="{ open: sidebarOpen }" role="navigation" aria-label="会话列表">
@@ -1318,6 +1318,19 @@
                                         <!-- AI 消息：blocks 穿插渲染 -->
                                         <template v-if="msg.role === 'assistant'">
                                             <div class="message-content">
+                                                <div v-if="msg.citations && msg.citations.length" class="citations-block">
+                                                    <div class="citations-toggle" @click="msg.citationsOpen = !msg.citationsOpen">
+                                                        <span class="citations-icon">📚</span>
+                                                        <span class="citations-title">参考了 {{ msg.citations.length }} 段项目文档</span>
+                                                        <svg class="citations-arrow" :class="{ expanded: msg.citationsOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                    </div>
+                                                    <div v-show="msg.citationsOpen" class="citations-list">
+                                                        <div v-for="(cit, i) in msg.citations" :key="i" class="citation-item">
+                                                            <div class="citation-file">{{ cit.file }}</div>
+                                                            <div class="citation-snippet">{{ cit.snippet }}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <template v-if="msg.blocks && msg.blocks.length > 0">
                                                     <template v-for="(block, bIdx) in msg.blocks" :key="bIdx">
                                                         <!-- 深度思考块：独立折叠（同工具调用），流式中展开，结束后自动收起 -->
@@ -1353,20 +1366,7 @@
                                                 </div>
                                                 <div v-if="ragThinking && msg === messages[messages.length - 1]" class="rag-thinking-indicator">
                                                     <div class="thinking-dots"><span></span><span></span><span></span></div>
-
-                                                <div v-if="msg.citations && msg.citations.length" class="citations-block">
-                                                    <div class="citations-toggle" @click="msg.citationsOpen = !msg.citationsOpen">
-                                                        <span class="citations-icon">📚</span>
-                                                        <span class="citations-title">参考了 {{ msg.citations.length }} 段项目文档</span>
-                                                        <svg class="citations-arrow" :class="{ expanded: msg.citationsOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                                                    </div>
-                                                    <div v-show="msg.citationsOpen" class="citations-list">
-                                                        <div v-for="(cit, i) in msg.citations" :key="i" class="citation-item">
-                                                            <div class="citation-file">{{ cit.file }}</div>
-                                                            <div class="citation-snippet">{{ cit.snippet }}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>                                                    <span class="thinking-text">正在全力思考中...</span>
+                                                <span class="thinking-text">正在全力思考中...</span>
                                                 </div>
                                                 <div v-if="currentToolCall && msg === messages[messages.length - 1]" class="tool-call-indicator">
                                                     <div class="tool-call-spinner"></div>
