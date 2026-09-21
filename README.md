@@ -21,7 +21,8 @@
 - **用户自定义 System Prompt**：支持用户在个人信息界面上传自定义设定文件，与默认 Prompt 合并后作用于全局
 - **文件上传与解析**：支持上传多种格式文件，上传后立即解析文本内容，发送消息时与用户输入一并送入 LLM
 - **知识库增量更新 API**：通过 HTTP 接口向知识库增量上传文档（Chroma 向量 + RedisSearch BM25 双通道自动入库），支持文档列表查询、按来源/按文档删除，无需登录服务器跑脚本
-- **流式输出**：`stream_mode="messages"` 逐 token 输出，前端打字机效果；工具调用时实时显示加载状态
+- **流式输出**：`stream_mode=["messages","custom"]` 逐 token 输出，前端打字机效果；工具调用时实时显示加载状态；**检索期 ack 预响应**（9/21 `28f5ebf`）：`retrieve_node` 检索前推开场白（按人格 `ACK_OPENINGS`），助手气泡 0 延迟出现 + ragThinking 指示器，首 token 到达即移除
+- **记忆提取异步化**（9/20 二轮 `c5ce743`）：memory_node 留在主图、提取逻辑包进节点内 daemon 线程 fire-and-forget，节点立即返回、`done` 事件先行，长期记忆 LLM 合并不再阻塞 SSE 收尾；chibi 同步改 `_chibi_async` 后台线程、SENTINEL 移入 finally 保证 `[DONE]` 后发
 - **断点续传（刷新不中断）**：聊天任务与 SSE 连接解耦，每个思考/工具/正文事件按序号落 Redis List（TTL 7 天）；前端刷新或重连时先 `GET events?after=已消费序号` 重放缺失的增量事件重建界面，再续推新事件，强刷也能恢复思考过程与流式输出，且不会因重发而重复累积对话
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
@@ -77,7 +78,7 @@
 | **retrieve_node** | 调用 RAG 子图检索知识库    | `retrieve_graph.invoke()`，Document 转 dict 存入 state（checkpoint 反序列化兼容）                                               |
 | **llm_node**      | 核心生成节点            | 组装 System Prompt（默认+用户自定义+长期记忆+**人格 prompt**）→ ToolFilter 筛选工具 → **按人格白名单收缩** → `model.bind_tools()` → `model.stream()` → 合并 chunk 提取 tool_calls |
 | **tool_node**     | 执行 MCP 工具         | LangGraph `ToolNode`，按工具名路由；CachePolicy 缓存同参数结果                                                                     |
-| **memory_node**   | 提取长期记忆            | LLM 从对话中提取用户档案写入 PostgresStore；idle 闲聊轮快速跳过避免阻塞 SSE                                                                 |
+| **memory_node**   | 提取长期记忆            | LLM 从对话中提取用户档案写入 PostgresStore；idle 闲聊轮快速跳过；**2026-09-20 二轮**：非闲聊轮提取包进节点内 daemon 线程 fire-and-forget，节点立即返回、`done` 事件先行（详见「核心设计说明 → 记忆异步化」） |
 
 ### 条件路由
 
@@ -674,10 +675,18 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 
 ### 流式输出与工具调用状态
 
-- 使用 `stream_mode="messages"` 捕获图中所有 LLM token 事件，按 `meta["langgraph_node"]` 过滤只输出 llm_node 的增量
-- SSE 事件类型：`content`（文本 token）、`tool_call_start`（工具名+参数）、`tool_call_end`（工具名+结果摘要）、`error`（异常）、`[DONE]`（结束）
+- 使用 `stream_mode=["messages", "custom"]`（2026-09-21 由 `"messages"` 改为多模式）捕获图中所有 LLM token 事件与自定义事件；按 `meta["langgraph_node"]` 过滤只输出 llm_node 的增量，custom 通道承载 `retrieve_node` 的 ack 预响应结构化 dict
+- SSE 事件类型：`content`（文本 token）、`ack`（检索期开场白预响应，见下）、`tool_call_start`（工具名+参数）、`tool_call_end`（工具名+结果摘要）、`done`（正文流完，只推送不落库，前端立即解锁发送）、`chibi`（袖珍分身吐槽，后台线程异步发送，见「记忆异步化」）、`error`（异常）、`[DONE]`（结束）
 - 前端监听 `tool_call_start/end` 事件，在 AI 消息下方显示"正在调用工具：xxx"加载条
 - 流式模式下 tool_calls 分块传输，通过 `AIMessageChunk.__add__` 合并所有 chunk 提取完整工具调用，避免取最后一个 chunk 导致 tool_calls 为空
+
+### 检索期 ack 预响应（2026-09-21）
+
+`retrieve_node` 在进入 `retrieve_graph.invoke` **之前**，通过 `from langgraph.config import get_stream_writer` 向 custom 通道推送 `{"ack": text, "persona": persona}`（0 LLM 调用；writer 不可用静默降级）。文案来自 `src/constant/ack_constant.py` 的 `ACK_OPENINGS`（按 persona crazy/kind/cappie 分组 + `DEFAULT_ACK`），`pick_ack_text(persona)` 选取。前端 `onAck` 把开场白立即作为助手消息初始值（检索期间助手气泡 0 延迟出现）+ `ragThinking` 指示器，首个正文 token 到达后移除。断点重放 `_applyEventsToMsg` 也处理 `ev.ack`，刷新后开场白与正文连贯不拆条。对应提交 `28f5ebf`。
+
+### 记忆异步化（2026-09-20 二轮方案，`c5ce743`）
+
+`memory_node` **保留在主图内**（`route_after_llm` 无 tool_calls 仍走它），但真正需要提取的轮次，把「读 store 档案 → LLM 提取/合并 → 用户名行正则兜底 → store.put」整体包进内联 `_extract_and_persist()`，用 `threading.Thread(target=..., daemon=True).start()` 后台执行后**节点立即返回**——`graph.stream` 随即结束、`done` 事件先行，长期记忆 LLM 提取（1~3s）不再压在图流末尾阻塞收尾。chibi 同步改为 `_chibi_async` 后台线程，SENTINEL 移入该线程 finally，保证 `[DONE]` 在 chibi 事件后发出。首轮「移出主图、由 chat_service 后台补」方案（`21b8318`）被否决并回退（双入口维护成本、偏离既定路线），最终形态是"图内节点 + 节点内异步"。
 
 ### 文件上传与解析
 
