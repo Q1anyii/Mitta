@@ -66,7 +66,7 @@ def retrieve_node(state: OverAllState, retrieve_graph) -> OverAllState:
         for doc in (retrieve_res.get("output") or [])[:3]:
             meta = doc.get("metadata") or {}
             file_name = meta.get("source") or meta.get("category") or "未知文档"
-            snippet = (doc.get("page_content") or "").strip().replace("\n", " ")[:50]
+            snippet = (doc.get("page_content") or "").strip().replace("\n", " ")[:160]
             refs.append({"file": file_name, "snippet": snippet})
         if refs:
             writer = get_stream_writer()
