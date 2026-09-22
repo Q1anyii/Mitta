@@ -26,7 +26,7 @@ jobs:
   # 复用 agent-regression.yml（workflow_call），避免两处 pytest 命令漂移。
   # build_deploy needs: regression → 回归红则不 build/不 rsync/不重启。
   regression:
-    uses: .github/workflows/agent-regression.yml
+    uses: ./.github/workflows/agent-regression.yml@main
 
   build_deploy:
     needs: regression
