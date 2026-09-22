@@ -146,7 +146,7 @@ app.add_middleware(
 
 # 挂载 MCP 服务器端点（fastmcp 3.x：http_app 返回 Starlette app，2.x 的 streamable_http_app 已改名）
 # 外部 MCP 客户端（Claude Desktop 等）通过 http://localhost:8000/mcp 调用 agent 能力
-
+from mcp_client.mcp_server.mcp_auth_middleware import McpAuthMiddleware
 app.mount("/mcp", McpAuthMiddleware(mcp.http_app()))
 
 # 注册请求限流中间件（对 /api/chat/ 等消耗 LLM 配额的接口限流）
