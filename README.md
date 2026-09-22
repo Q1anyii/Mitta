@@ -687,7 +687,8 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 - MCP 配置文件路径白名单校验（仅允许项目 resources/、config/ 和用户主目录），防止写入系统敏感目录
 - 会话归属校验：非本人 thread_id 返回 403，防止会话劫持
 - 全局异常处理器：记录完整堆栈到日志，返回给客户端的信息不含堆栈细节
-- MCP 文件系统工具通过 allowed directories 限制访问范围（ead_local_file 做 Path.resolve() 前缀校验，防 ../ 目录穿越）
+- MCP 文件系统工具通过 allowed directories 限制访问范围（
+ead_local_file 做 Path.resolve() 前缀校验，防 ../ 目录穿越）
 
 ### 安全加固（2026-09-22 一批 A1–A11）
 
@@ -700,6 +701,11 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 - **限流键改 JWT sub**：Redis 计数键先验签再取 sub，伪造 token 不能换桶；Dockerfile 改非 root 运行（appuser + chown 工作目录与 uv 工具目录）
 - **MCP stdio 危险 flag 拦截**：显式拒绝 -c / -e / -m / --require 等直接执行代码的参数，封堵包名白名单绕过
 - **输入安全 checklist**：docs/SECURITY_INPUT_CHECKLIST.md 沉淀 A1–A11，编码前逐条过
+- **密码强度校验**（`6f06303`）：注册与找回密码新密码统一 8–64 位 + 必须同时含字母和数字（Pydantic field_validator），拒绝纯数字/纯字母/弱密码
+- **文件上传白名单 + magic bytes**（`6f06303`）：允许扩展名移除 `.html/.htm/.svg`（防 XSS 上传）；图片类按文件头签名校验（PNG `\x89PNG`、JPEG `\xff\xd8\xff`、GIF `GIF87a/89a`、BMP `BM`、WebP `RIFF...WEBP`），堵 `.exe` 改名 `.png` 上传
+- **SPA 静态兜底防穿越**（`6f06303`）：`system_router.spa_or_static` 对路径 `resolve()` 后用 `relative_to(FRONTEND_DIR)` 校验，越界一律 404，挡 `../`
+- **中间件端口绑 127.0.0.1 + 强制 .env 凭据**（`6f06303`）：docker-compose 里 PostgreSQL/Redis/RedisInsight/MinIO/Milvus/API 所有端口从 `0.0.0.0:port` 改为 `127.0.0.1:port`，只能宿主机访问；POSTGRES_PASSWORD/MINIO_ACCESS_KEY/MINIO_SECRET_KEY 去掉默认弱口令（1234/minioadmin），改 `${VAR:?必须在 .env 设置}` 强制
+- **脚本硬编码密码清理**（`952c7f2`）：`ingest_knowledge.py` 与 `agent_test/*` 里硬编码的 Redis 密码改从 `REDIS_DB_URL` 环境变量读取
 
 ### 用户级 MCP 热重载
 
