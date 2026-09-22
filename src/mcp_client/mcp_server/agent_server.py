@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from fastmcp import FastMCP
 
-from mcp_auth_middleware import mcp_user_id_var
+from mcp_client.mcp_server.mcp_auth_middleware import mcp_user_id_var
 from service.login_service import login_service
 from service.chat_service import chat_service     # 子进程内新建单例，需调用 open() 后方可用
 
