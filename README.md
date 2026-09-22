@@ -250,18 +250,28 @@ AgentProject/
 │   │   └── user_context.py               # CtxUser 请求级用户上下文
 │   ├── graphs/                           # LangGraph 图定义
 │   │   ├── main_graph.py                 # 主对话图：router→retrieve/llm→tool→memory
-│   │   ├── retrieve_graph.py             # RAG 子图：cache→parallel_retrieve→rerank→filter
+│   │   ├── retrieve_graph.py             # RAG 子图：cache→parallel_retrieve→rerank→filter→output
+│   │   ├── routes.py                     # 意图路由分支（if/else，非 Send）
+│   │   ├── state.py                      # GraphState 定义
 │   │   ├── tool_filter.py                # 工具筛选：规则层 + 语义层
-│   │   └── nodes/
+│   │   ├── utils/                        # 图内纯函数
+│   │   │   ├── llm_circuit.py            # LLM 工具循环防护（次数上限/重复检测/硬熔断）
+│   │   │   ├── history_repair.py         # 历史消息悬空 tool_calls 修复
+│   │   │   └── user_profile.py           # 用户画像并入 system prompt
+│   │   └── nodes/                        # 节点实现（router/llm/tool/memory/retrieve_*）
+│   │       └── retrieve/                 # 检索子图节点（cache/parallel/fusion/output/query）
 │   ├── mcp_client/                       # MCP 客户端
 │   │   ├── client.py                     # MCP 连接管理/工具同步包装/故障降级/tags 注入
 │   │   ├── mcp_tool_holder.py            # MCP 工具封装
 │   │   ├── demo.py                       # MCP 调试示例
 │   │   └── mcp_server/
-│   │       ├── agent_server.py           # 内置 FastMCP 服务器（chat/get_user/summarize）
+│   │       ├── agent_server.py           # 内置 FastMCP 服务器（chat/get_user/summarize，JWT 鉴权）
+│   │       ├── mcp_auth_middleware.py    # /mcp 端点 JWT 鉴权中间件
 │   │       └── mitta_tools_server.py     # 本地实用工具集 FastMCP 服务器（git/搜索/文件，12 工具）
 │   ├── middleware/
-│   │   └── rate_limit_middleware.py      # 基于 Redis 的请求限流中间件
+│   │   ├── rate_limit_middleware.py      # 通用限流（Redis ZSET 滑动窗口，验签后取 sub）
+│   │   ├── auth_rate_limit.py            # 认证端点独立限流（IP+userId 双维度，指数退避）
+│   │   └── request_context.py            # request_id 注入（contextvar + 日志 + 响应头）
 │   ├── agent_test/                       # Agent 系统评测（评测矩阵 E1–E15，见 docs/AGENT_EVAL_MATRIX.md）
 │   │   ├── ragas_eval.py                 # RAGAS 五项指标评估（E8，LLM-as-judge，不进 CI）
 │   │   ├── eval_routing.py               # 动态路由评测（E1：意图分类准确率/检索召回）
@@ -309,7 +319,6 @@ AgentProject/
 │   │   ├── response_util.py              # 统一响应格式
 │   │   ├── doc_util.py                   # Document ↔ dict 转换
 │   │   ├── lsh_util.py                   # 局部敏感哈希（缓存快速过滤）
-│   │   ├── rand_id_util.py               # 随机 ID 生成
 │   │   ├── tools_util.py                 # 工具安全过滤/向量化/格式化
 │   │   └── deepseek_patch.py             # DeepSeek reasoning_content monkey-patch（补回 langchain_openai 丢失的思考内容）
 │   └── vector/                           # 向量库抽象层
@@ -324,7 +333,8 @@ AgentProject/
 │   │   ├── index.html                    # Vue 3 CDN 入口（无构建）
 │   │   ├── assets/css/style.css          # 设计系统（CSS 变量+切角+动效+响应式）
 │   │   ├── assets/js/app.js              # Vue 组件+业务逻辑（模板字符串内嵌，setup/methods）
-│   │   ├── deploy/nginx/default.conf     # Nginx 配置（静态托管+API代理+SSE缓冲关闭+gzip）
+│   │   ├── assets/js/vendor/purify.min.js # DOMPurify（LLM 输出渲染前消毒）
+│   │   ├── nginx.conf                    # Nginx 配置（静态托管+API代理+SSE缓冲关闭+gzip）
 │   │   └── favicon.png
 │   ├── system_prompt/
 │   │   └── default_system_prompt.txt     # 默认 System Prompt（Mitta 角色设定）
@@ -336,9 +346,11 @@ AgentProject/
 │   ├── FAQ/                              # 在线学习平台 FAQ 知识库
 │   └── chroma_db/                        # ChromaDB 持久化目录（Milvus 模式下不用）
 ├── tests/                                # 单元测试
-├── docs/                                 # 项目文档（API.md / devlog / ci-flow.html / architecture-flowcharts.md）
+├── docs/                                 # 项目文档（API.md / devlog / figures / SECURITY_INPUT_CHECKLIST.md / AGENT_EVAL_MATRIX.md）
 ├── scripts/                              # 运维脚本
-│   └── migrate_mysql_to_pg.py            # 一次性数据迁移脚本（MySQL → PostgreSQL 存量用户数据）
+│   ├── migrate_mysql_to_pg.py            # 一次性数据迁移脚本（MySQL → PostgreSQL 存量用户数据）
+│   ├── rollback.sh                       # 一键回滚（切指定 short_sha 镜像重启）
+│   └── backup_pg.sh                      # PG 每日备份（保留 7 天 + 磁盘水位提示）
 ├── .env.example                          # 环境变量模板
 ├── requirements.txt                      # Python 依赖
 ├── Dockerfile                            # 后端容器镜像
