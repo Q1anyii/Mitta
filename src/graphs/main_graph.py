@@ -60,7 +60,7 @@ from graphs.nodes.router_node import router_node
 from graphs.nodes.retrieve_node import retrieve_node
 from graphs.nodes.llm_node import llm_node
 from graphs.nodes.memory_node import memory_node, _memory_cache_key
-from graphs.nodes.routes import route, route_after_llm
+from graphs.routes import route, route_after_llm
 from constant.cache_constant import CACHE_MEMORY_NODE_TTL
 
 

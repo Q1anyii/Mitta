@@ -17,7 +17,7 @@ from graphs.tool_filter import ToolFilter
 from constant.persona_constant import DEFAULT_PERSONA, get_persona
 from graphs.utils.history_repair import _repair_history, _trim_history
 from graphs.utils.user_profile import _ensure_username_profile, _get_username
-from graphs.nodes.llm_circuit import (
+from graphs.utils.llm_circuit import (
     MAX_RETRIEVAL_DOCS,
     MAX_DOC_CHARS,
     compute_circuit,
