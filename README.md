@@ -706,6 +706,7 @@ ead_local_file 做 Path.resolve() 前缀校验，防 ../ 目录穿越）
 - **SPA 静态兜底防穿越**（`6f06303`）：`system_router.spa_or_static` 对路径 `resolve()` 后用 `relative_to(FRONTEND_DIR)` 校验，越界一律 404，挡 `../`
 - **中间件端口绑 127.0.0.1 + 强制 .env 凭据**（`6f06303`）：docker-compose 里 PostgreSQL/Redis/RedisInsight/MinIO/Milvus/API 所有端口从 `0.0.0.0:port` 改为 `127.0.0.1:port`，只能宿主机访问；POSTGRES_PASSWORD/MINIO_ACCESS_KEY/MINIO_SECRET_KEY 去掉默认弱口令（1234/minioadmin），改 `${VAR:?必须在 .env 设置}` 强制
 - **脚本硬编码密码清理**（`952c7f2`）：`ingest_knowledge.py` 与 `agent_test/*` 里硬编码的 Redis 密码改从 `REDIS_DB_URL` 环境变量读取
+- **`/mcp` 端点 JWT 鉴权**（`c947c16` + `9df8ec9`）：原 `/mcp/sse`、`/mcp/tools` 等管理端点裸奔，知道路径就能调；新增 `McpAuthMiddleware` 挂到 `/mcp` mount，user_id 服务端从 JWT token 强制解析，不信任请求体里的 user_id，防越权调用他人账号的 MCP 配置
 
 ### 用户级 MCP 热重载
 
@@ -790,6 +791,13 @@ pytest ../tests/ -v                       # E14 CI 回归（73 用例，含 test
 ```
 
 ## Docker 部署
+
+### 运维与可观测性（2026-09-22）
+
+- **request_id 请求链路追踪**（`babc2e5`）：`middleware/request_context.py` 用 contextvar 注入 `request_id`（UUID4），每个请求生成后：① 写进 loguru 日志（后续所有该请求的日志自动带上）② 响应头 `X-Request-ID` 回传前端；出问题时凭一个 ID 串起全链路日志
+- **日志轮转**：loguru 按 10MB 单文件轮转，保留 7 天，gzip 压缩历史文件，避免容器日志无限增长
+- **一键回滚脚本**（`ce73283`，`deploy/rollback.sh`）：传 short_sha 切到指定镜像版本并 `docker compose up -d` 重启，CI/CD 出问题时一条命令回退
+- **PG 每日备份**（`ce73283`，`deploy/backup_pg.sh`）：`pg_dump` 每日备份，保留 7 天，备份前检查磁盘水位（低水位告警不执行备份）
 
 ### 一键启动全部服务
 
