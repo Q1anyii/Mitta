@@ -51,17 +51,17 @@ def tools_embedding(mcp_tools: list[BaseTool]) -> None:
         return
     cfg = dict(load_vector_db_config())  # 拷贝，避免污染共享配置对象
     cfg["collection"] = TOOLS_COLLECTION  # 与知识库 FAQ_KNOWLEDGE_BASE 隔离
-    vector_store = create_vector_store(cfg)
-    ids, documents, metadatas = [], [], []
-    for t in mcp_tools:
-        ids.append(t.name)  # 工具名做 id：天然唯一、upsert 幂等覆盖，重复启动不产生脏数据
-        documents.append(f"{t.name}\n{t.description or ''}\n{'、'.join(t.tags or [])}")
-        metadatas.append({"tool_name": t.name, "source": "mcp"})  # 外键字段，供检索后映射回 BaseTool
     try:
+        vector_store = create_vector_store(cfg)
+        ids, documents, metadatas = [], [], []
+        for t in mcp_tools:
+            ids.append(t.name)  # 工具名做 id：天然唯一、upsert 幂等覆盖，重复启动不产生脏数据
+            documents.append(f"{t.name}\n{t.description or ''}\n{'、'.join(t.tags or [])}")
+            metadatas.append({"tool_name": t.name, "source": "mcp"})  # 外键字段，供检索后映射回 BaseTool
         vector_store.upsert(ids, documents, metadatas)
         logger.success(f"工具向量索引构建完成：{len(mcp_tools)} 个工具 -> collection={TOOLS_COLLECTION}")
     except Exception as e:
-        logger.error(f"工具向量索引构建失败：{e}")
+        logger.error(f"工具向量索引构建失败（语义层将降级规则层兜底）：{e}")
 
 
 def format_tools_for_prompt(candidate_tools: list[BaseTool]) -> str:
