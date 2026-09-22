@@ -39,7 +39,10 @@ def _extract_user_id(request: Request) -> Optional[str]:
         return None
     try:
         import jwt as pyjwt
-        payload = pyjwt.decode(token, options={"verify_signature": False})
+        from utils.jwt_utils import SECRET_KEY, ALGORITHM
+        # A10: 必须验签后再取 sub 当限流键——否则伪造 JWT（无需 SECRET_KEY）改 sub 即可换桶。
+        # 验签失败/过期一律返回 None，调用方降级为 IP 键。
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         sub = payload.get("sub")
         if sub and ":" in sub:
             return sub.split(":", 1)[0]

@@ -26,7 +26,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # 运行时 uvx 启动 Python 版 MCP server 默认连 pypi.org，国内 ECS 慢，配阿里云源
     # （构建期 PIP_INDEX 只管 pip，管不到运行期 uvx）
     UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple \
-    UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+    UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple \
+    UV_TOOL_DIR=/opt/uv-tools \
+    UV_TOOL_BIN_DIR=/opt/uv-tools/bin
 
 # 系统依赖：
 # - gcc/libpq-dev：psycopg[binary] 编译兜底
@@ -80,6 +82,10 @@ RUN for pkg in mcp-server-fetch mcp-server-sqlite mcp-server-time markitdown-mcp
 # （196b078 未含 Dockerfile/requirements）→ build_required=false 跳过镜像构建，
 # 服务器拉到旧镜像，GET /profile 不含 system_prompt 字段导致前端回显空值。
 COPY . .
+
+# A11: 不以 root 运行容器。创建 appuser 并把工作目录与全局 uv 工具目录交给他。
+RUN useradd -m appuser && chown -R appuser:appuser /app /opt/uv-tools
+USER appuser
 
 EXPOSE 8000
 
