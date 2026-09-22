@@ -38,16 +38,20 @@ def setup_logging() -> None:
     logger.remove()
     logger.add(sys.stderr, format=fmt, level="INFO")
     # 文件轮转：单文件 10MB 切，保留 7 天，旧文件 gzip 压缩
-    logger.add(
-        "logs/mitta.log",
-        format=fmt,
-        level="DEBUG",
-        rotation="10 MB",
-        retention="7 days",
-        compression="zip",
-        encoding="utf-8",
-        enqueue=True,  # 多进程/异步下安全写
-    )
+    # 非 root 容器 / 挂载卷无写权限时静默跳过文件 sink，只打控制台，不阻断启动
+    try:
+        logger.add(
+            "logs/mitta.log",
+            format=fmt,
+            level="DEBUG",
+            rotation="10 MB",
+            retention="7 days",
+            compression="zip",
+            encoding="utf-8",
+            enqueue=True,  # 多进程/异步下安全写
+        )
+    except (PermissionError, OSError) as e:
+        logger.warning(f"文件日志 sink 不可用（{type(e).__name__}: {e}），仅保留控制台输出")
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
