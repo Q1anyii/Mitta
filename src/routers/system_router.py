@@ -42,7 +42,12 @@ def auth_page():
 @router.get("/{full_path:path}")
 def spa_or_static(full_path: str):
     """SPA 静态托管兜底。"""
-    file = FRONTEND_DIR / full_path
+    file = (FRONTEND_DIR / full_path).resolve()
+    # P1-13: 防路径穿越——resolve 后必须仍在 FRONTEND_DIR 内（挡 ../）
+    try:
+        file.relative_to(FRONTEND_DIR.resolve())
+    except ValueError:
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
     if full_path and file.is_file():
         return FileResponse(file)
     if full_path.startswith("api/"):

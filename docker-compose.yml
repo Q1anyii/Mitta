@@ -17,10 +17,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-root}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须在 .env 设置 POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-agentproject}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -37,8 +37,8 @@ services:
     container_name: mitta-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
-      - "8001:8001"  # RedisInsight Web UI（可选，调试用）
+      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:8001:8001"  # RedisInsight Web UI（可选，调试用）
     volumes:
       - redis_data:/data
     environment:
@@ -74,11 +74,11 @@ services:
     container_name: mitta-minio
     restart: unless-stopped
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?必须在 .env 设置 MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?必须在 .env 设置 MINIO_SECRET_KEY}
     ports:
-      - "9001:9001"
-      - "9000:9000"
+      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9000:9000"
     volumes:
       - minio_data:/minio_data
     command: minio server /minio_data --console-address ":9001"
@@ -99,8 +99,8 @@ services:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "127.0.0.1:19530:19530"
+      - "127.0.0.1:9091:9091"
     volumes:
       - milvus_data:/var/lib/milvus
     depends_on:
@@ -125,9 +125,9 @@ services:
     container_name: mitta-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      POSTGRESQL_DB_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-1234}@postgres:5432/${POSTGRES_DB:-agentproject}?sslmode=disable
+      POSTGRESQL_DB_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:?必须在 .env 设置 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-agentproject}?sslmode=disable
       REDIS_DB_URL: redis://redis:6379/0
       HUNYUAN_API_KEY: ${HUNYUAN_API_KEY}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}

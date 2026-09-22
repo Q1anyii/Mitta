@@ -19,11 +19,11 @@ load_dotenv()
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {
     # 文本
-    ".txt", ".md", ".markdown", ".csv", ".json", ".xml", ".html", ".htm",
+    ".txt", ".md", ".markdown", ".csv", ".json", ".xml",
     # 文档
     ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
     # 图片
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
     # 代码
     ".py", ".js", ".ts", ".java", ".c", ".cpp", ".h", ".go", ".rs",
     ".sh", ".bat", ".ps1", ".yaml", ".yml", ".toml", ".ini", ".cfg",
@@ -33,6 +33,30 @@ ALLOWED_EXTENSIONS = {
 
 # 单文件大小限制：10MB
 MAX_FILE_SIZE = 10 * 1024 * 1024
+
+
+# P1-9: 图片 magic bytes 签名（防伪造扩展名，如 .exe 改名 .png 上传）
+_MAGIC_SIGNS = {
+    ".png": [b"\x89PNG\r\n\x1a\n"],
+    ".jpg": [b"\xff\xd8\xff"],
+    ".jpeg": [b"\xff\xd8\xff"],
+    ".gif": [b"GIF87a", b"GIF89a"],
+    ".bmp": [b"BM"],
+    ".webp": [b"RIFF"],
+}
+
+
+def _verify_magic(ext: str, head: bytes) -> bool:
+    """校验文件头是否匹配扩展名；非图片类型返回 True（不强制）。"""
+    sigs = _MAGIC_SIGNS.get(ext)
+    if not sigs:
+        return True
+    for sig in sigs:
+        if head.startswith(sig):
+            if ext == ".webp":
+                return len(head) >= 12 and head[8:12] == b"WEBP"
+            return True
+    return False
 
 
 class FileUploadService:
@@ -141,6 +165,9 @@ class FileUploadService:
             raise ValueError(error)
 
         ext = os.path.splitext(file_name)[1].lower()
+        # P1-9: magic bytes 校验，防伪造扩展名绕过白名单
+        if ext in _MAGIC_SIGNS and not _verify_magic(ext, file_content_bytes[:16]):
+            raise ValueError(f"文件内容与扩展名不符（magic bytes 校验失败）: {ext}")
         # base64 编码
         content_b64 = base64.b64encode(file_content_bytes).decode("utf-8")
 
