@@ -1,23 +1,11 @@
-"""分类节点：判断本轮问题是否需要知识库检索。
+"""检索路由辅助：自我介绍/纯寒暄类强模式快速短路。
 
-拆分自原 main_graph.py 的 classify_node 闭包函数。
-依赖：model（LLM 实例），通过参数注入。
-
-首 token 提速（H-20260919-09 任务B）：自我介绍/纯寒暄类短问题命中
-_QUICK_NO_PATTERNS 时直接返回 needs_retrieval=False，跳过 LLM 分类调用
-（省一跳；非检索直答 → llm_node 流式输出）。判定刻意保守——只有语义
-明确不可能依赖知识库的模式才短路，其余一律走 LLM 分类，避免把该检索
-的技术问题误路由到直答。
+拆分自原 main_graph.py 的 classify_node 闭包函数。主链路已由
+router_node 统一路由（H-20260919-11），classify_node 函数本身已移除；
+本文件仅保留被 router_node / eval_routing 引用的 _quick_no_retrieval。
 """
 
 import re
-
-from langchain_core.messages import HumanMessage, SystemMessage
-from loguru import logger
-
-from constant.prompt_constants import CLASSIFIER_PROMPT
-from graphs.state import OverAllState
-
 
 # 快速直答模式（re.search，忽略大小写）：
 # - 自我介绍类：问身份/问名字，答案在人格设定里，与知识库无关
@@ -44,26 +32,3 @@ def _quick_no_retrieval(text: str) -> bool:
         if re.search(pat, t, re.IGNORECASE):
             return True
     return False
-
-
-def classify_node(state: OverAllState, model) -> OverAllState:
-    """判断本轮问题是否需要知识库检索（仅在需要时走 retrieval_node）。
-
-    Args:
-        state: 当前图状态，含 input_str
-        model: LLM 实例（依赖注入）
-
-    Returns:
-        {"needs_retrieval": bool}
-    """
-    if _quick_no_retrieval(state["input_str"]):
-        logger.info(f"闲聊/自我介绍快速短路（needs_retrieval=False）：{state['input_str'][:50]}")
-        return {"needs_retrieval": False}
-
-    response = model.invoke([
-        SystemMessage(content=CLASSIFIER_PROMPT),
-        HumanMessage(content=state["input_str"]),
-    ])
-    needs_retrieval = response.content.strip().lower().startswith("yes")
-    logger.info(f"分类结果（needs_retrieval={needs_retrieval}）：{state['input_str'][:50]}")
-    return {"needs_retrieval": needs_retrieval}

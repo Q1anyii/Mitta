@@ -207,7 +207,7 @@ def stop_chat_response(thread_id: str, current_user: TokenData = Depends(get_cur
 async def upload_file(file: UploadFile = File(...),
                       thread_id: Optional[str] = Form(None),
                       current_user: TokenData = Depends(get_current_user)):
-    """上传文件（多种格式，base64 存储在 MySQL），上传后立即解析文本内容并缓存。
+    """上传文件（多种格式，base64 存储在 PostgreSQL），上传后立即解析文本内容并缓存。
 
     阻塞执行：保存文件 + 解析文本全部完成后才返回，前端等待期间显示"解析中"。
     解析结果存入 chat_service._file_content_cache，发送消息时拼接到 input_str。

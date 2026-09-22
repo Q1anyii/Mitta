@@ -16,6 +16,7 @@ from constant.retrieval_constants import (
     MMR_PRE_SELECT,
     MMR_LEXICAL_JACCARD,
     RERANK_FILTER_THRESHOLD,
+    FILTER_FALLBACK_TOP_K,
 )
 from graphs.state import RAGState
 from vector.retrieve_doc import RetrievedDoc
@@ -346,4 +347,4 @@ def filter_node(state: RAGState) -> dict:
         return {"reranked_docs": finally_docs[:MMR_TOP_SELECT]}
 
     # 兜底：过滤后为空时，返回原始 top 3（宁可不准确也不返回空）
-    return {"reranked_docs": reranked_docs[:3]}
+    return {"reranked_docs": reranked_docs[:FILTER_FALLBACK_TOP_K]}

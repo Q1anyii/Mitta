@@ -67,6 +67,11 @@ RERANK_FILTER_THRESHOLD = 0.15
 # 同一批无依赖节点，加边不加线程不会变快。所以并行化落在节点内部的线程池。
 RETRIEVE_PARALLEL_ENABLED = os.getenv("MITTA_RETRIEVE_PARALLEL", "1").strip().lower() in ("1", "true", "on")
 RETRIEVE_PARALLEL_WORKERS = int(os.getenv("MITTA_RETRIEVE_WORKERS", "4"))
+
+# 各召回路候选条数 / 兜底取篇数（消除散落 magic number）
+VECTOR_N_RESULTS = 20   # 稠密向量路每路返回条数（parallel_nodes n_results 默认值）
+BM25_TOP_K = 20         # BM25 稀疏路召回条数（parallel_nodes bm25_top_k 默认值）
+FILTER_FALLBACK_TOP_K = 3  # rerank 过滤后为空时兜底取前 N 篇（宁可不空也不返回空）
 # 单路超时（秒）：超时后放弃这一路的结果（Python 无法真正中断线程，只能不再等它）
 REWRITE_TIMEOUT_SEC = float(os.getenv("MITTA_REWRITE_TIMEOUT", "10"))
 DENSE_TIMEOUT_SEC = float(os.getenv("MITTA_DENSE_TIMEOUT", "8"))

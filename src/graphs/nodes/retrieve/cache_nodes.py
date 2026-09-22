@@ -70,7 +70,7 @@ def store_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
     if not thread_id:
         return {}
     if not state.get("cache_hit"):
-        # ttl 走 CacheService.store_cache 默认值（15s）；不要对 user_id 调 redis TTL——
+        # ttl 走 CacheService.store_cache 默认值（900s/15分钟）；不要对 user_id 调 redis TTL——
         # TTL 只能查已存在 key 的剩余时间，user_id 不是 key，返回 -2 会导致 expire 异常
         cache_service.store_cache(thread_id, state["question"], state["reranked_docs"])
     return {}

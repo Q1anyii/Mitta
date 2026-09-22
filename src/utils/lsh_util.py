@@ -2,7 +2,7 @@ import numpy as np
 
 class RandomProjectionLSH:
     def __init__(self, dim, num_bits):
-        self.planes = np.random.randn(num_bits, dim)  # 随机超平面法向量
+        self.planes = np.random.default_rng(42).standard_normal((num_bits, dim))  # 随机超平面法向量
 
     def hash_vector(self, vec):
         projections = np.dot(self.planes, vec)

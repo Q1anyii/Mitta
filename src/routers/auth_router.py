@@ -31,7 +31,7 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES = get_env_int("JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
 
 @router.post("/api/login")
 def login(request_body: LoginRequest):
-    """用户登录：校验 MySQL 用户表，返回 JWT token + 用户信息。"""
+    """用户登录：校验 PostgreSQL 用户表，返回 JWT token + 用户信息。"""
     user_id = request_body.userId
     password = request_body.password
     user_info = login_service.login(user_id, password)

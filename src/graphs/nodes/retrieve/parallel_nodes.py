@@ -52,6 +52,8 @@ from constant.retrieval_constants import (
     DENSE_TIMEOUT_SEC,
     SPARSE_TIMEOUT_SEC,
     RETRIEVE_PARALLEL_WORKERS,
+    VECTOR_N_RESULTS,
+    BM25_TOP_K,
 )
 from graphs.nodes.retrieve.query_nodes import run_bm25, run_rewrite
 from graphs.state import RAGState
@@ -75,8 +77,8 @@ def parallel_retrieve(
     model,
     vector_store,
     cache_service,
-    n_results: int = 20,
-    bm25_top_k: int = 20,
+    n_results: int = VECTOR_N_RESULTS,
+    bm25_top_k: int = BM25_TOP_K,
 ) -> dict:
     """并行检索：改写 ∥ 原问题稠密 ∥ BM25，改写完成后再并发跑改写后的多路稠密。
 
