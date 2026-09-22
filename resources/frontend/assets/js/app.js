@@ -902,12 +902,24 @@
                     <div class="auth-card tag-violet">
                         <div class="auth-tag">03 / RESET</div>
                         <h1>找回密码</h1>
-                        <p class="auth-subtitle">输入用户 ID，我们将为您重置密码</p>
+                        <p class="auth-subtitle">输入用户 ID 获取验证码，再设置新密码</p>
                         <form @submit.prevent="handleRecover">
                             <div class="form-group">
                                 <label class="form-label">用户 ID</label>
-                                <input v-model="form.userId" type="text" class="form-input" placeholder="请输入用户 ID">
+                                <div style="display:flex;gap:8px;">
+                                    <input v-model="form.userId" type="text" class="form-input" placeholder="请输入用户 ID" style="flex:1;">
+                                    <button type="button" class="btn btn-ghost" @click="sendCode" :disabled="isSending || countdown > 0" style="white-space:nowrap;">
+                                        <span v-if="countdown > 0">{{ countdown }}s</span>
+                                        <span v-else-if="isSending">发送中...</span>
+                                        <span v-else>获取验证码</span>
+                                    </button>
+                                </div>
                                 <div class="form-error">{{ errors.userId }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">验证码</label>
+                                <input v-model="form.code" type="text" class="form-input" placeholder="请输入 6 位验证码" maxlength="6">
+                                <div class="form-error">{{ errors.code }}</div>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">新密码</label>
@@ -928,18 +940,60 @@
             `,
             data() {
                 return {
-                    form: { userId: '', newPassword: '' },
-                    errors: { userId: '', newPassword: '' },
+                    form: { userId: '', code: '', newPassword: '' },
+                    errors: { userId: '', code: '', newPassword: '' },
                     formMsg: '',
-                    isSubmitting: false
+                    isSubmitting: false,
+                    isSending: false,
+                    countdown: 0,
+                    timer: null
                 };
             },
+            beforeDestroy() {
+                if (this.timer) clearInterval(this.timer);
+            },
             methods: {
+                startCountdown() {
+                    this.countdown = 60;
+                    this.timer = setInterval(() => {
+                        this.countdown--;
+                        if (this.countdown <= 0) {
+                            clearInterval(this.timer);
+                            this.timer = null;
+                        }
+                    }, 1000);
+                },
+                async sendCode() {
+                    this.errors = { userId: '', code: '', newPassword: '' };
+                    if (!this.form.userId.trim()) {
+                        this.errors.userId = '请先输入用户 ID';
+                        return;
+                    }
+                    this.isSending = true;
+                    try {
+                        const res = await fetch(`${API_BASE}/api/recover/code`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId: this.form.userId.trim() })
+                        });
+                        const { ok, message } = await parseApiResponse(res);
+                        this.formMsg = message || (ok ? '验证码已发送' : '发送失败');
+                        if (ok) this.startCountdown();
+                    } catch (err) {
+                        this.formMsg = '网络异常，请稍后重试';
+                    } finally {
+                        this.isSending = false;
+                    }
+                },
                 validate() {
                     let valid = true;
-                    this.errors = { userId: '', newPassword: '' };
+                    this.errors = { userId: '', code: '', newPassword: '' };
                     if (!this.form.userId.trim()) {
                         this.errors.userId = '请输入用户 ID';
+                        valid = false;
+                    }
+                    if (!/^\d{6}$/.test(this.form.code.trim())) {
+                        this.errors.code = '请输入 6 位验证码';
                         valid = false;
                     }
                     if (this.form.newPassword.length < 4) {
@@ -952,14 +1006,19 @@
                     if (!this.validate()) return;
                     this.isSubmitting = true;
                     try {
-                        // 字段与后端 RecoverRequest 契约一致：userId / newPassword
+                        // 字段与后端 RecoverRequest 契约一致：userId / code / newPassword
                         const res = await fetch(`${API_BASE}/api/recover`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ userId: this.form.userId.trim(), newPassword: this.form.newPassword })
+                            body: JSON.stringify({
+                                userId: this.form.userId.trim(),
+                                code: this.form.code.trim(),
+                                newPassword: this.form.newPassword
+                            })
                         });
                         const { ok, message } = await parseApiResponse(res);
                         this.formMsg = message || (ok ? '密码已重置' : '重置失败');
+                        if (ok) setTimeout(() => location.href = '/api/login', 1200);
                     } catch (err) {
                         this.formMsg = '网络异常，请稍后重试';
                     } finally {
@@ -968,7 +1027,6 @@
                 }
             }
         };
-
         // 认证页左侧品牌区动态文案（随路由模式切换；人格标签已移除，统一为 Mitta，语气风格不变）
         const AUTH_QUOTES = {
             login: {
