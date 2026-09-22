@@ -856,7 +856,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 `.github/workflows/acr-cicd.yml`：触发条件为 push 到 `main` 分支（构建镜像→推 ACR→rsync→部署→健康检查）；含 **RAG 入库检测 + 蓝绿切换**（见下「CI/CD 蓝绿入库切换」）。
 
-`.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——push 到 `main` 且路径命中 `src/**`、`tests/**`、`requirements.txt` 或 workflow 本身时触发（也支持 `workflow_dispatch` 手动触发）；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest，**73 用例、零外部依赖**（不连 Redis/Postgres/LLM/向量库），失败时上传 pytest 报告 artifact：
+`.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——**被 `acr-cicd.yml` 通过 `workflow_call` 调用，作为部署前置 job**（也支持 `workflow_dispatch` 手动触发）；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest，**73 用例、零外部依赖**（不连 Redis/Postgres/LLM/向量库），失败时上传 pytest 报告 artifact：
 
 | 测试文件                              | 覆盖内容                                  | 用例数 |
 | --------------------------------- | ------------------------------------- | --- |
@@ -867,9 +867,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 **明确排除**：RAGAS 五指标（耗时 + LLM 评分）与依赖 Redis/Postgres/LLM/向量库的离线白盒评测（只在本地评估）。
 
-> **与部署链路的关系**：当前两个 workflow 都由 `push 到 main` 触发、**并行执行、彼此解耦**——回归红叉会在 commit 上标红并留下 artifact，但**不会阻断** `acr-cicd.yml` 的部署。
-> 这样设计的好处是回归跑挂不会卡住线上发布，代价是它不是硬门禁；若要升级为硬门禁，可把 `acr-cicd.yml` 的触发改为
-> `on: workflow_run: workflows: ["Agent Regression Tests"] types: [completed]` 并判断 `conclusion == 'success'`（已列入后续规划）。
+> **与部署链路的关系**：`acr-cicd.yml` 的 `build_deploy` job 通过 `needs: regression` **前置调用** `agent-regression.yml`——回归红则不 build、不 rsync、不重启，是硬门禁。回归流水线复用同一份 pytest 命令，避免两处配置漂移；RAGAS 与依赖外部服务的白盒评测仍只在本地跑。
 
 ### 部署架构
 
@@ -887,14 +885,16 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 └─────────────┘                 └──────────────────────┘
 ```
 
-### 完整流水线（部署 8 步 + 并行回归门禁）
+### 完整流水线（回归门禁前置 + 部署 8 步）
 
-一次 push 到 `main` 会同时触发**两条独立 workflow**：部署链路（`acr-cicd.yml`，8 步）与回归测试（`agent-regression.yml`，E14），二者并行、互不阻塞。
+一次 push 到 `main`：先跑 **回归门禁**（`agent-regression.yml`，73 用例纯函数 pytest），通过后才进入 **部署链路**（`acr-cicd.yml`，8 步）；回归失败直接红叉终止，不构建、不部署。
 
 ```mermaid
 flowchart TD
-    PUSH[push 到 main] --> CHECK[① Checkout<br/>fetch-depth: 2]
-    PUSH --> REG[并行：agent-regression.yml<br/>Python 3.12 + pytest 73 用例<br/>零外部依赖]
+    PUSH[push 到 main] --> REG[门禁：agent-regression.yml<br/>Python 3.12 + pytest 73 用例<br/>零外部依赖]
+    REG --> REGJ{回归结果<br/>test_config 32 / regression 19<br/>jwt 12 / rand_id 10}
+    REGJ -->|失败| REGFAIL[❌ 红叉 + 上传 pytest artifact<br/>needs 不通过，终止]
+    REGJ -->|73 passed| CHECK[① Checkout<br/>fetch-depth: 2]
     CHECK --> DETECT{② 需要重建镜像？<br/>Dockerfile/requirements/workflow 变更}
     DETECT -->|是| BUILD[③ Buildx + Login ACR<br/>取 SHORT_SHA + Build&push]
     DETECT -->|否| SKIP[跳过构建<br/>复用 latest 镜像]
@@ -913,12 +913,8 @@ flowchart TD
     ROLLBACK --> OK
     HEALTH -->|全失败| FAIL[❌ docker logs --tail 50<br/>exit 1]
 
-    REG --> REGJ{回归结果<br/>test_config 32 / regression 19<br/>jwt 12 / rand_id 10}
-    REGJ -->|73 passed| REGOK[✅ 回归通过<br/>commit 绿勾]
-    REGJ -->|失败| REGFAIL[❌ 红叉 + 上传 pytest artifact<br/>当前不阻断部署]
-
     classDef gate fill:#F3E8FA,stroke:#9C5BD0,stroke-width:1.5px;
-    class REG,REGJ,REGOK,REGFAIL gate;
+    class REG,REGJ,REGFAIL gate;
 ```
 
 **回归门禁覆盖什么**（都是纯函数、确定性断言，秒级出结果）：动态路由分流规则、MCP 安全白名单（命令/包名/env/sse/type）、工具结果兜底与按轮计数、记忆缓存 key 构造、工具名解析、配置与 JWT/ID 生成。
@@ -1004,7 +1000,7 @@ flowchart TD
 5. 目前只在源码层面支持自定义模型，后续需在设置界面添加接口
 6. 引入 token 消耗检测
 7. 多人格后续：crazy 的 `collect_to_cassette` 工具、supervisor 多 Agent 编排（`docs/SUPERVISOR_UPGRADE_PLAN.md` 规划中）
-8. **回归测试升级为硬门禁**：当前 `agent-regression.yml` 与部署链路并行、不阻断发布；后续改用 `workflow_run` 串联，只有 73 用例全绿才允许 `acr-cicd.yml` 部署
+8. ~~**回归测试升级为硬门禁**~~：已用 `workflow_call` + `needs` 串联实现，回归红即终止部署
 9. **缓存分层待补量化**：新增 `eval_cache_layers.py`，在「重复提问 / 同义改写 / 多轮历史」三种负载下实测 L1/L2/L3a/L3b 命中率；`clear_thread_cache` 需改为按 key 清理（L3a 跨会话共享，按 thread 清会误删）
 10. **并行编排复测**：A/B 期间外部 embedding API 抖动达 6×（1280→9386 ms），并行收益被噪声掩盖，需在稳定窗口重测后再决定是否长期保留 `RETRIEVE_PARALLEL_ENABLED=1`
 
