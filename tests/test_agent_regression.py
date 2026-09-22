@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Send
 
-from graphs.nodes.routes import route, route_after_llm
+from graphs.routes import route, route_after_llm
 from graphs.nodes.memory_node import _memory_cache_key
 from service.mcp_config_service import validate_mcp_server_config
 from graphs.main_graph import _tool_error_message
