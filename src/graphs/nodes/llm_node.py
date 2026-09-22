@@ -377,6 +377,13 @@ def llm_node(
             for part in content
         )
     tool_calls = final_chunk.tool_calls if final_chunk else []
+    # 熔断硬约束：次数上限/重复调用时，不靠提示词让模型"自觉不调"——
+    # 模型仍可能幻觉出 tool_calls（尤其裸模型时）。代码层直接剥空，强制 tool_node 不执行。
+    if force_stop and tool_calls:
+        logger.warning(
+            f"熔断硬剥离：模型仍试图调用工具 {[tc['name'] for tc in tool_calls]}，已强制清空"
+        )
+        tool_calls = []
     logger.info(
         f"llm_node 生成完成：tool_calls={[tc['name'] for tc in tool_calls]} "
         f"content_len={len(content)}"
