@@ -1,4 +1,6 @@
 import os
+import time
+import uuid
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 
@@ -56,11 +58,22 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """签发隐式 refresh token：仅存 Redis，不下发前端，access 过期时由后端自动续签。"""
+def create_refresh_token(data: dict, absolute_exp_ts: Optional[int] = None):
+    """签发隐式 refresh token：仅存 Redis，不下发前端，access 过期时由后端自动续签。
+
+    - jti：每次签发唯一，用于轮换/重放识别；
+    - iat：签发时间；
+    - absolute_exp_ts：登录时刻定下的绝对过期时间戳。续签时传入，继承旧值，
+      不随每次续签重新 now+30 天——refresh 不会因持续活动而永不过期。
+    """
     to_encode = data.copy()
-    expire = datetime.now(UTC) + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
-    to_encode.update({"type": "refresh", "exp": expire})
+    now_ts = int(time.time())
+    to_encode.update({"type": "refresh", "jti": uuid.uuid4().hex, "iat": now_ts})
+    if absolute_exp_ts:
+        expire = datetime.fromtimestamp(absolute_exp_ts, UTC)
+    else:
+        expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -77,18 +90,22 @@ def _try_renew_by_refresh(r, user_id: str, username: str, role: str, token_key: 
     if not refresh_token:
         return None
     try:
-        jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.PyJWTError:
         return None
+    # 绝对过期继承：取旧 refresh 的 exp 作为新 refresh 的绝对过期基准，续签不延长总时长
+    abs_exp_ts = payload.get("exp")
     new_access = create_access_token({"sub": f"{user_id}:{username}", "role": role})
-    new_refresh = create_refresh_token({"sub": f"{user_id}:{username}"})
+    new_refresh = create_refresh_token({"sub": f"{user_id}:{username}", "role": role}, absolute_exp_ts=abs_exp_ts)
     try:
         r.setex(token_key, ACCESS_TOKEN_EXPIRE_MINUTES * 60, new_access)
-        r.setex(USER_REFRESH_TOKEN_KEY.format(user_id=user_id), REFRESH_TOKEN_EXPIRE_DAYS * 86400, new_refresh)
+        # 新 refresh 的 Redis TTL = 距绝对过期的剩余秒数（不再每次重置为整 30 天）
+        remain = max(1, int(abs_exp_ts) - int(time.time()))
+        r.setex(USER_REFRESH_TOKEN_KEY.format(user_id=user_id), remain, new_refresh)
     except Exception as e:
         logger.warning(f"续签写 Redis 失败，鉴权拒绝：{e}")
         return None
-    logger.info(f"用户 [{user_id}] access token Redis key 已过期，通过 refresh token 自动续签")
+    logger.info(f"用户 [{user_id}] access token Redis key 已过期，通过 refresh token 自动续签（jti 轮换，绝对过期继承）")
     return new_access
 
 
