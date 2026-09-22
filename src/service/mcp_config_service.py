@@ -8,11 +8,43 @@
 import json
 import os
 import re
+import socket
+import ipaddress
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from loguru import logger
 from psycopg import sql
 from psycopg_pool import ConnectionPool
+
+
+def _is_internal_url(url: str) -> bool:
+    """SSRF 防护：解析 URL host -> DNS 解析所有 A/AAAA -> 判定是否内网/回环。
+
+    不能用字符串匹配——http://127.1、http://[::1]、http://2130706433（十进制 IP）、
+    0177.0.0.1（八进制）都能绕过黑名单。必须解析成 IP 再用 ipaddress 判定。
+    解析失败/异常一律保守拒绝（fail-closed）。
+    """
+    try:
+        host = urlparse(url).hostname
+        if not host:
+            return True
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except socket.gaierror:
+            return True
+        for info in infos:
+            ip_str = info[4][0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except ValueError:
+                return True
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_multicast or ip.is_reserved):
+                return True
+        return False
+    except Exception:
+        return True
 
 
 # ============================================================
@@ -372,9 +404,9 @@ def validate_mcp_server_config(cfg: dict, user_id: str) -> dict:
             raise ValueError(f"MCP 服务器 [{name}] (sse) 缺少 url")
         if not url.startswith(("http://", "https://")):
             raise ValueError(f"MCP 服务器 [{name}] 的 url 必须是 http/https 协议")
-        # 禁止访问内网地址（安全限制）
-        if any(x in url for x in ["localhost", "127.0.0.1", "0.0.0.0", "192.168.", "10.", "172.16."]):
-            raise ValueError(f"MCP 服务器 [{name}] 的 url 不能是内网地址（安全限制）")
+        # SSRF 防护：解析 IP 后判定内网/回环（防 127.1、[::1]、十进制/八进制 IP 绕过）
+        if _is_internal_url(url):
+            raise ValueError(f"MCP 服务器 [{name}] 的 url 不能是内网/回环地址（SSRF 安全限制）")
         cleaned["url"] = url
 
     return cleaned
