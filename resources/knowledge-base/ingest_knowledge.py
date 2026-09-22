@@ -140,6 +140,7 @@ def ingest_file(processor, file_path: Path, vector_store) -> int:
     # 2026-09-19 H-07：WSL2 localhost 转发不稳定，Redis 写入失败时降级跳过
     # （chroma 向量入库已完成；BM25 索引后续在 WSL 内单独重建）
     try:
+        cache_service.create_sparse_index()
         pipe = cache_service.redis.pipeline()
         for doc_id, content in zip(ids, documents):
             pipe.hset(f"{DOC_PREFIX}{doc_id}", mapping={"content": content, "source": source})
