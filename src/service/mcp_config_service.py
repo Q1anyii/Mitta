@@ -304,6 +304,21 @@ def validate_mcp_server_config(cfg: dict, user_id: str) -> dict:
             raise ValueError(f"MCP 服务器 [{name}] 的 args 必须是数组")
         cleaned["args"] = [str(a) for a in args]
 
+        # 安全：显式拒绝「直接执行代码 / 加载任意模块」的危险 flag（A2）。
+        # 不能只把「第一个非 - 参数」当包名查白名单——python3 -c "code"、
+        # node -e "code" 这类，-c/-e 被当 flag 跳过，代码串本身就是 RCE 入口，
+        # 包名白名单拦不住。默认拒绝：args 里只要出现以下形态即拒，不看它后面跟什么。
+        DANGEROUS_CODE_FLAGS = {
+            "-c", "-e", "-r", "-m",       # python -c/-m，node -e/-r(=--require)
+            "--eval", "--require",        # node --eval / --require（可加载任意模块）
+        }
+        for arg in cleaned["args"]:
+            a = arg.strip()
+            if a in DANGEROUS_CODE_FLAGS or a.split("=", 1)[0] in DANGEROUS_CODE_FLAGS:
+                raise ValueError(
+                    f"MCP 服务器 [{name}] 禁止使用危险参数 '{arg}'（可直接执行/加载任意代码）"
+                )
+
         # 校验包名安全（npx/uvx 后第一个非 - 参数）
         package_name = None
         for arg in cleaned["args"]:
