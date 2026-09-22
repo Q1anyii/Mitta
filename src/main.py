@@ -124,6 +124,9 @@ async def _close_mcp_holders(holders: list) -> None:
         await holder.close()
 
 
+from middleware.request_context import setup_logging, RequestContextMiddleware
+setup_logging()  # 控制台+轮转文件，带 request_id（必须在任何业务日志之前）
+
 app = FastAPI(title="Mitta AI", lifespan=lifespan)
 
 # CORS：放行 Tauri 桌面端与本地开发 origin。
@@ -148,6 +151,9 @@ app.mount("/mcp", mcp.http_app())
 # 注册请求限流中间件（对 /api/chat/ 等消耗 LLM 配额的接口限流）
 from middleware.rate_limit_middleware import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware)
+
+# 请求链路：最外层生成 request_id 并注入每行日志
+app.add_middleware(RequestContextMiddleware)
 
 
 # ============================================================
