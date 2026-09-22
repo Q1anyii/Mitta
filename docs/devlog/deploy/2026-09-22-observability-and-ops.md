@@ -1,5 +1,5 @@
 ---
-docs_sync: required
+docs_sync: none（已同步 2026-09-22）
 ---
 
 # 可观测性与运维补强（request_id / 日志轮转 / 回滚 / 备份）

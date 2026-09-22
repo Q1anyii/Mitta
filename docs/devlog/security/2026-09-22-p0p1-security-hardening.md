@@ -1,5 +1,5 @@
 ---
-docs_sync: required
+docs_sync: none（已同步 2026-09-22）
 ---
 
 # 2026-09-22 P0/P1 安全加固批（A1–A17）

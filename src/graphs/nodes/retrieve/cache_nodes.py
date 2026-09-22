@@ -55,7 +55,7 @@ def check_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
 def store_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
     """将本次检索结果写入缓存（仅缓存未命中时执行）。
 
-    缓存 TTL 走 CacheService.store_cache 默认值（15 秒），
+    缓存 TTL 走 CacheService.store_cache 默认值（900 秒），
     适合短时间内重复提问同一问题的场景（如用户连续发送相同消息）。
 
     Args:

@@ -75,7 +75,7 @@
 | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **router_node** | 统一路由 | 一次 LLM 调用输出 `{persona, need_retrieval}`（`ROUTER_PROMPT`）；闲聊/自我介绍强模式短路 0 次 LLM；前端手选 `configurable.persona_override` 时 persona 直接采用、同调用只判 need_retrieval；解析失败兜底 persona=默认/手选、need_retrieval 保守 True |
 | **retrieve_node** | 调用 RAG 子图检索知识库    | `retrieve_graph.invoke()`，Document 转 dict 存入 state（checkpoint 反序列化兼容）；进入子图前经 custom 通道推 ack 预响应开场白                                               |
-| **llm_node**      | 核心生成节点            | 组装 System Prompt（默认+用户自定义+长期记忆+人格 prompt）→ ToolFilter 筛选工具 → 按人格白名单收缩 → `model.bind_tools()` → `model.stream()` → 合并 chunk 提取 tool_calls |
+| **llm_node**      | 核心生成节点            | 组装 System Prompt（默认+用户自定义+长期记忆+人格 prompt）→ ToolFilter 筛选工具 → 按人格白名单收缩 → `model.bind_tools()` → `model.stream()` → 合并 chunk 提取 tool_calls；**硬熔断**：达到轮次上限或连续重复调用时代码层剥空 `AIMessage.tool_calls`，不靠提示词 |
 | **tool_node**     | 执行 MCP 工具         | LangGraph `ToolNode`，按工具名路由；CachePolicy 缓存同参数结果                                                                     |
 | **memory_node**   | 提取长期记忆            | LLM 从对话中提取用户档案写入 PostgresStore；idle 闲聊轮快速跳过；非闲聊轮提取包进节点内 daemon 线程 fire-and-forget，节点立即返回、`done` 事件先行（详见「核心设计说明 → 记忆异步化」） |
 
@@ -524,8 +524,9 @@ nginx
 | 方法   | 路径              | 说明                                      |
 | ---- | --------------- | --------------------------------------- |
 | POST | `/api/login`    | 用户登录（返回 access token，refresh 隐式存 Redis） |
-| POST | `/api/register` | 用户注册                                    |
-| POST | `/api/recover`  | 密码找回                                    |
+| POST | `/api/register` | 用户注册（用户名/密码/邮箱，邮箱格式校验） |
+| POST | `/api/recover/code` | 按邮箱发找回验证码（查不到也返回成功，防枚举） |
+| POST | `/api/recover`  | 按邮箱 + 验证码重置密码（Redis TTL + GETDEL 用后即焚） |
 | POST | `/api/logout`   | 登出（Redis 删除 access+refresh，即时失效）        |
 
 ### 对话

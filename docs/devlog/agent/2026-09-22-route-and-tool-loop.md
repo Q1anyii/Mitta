@@ -1,5 +1,5 @@
 ---
-docs_sync: required
+docs_sync: none（已同步 2026-09-22）
 ---
 
 # Agent 路由与工具循环重构（Send 取消 / llm_node 拆分 / 硬熔断）

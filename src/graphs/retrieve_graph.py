@@ -101,7 +101,7 @@ def build_retrieve_graph(vector_store: VectorStore, model=None, online_rerank=No
         "check_cache",
         lambda state: "hit" if state.get("cache_hit") else "miss",
         {
-            "hit": "output_node",
+            "hit": "filter",
             "miss": head,
         },
     )

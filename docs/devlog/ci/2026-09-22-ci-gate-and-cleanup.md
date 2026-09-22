@@ -1,5 +1,5 @@
 ---
-docs_sync: required
+docs_sync: none（已同步 2026-09-22）
 ---
 
 # CI 门禁与工程清理（workflow_call / 死代码 / LSH 种子）
