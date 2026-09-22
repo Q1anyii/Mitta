@@ -11,10 +11,12 @@ from loguru import logger
 
 from config import get_env_int
 from constant.cache_constant import USER_TOKEN_KEY, USER_REFRESH_TOKEN_KEY
-from schemas.request_schemas.login_schema import LoginRequest, RegisterRequest, RecoverRequest
+from schemas.request_schemas.login_schema import LoginRequest, RegisterRequest, RecoverRequest, RecoverCodeRequest
 from service.cache_service import cache_service
 from service.login_service import login_service
 from middleware.auth_rate_limit import check_auth_allowed, record_auth_failure, reset_auth_success, client_ip
+import secrets
+from service.email_service import send_recover_code
 from utils.response_util import Response
 from utils.jwt_utils import (
     create_access_token,
@@ -83,25 +85,49 @@ def register(request_body: RegisterRequest):
         return Response.failed(response)
 
 
+@router.post("/api/recover/code")
+def recover_code(request_body: RecoverCodeRequest, request: Request):
+    """发送密码找回验证码：生成一次性验证码并存 Redis（TTL 5 分钟），
+    经邮件 service 发给用户。user_id 不存在也返回成功（防账号枚举）。"""
+    ip = client_ip(request)
+    user_id = request_body.userId
+    # 发码端点同样限流（防刷）
+    allowed, retry = check_auth_allowed(ip, user_id)
+    if not allowed:
+        return Response.failed(f"尝试过于频繁，请 {retry} 秒后再试")
+    code = f"{secrets.randbelow(1000000):06d}"
+    r = cache_service.redis
+    # 一次性验证码：TTL 300s，重置成功即焚
+    r.setex(f"recover:code:{user_id}", 300, code)
+    send_recover_code(user_id, code)
+    return Response.success("验证码已发送，5 分钟内有效")
+
+
 @router.post("/api/recover")
 def recover(request_body: RecoverRequest, request: Request):
-    """密码找回/重置：根据 user_id 设置新密码。"""
+    """密码重置：校验一次性验证码（用后即焚）后才改密码。"""
     ip = client_ip(request)
     user_id = request_body.userId
     # 重置凭据端点同样限流（防爆破/撞库）
     allowed, retry = check_auth_allowed(ip, user_id)
     if not allowed:
         return Response.failed(f"尝试过于频繁，请 {retry} 秒后再试")
+
+    # 一次性验证码校验：GETDEL 取出即焚，防止重放
+    r = cache_service.redis
+    stored = r.getdel(f"recover:code:{user_id}")
+    if not stored or stored.decode() != request_body.code.strip():
+        record_auth_failure(ip, user_id)
+        return Response.failed("验证码错误或已过期，请重新获取")
+
     new_password = request_body.newPassword
     response = login_service.recover(user_id, new_password)
     if not response:
-        record_auth_failure(ip, user_id)
         return Response.failed("注册失败")
     elif response == 1:
         reset_auth_success(ip, user_id)
         return Response.success()
     else:
-        record_auth_failure(ip, user_id)
         return Response.failed(response)
 
 

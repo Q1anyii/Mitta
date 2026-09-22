@@ -22,6 +22,10 @@ class RegisterRequest(BaseModel):
         yield self.userId
         yield self.password
 
+class RecoverCodeRequest(BaseModel):
+    userId: str
+
 class RecoverRequest(BaseModel):
     userId: str
+    code: str
     newPassword: str
