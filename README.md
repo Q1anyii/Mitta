@@ -25,7 +25,7 @@
 - **断点续传（刷新不中断）**：聊天任务与 SSE 连接解耦，每个思考/工具/正文事件按序号落 Redis List（TTL 7 天）；前端刷新或重连时先 `GET events?after=已消费序号` 重放缺失的增量事件重建界面，再续推新事件，强刷也能恢复思考过程与流式输出，且不会因重发而重复累积对话
 - **用户级 MCP 热重载**：MCP 配置存 PostgreSQL 按用户隔离，网页端保存后通过 hash 检测自动重建对话图，`POST /api/mcp/reload` 主动清除缓存立即生效，无需重启后端
 - **深度思考**：DeepSeek reasoning_content 流式输出，前端可切换思考开关与推理强度（low/medium/high），思考过程可折叠展开
-- **现代化前端**：Vue 3 SPA（CDN 单文件，多主题 + 响应式移动端 + 高对比几何切角动效），工具调用记录穿插展示、复制/分享/重新生成；聊天区跳底悬浮按钮（距底 >200px 显示）+ 人格工具范围提示
+- **轻量前端**：Vue 3 运行时（CDN 引入 `vue.global.prod.js`，**无构建工具 / 无 SFC / 无 package.json**，原生 JS + 模板字符串驱动），多主题 + 响应式移动端 + 高对比几何切角动效，工具调用记录穿插展示、复制/分享/重新生成；聊天区跳底悬浮按钮（距底 >200px 显示）+ 人格工具范围提示
 - **安全认证**：JWT（access 15 分钟 + 隐式 refresh 30 天自动续签）+ bcrypt + 登出即时失效（Redis 删除 token）+ 请求限流
 - **节点级缓存**：LangGraph CachePolicy + Redis，memory_node 结果按 TTL 缓存（retrieve/tool 节点缓存已移除，原因见「核心设计说明 → 节点级缓存」）
 
@@ -44,7 +44,7 @@
 | 缓存        | Redis 7（节点级缓存 + 检索缓存 LSH + JWT 登录态 + 限流计数 + RedisSearch BM25 全文索引）                                        |
 | MCP       | MCP Python SDK + FastMCP（内置 agent_server + 外部 stdio/sse 服务器连接）                                            |
 | Web 框架    | FastAPI + Uvicorn（SSE 流式响应）                                                                               |
-| 前端        | Vue 3（CDN SPA，html/css/js 拆分）+ 手写设计系统 + 多主题 + 响应式移动端                                                      |
+| 前端        | Vue 3 运行时（CDN `vue.global.prod.js`，**无构建工具 / 无 SFC / 无 package.json**）+ 手写设计系统 + 多主题 + 响应式移动端                                                      |
 | 反向代理      | Nginx（静态托管 + API 代理 + SSE 缓冲关闭）                                                                           |
 | 认证        | JWT（PyJWT）+ bcrypt 密码哈希                                                                                   |
 | 可观测性      | LangSmith 链路追踪（可选）+ Loguru 结构化日志                                                                          |
@@ -321,7 +321,7 @@ AgentProject/
 │   │   ├── vector_db.json                # 向量库配置（type/persist_path/collection）
 │   │   ├── mcp_servers.json              # 全局默认 MCP 服务器配置（JSON 数组）
 │   ├── frontend/
-│   │   ├── index.html                    # Vue 3 SPA 入口
+│   │   ├── index.html                    # Vue 3 CDN 入口（无构建）
 │   │   ├── assets/css/style.css          # 设计系统（CSS 变量+切角+动效+响应式）
 │   │   ├── assets/js/app.js              # Vue 组件+业务逻辑（模板字符串内嵌，setup/methods）
 │   │   ├── deploy/nginx/default.conf     # Nginx 配置（静态托管+API代理+SSE缓冲关闭+gzip）
