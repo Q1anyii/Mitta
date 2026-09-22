@@ -825,7 +825,9 @@ class ChatService:
         """查询会话归属用户（用于 history/delete 接口的归属校验）"""
         # CustomPostgresSaver 扩展参数：SQL 层 WHERE thread_id = %s 精确定位该会话（最新在前），
         # 不再全量遍历所有线程
+        found = False
         for item in self.checkpointer.list(thread_id=thread_id):
+            found = True
             # LangGraph 1.x：config 的 metadata 落在 CheckpointTuple.metadata（checkpoints 表 metadata 列），
             # checkpoint JSON 内部没有 metadata 字段；configurable 只持久化 thread_id，也不含 user_id
             owner = None
@@ -835,7 +837,23 @@ class ChatService:
                 owner = item.checkpoint.get("metadata", {}).get("user_id")  # 兼容旧版本存储
             if owner:
                 return str(owner)
-        return None
+        if found:
+            return ""  # 会话存在但 metadata 无 owner（归属不明）
+        return None  # 会话不存在（新会话）
+
+    def verify_thread_access(self, thread_id: str, user_id, role: str) -> bool:
+        """fail-closed 会话归属校验：True 放行 / False 拒绝。
+
+        None=新会话放行；空串=会话存在但无 owner 一律拒绝；owner 不符非 admin 拒绝。
+        """
+        owner = self.get_thread_user_id(thread_id)
+        if owner is None:
+            return True
+        if owner == "":
+            return False
+        if role == "admin":
+            return True
+        return owner == str(user_id)
 
     def is_generation_active(self, thread_id: str) -> bool:
         """该会话是否仍有生成任务在后台运行。

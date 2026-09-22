@@ -40,8 +40,7 @@ def chat(request_body: ChatRequest, current_user: TokenData = Depends(get_curren
     client_message_id = request_body.client_message_id
     # 会话归属校验（与 history/delete 一致）：会话已存在但非本人所有时拒绝，
     # 否则任意用户可用他人 thread_id 发消息，LangGraph 会用当前用户覆盖该会话归属 metadata 造成劫持
-    owner = chat_service.get_thread_user_id(thread_id)
-    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
+    if not chat_service.verify_thread_access(thread_id, current_user.user_id, current_user.role):
         raise HTTPException(status_code=403, detail="无权使用该会话")
 
     # 【幂等去重】Redis SETNX 唯一键：已存在说明同一条消息已被处理过。
@@ -92,8 +91,7 @@ def chat(request_body: ChatRequest, current_user: TokenData = Depends(get_curren
 def get_history_session(thread_id: str, current_user: TokenData = Depends(get_current_user)):
     """获取会话历史消息。"""
     # 会话归属校验：会话存在但非本人所有时拒绝（管理员放行）
-    owner = chat_service.get_thread_user_id(thread_id)
-    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
+    if not chat_service.verify_thread_access(thread_id, current_user.user_id, current_user.role):
         raise HTTPException(status_code=403, detail="无权访问该会话")
     history_session = chat_service.get_history_session(thread_id)
     return history_session
@@ -126,8 +124,7 @@ def get_generation_status(thread_id: str, current_user: TokenData = Depends(get_
         {"ok": true, "data": {"generating": bool}}
     """
     # 会话归属校验（与 history 一致）
-    owner = chat_service.get_thread_user_id(thread_id)
-    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
+    if not chat_service.verify_thread_access(thread_id, current_user.user_id, current_user.role):
         raise HTTPException(status_code=403, detail="无权访问该会话")
     generating = chat_service.is_generation_active(thread_id)
     logger.info(f"查询会话生成状态 thread_id={thread_id} generating={generating}")
@@ -149,8 +146,7 @@ def get_chat_events(thread_id: str, after: int = -1,
         {"ok": true, "data": {"events": [{"seq": int, "event": {...}}, ...]}}
     """
     # 会话归属校验（与 history 一致）
-    owner = chat_service.get_thread_user_id(thread_id)
-    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
+    if not chat_service.verify_thread_access(thread_id, current_user.user_id, current_user.role):
         raise HTTPException(status_code=403, detail="无权访问该会话")
     events = chat_service.get_thread_events(thread_id, after=after)
     logger.debug(f"读取会话事件 thread_id={thread_id} after={after} 返回 {len(events)} 条")
@@ -161,9 +157,8 @@ def get_chat_events(thread_id: str, after: int = -1,
 def delete_session_by_id(thread_id: str, current_user: TokenData = Depends(get_current_user)):
     """删除会话及其历史消息。"""
     # 会话归属校验：会话存在但非本人所有时拒绝（管理员放行）
-    owner = chat_service.get_thread_user_id(thread_id)
-    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="无权删除该会话")
+    if not chat_service.verify_thread_access(thread_id, current_user.user_id, current_user.role):
+        raise HTTPException(status_code=403, detail="无权访问该会话")
     flag, response = chat_service.delete_session_by_id(thread_id)
     if flag:
         return Response.success(response)
@@ -180,9 +175,8 @@ def rollback_chat_session(thread_id: str, request_body: ChatRequest,
     之后重新生成时 checkpoint 历史中不再残留旧回复，避免 token 重复累积与回复叠加。
     """
     # 会话归属校验（与 history/delete 一致）
-    owner = chat_service.get_thread_user_id(thread_id)
-    if owner and owner != str(current_user.user_id) and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="无权操作该会话")
+    if not chat_service.verify_thread_access(thread_id, current_user.user_id, current_user.role):
+        raise HTTPException(status_code=403, detail="无权访问该会话")
     query = request_body.query
     if not query:
         return Response.failed("query 不能为空")
