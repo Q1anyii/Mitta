@@ -22,8 +22,8 @@ from vector.embedding import meta_to_dict
 from vector.vector_store import create_vector_store
 import redis as _redis
 
-# Redis 连接：优先 .env/环境变量 REDIS_DB_URL，不硬编码凭据；--redis-url 可覆盖
-cache_service.db_url = os.getenv("REDIS_DB_URL", cache_service.db_url)
+# Redis 连接：从环境变量读 REDIS_DB_URL，不硬编码；--redis-url 可覆盖
+cache_service.db_url = os.getenv("REDIS_DB_URL")
 cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
 cache_service.redis = _redis.Redis(
     host=cache_service.host, port=cache_service.port,
