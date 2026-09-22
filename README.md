@@ -653,7 +653,7 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 
 **降级策略**：Redis 不可用（或 `CACHE_LAYER_ENABLED=0`）时静默降级为不缓存，不阻塞检索主链路。
 ⚠ 部署注意：Windows 下 Redis 必须用 `127.0.0.1` 而非 `localhost`——`localhost` 会解析到 IPv6 `::1`，
-而 redis-stack 只监听 IPv4，报错 10054 后 **BM25 会静默退化为空召回**（不抛异常，极难发现）。**2026-09-22 修复（19da33f）**：入库脚本 ingest_knowledge.py Step4 原本只 HSET 写内容、漏调 cache_service.create_sparse_index()，导致 RediSearch 上根本没有 kb_bm25 索引、FT.SEARCH 恒空；补一行幂等建索引后稀疏路从恒空恢复为正常召回，双路互补真实成立。
+而 redis-stack 只监听 IPv4，报错 10054 后 **BM25 会静默退化为空召回**（不抛异常，极难发现）。**修复**：入库脚本 ingest_knowledge.py Step4 原本只 HSET 写内容、漏调 cache_service.create_sparse_index()，导致 RediSearch 上根本没有 kb_bm25 索引、FT.SEARCH 恒空；补一行幂等建索引后稀疏路从恒空恢复为正常召回，双路互补真实成立。
 
 ### 流式输出与工具调用状态
 
@@ -681,32 +681,39 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 
 ### 安全设计
 
-- JWT access token 15 分钟过期，Redis 存 refresh token 30 天，后端在 token 过期时自动续签（对前端透明）
-- 密码使用 bcrypt 哈希（截断 72 字节，bcrypt 上限）
-- `/api/chat/` 接口限流：每 IP 60 秒 30 次（Redis 计数器，Redis 不可用时降级内存限流）
-- MCP 配置文件路径白名单校验（仅允许项目 resources/、config/ 和用户主目录），防止写入系统敏感目录
-- 会话归属校验：非本人 thread_id 返回 403，防止会话劫持
-- 全局异常处理器：记录完整堆栈到日志，返回给客户端的信息不含堆栈细节
-- MCP 文件系统工具通过 allowed directories 限制访问范围（
-ead_local_file 做 Path.resolve() 前缀校验，防 ../ 目录穿越）
+项目在认证、工具调用、输入处理与部署四个层面做了分层防护：
 
-### 安全加固（2026-09-22 一批 A1–A11）
+**认证与会话**
 
-- **认证端点独立限流**：/api/login、/api/recover/* 按 IP + userId 双维度计数，失败累加 + 指数退避，成功清零；与聊天主限流互不影响
-- **密码找回改一次性验证码**：原"仅凭 user_id + 新密码"可接管账号；现 Redis TTL + GETDEL 用后即焚，60s 倒计时，SMTP 授权码从 env 读取不进仓库
-- **会话归属 fail-closed**：owner 为 None 不再短路放行，归属不明一律 403；抽 erify_thread_access 统一 6 处调用
-- **refresh token 加固**：加 jti + iat 轮换，续签继承绝对过期时间**不滑动**（原实现可无限续签）
-- **SSE 内网校验防绕过**：MCP SSE 内网白名单从字符串匹配改为 ipaddress 解析 + getaddrinfo，封堵 127.1、[::1]、十进制/八进制 IP 绕过，解析失败 fail-closed
-- **前端 XSS 消毒**：LLM 输出渲染前过 DOMPurify，封堵 v-html 偷 localStorage JWT
-- **限流键改 JWT sub**：Redis 计数键先验签再取 sub，伪造 token 不能换桶；Dockerfile 改非 root 运行（appuser + chown 工作目录与 uv 工具目录）
-- **MCP stdio 危险 flag 拦截**：显式拒绝 -c / -e / -m / --require 等直接执行代码的参数，封堵包名白名单绕过
-- **输入安全 checklist**：docs/SECURITY_INPUT_CHECKLIST.md 沉淀 A1–A11，编码前逐条过
-- **密码强度校验**（`6f06303`）：注册与找回密码新密码统一 8–64 位 + 必须同时含字母和数字（Pydantic field_validator），拒绝纯数字/纯字母/弱密码
-- **文件上传白名单 + magic bytes**（`6f06303`）：允许扩展名移除 `.html/.htm/.svg`（防 XSS 上传）；图片类按文件头签名校验（PNG `\x89PNG`、JPEG `\xff\xd8\xff`、GIF `GIF87a/89a`、BMP `BM`、WebP `RIFF...WEBP`），堵 `.exe` 改名 `.png` 上传
-- **SPA 静态兜底防穿越**（`6f06303`）：`system_router.spa_or_static` 对路径 `resolve()` 后用 `relative_to(FRONTEND_DIR)` 校验，越界一律 404，挡 `../`
-- **中间件端口绑 127.0.0.1 + 强制 .env 凭据**（`6f06303`）：docker-compose 里 PostgreSQL/Redis/RedisInsight/MinIO/Milvus/API 所有端口从 `0.0.0.0:port` 改为 `127.0.0.1:port`，只能宿主机访问；POSTGRES_PASSWORD/MINIO_ACCESS_KEY/MINIO_SECRET_KEY 去掉默认弱口令（1234/minioadmin），改 `${VAR:?必须在 .env 设置}` 强制
-- **脚本硬编码密码清理**（`952c7f2`）：`ingest_knowledge.py` 与 `agent_test/*` 里硬编码的 Redis 密码改从 `REDIS_DB_URL` 环境变量读取
-- **`/mcp` 端点 JWT 鉴权**（`c947c16` + `9df8ec9`）：原 `/mcp/sse`、`/mcp/tools` 等管理端点裸奔，知道路径就能调；新增 `McpAuthMiddleware` 挂到 `/mcp` mount，user_id 服务端从 JWT token 强制解析，不信任请求体里的 user_id，防越权调用他人账号的 MCP 配置
+- JWT 双 token：access 15 分钟过期、refresh 30 天；refresh 只存 Redis 不下发前端，access 过期时后端用 refresh 静默续签（对前端透明）
+- refresh token 带 `jti`+`iat` 轮换，续签继承绝对过期时间**不滑动**，杜绝无限续签
+- 密码 bcrypt 哈希（72 字节截断）；注册与找回新密码要求 8–64 位且字母数字混合
+- 密码找回走一次性验证码：Redis TTL + `GETDEL` 用后即焚，SMTP 凭据从环境变量读取
+- 登录/找回端点按 IP + userId 双维度计数，失败指数退避；聊天主接口按 JWT sub 做滑动窗口限流（30 次/60s），Redis 不可用自动降级内存窗口
+- 会话归属 fail-closed：非本人 thread_id 一律 403，统一走 `verify_thread_access`
+
+**MCP 与工具调用**
+
+- `/mcp` 管理端点挂 JWT 鉴权中间件，`user_id` 服务端从 token 强制解析，不信任请求体里的字段，防越权调用他人 MCP 配置
+- stdio 启动命令白名单 + 包名白名单，显式拒绝 `-c` / `-e` / `-m` / `--require` 等直接执行代码的 flag
+- SSE 内网地址校验走 `ipaddress` 解析 + `getaddrinfo`，封堵 `127.1`、`[::1]`、十进制/八进制 IP 绕过，解析失败 fail-closed
+- `read_local_file` 用 `Path.resolve()` 前缀校验，防 `../` 目录穿越
+- MCP 配置文件路径白名单，限制在项目 `resources/`、`config/` 与用户主目录
+
+**输入与前端**
+
+- 前端渲染 LLM 输出前过 DOMPurify，封堵 `v-html` 注入偷 JWT
+- 文件上传扩展名白名单（不含 `.html` / `.svg`），图片类按 magic bytes 校验文件头，堵 `.exe` 改名 `.png`
+- SPA 静态兜底 `resolve()` 后校验仍在前端目录内，越界 404
+- 全局异常处理器：日志记全栈，对客户端只返通用错误
+
+**部署与运行时**
+
+- Dockerfile 非 root 运行（appuser）
+- docker-compose 所有中间件端口绑 `127.0.0.1`，不暴露公网
+- 数据库 / 对象存储凭据强制从 `.env` 注入，无默认弱口令
+- 脚本与评测代码不硬编码密码，统一读环境变量
+- 编码前安全检查清单见 `docs/SECURITY_INPUT_CHECKLIST.md`
 
 ### 用户级 MCP 热重载
 
@@ -792,12 +799,12 @@ pytest ../tests/ -v                       # E14 CI 回归（73 用例，含 test
 
 ## Docker 部署
 
-### 运维与可观测性（2026-09-22）
+### 运维与可观测性
 
-- **request_id 请求链路追踪**（`babc2e5`）：`middleware/request_context.py` 用 contextvar 注入 `request_id`（UUID4），每个请求生成后：① 写进 loguru 日志（后续所有该请求的日志自动带上）② 响应头 `X-Request-ID` 回传前端；出问题时凭一个 ID 串起全链路日志
-- **日志轮转**：loguru 按 10MB 单文件轮转，保留 7 天，gzip 压缩历史文件，避免容器日志无限增长
-- **一键回滚脚本**（`ce73283`，`deploy/rollback.sh`）：传 short_sha 切到指定镜像版本并 `docker compose up -d` 重启，CI/CD 出问题时一条命令回退
-- **PG 每日备份**（`ce73283`，`deploy/backup_pg.sh`）：`pg_dump` 每日备份，保留 7 天，备份前检查磁盘水位（低水位告警不执行备份）
+- **请求链路追踪**：每个请求生成 UUID4 `request_id`，通过 contextvar 注入 loguru 日志，并以 `X-Request-ID` 响应头回传前端；线上排障时凭一个 ID 串起全链路日志
+- **日志轮转**：loguru 按 10MB 单文件轮转，保留 7 天并 gzip 压缩，避免容器日志无限增长
+- **一键回滚**：`deploy/rollback.sh` 传 short_sha 即可切到指定镜像版本并重启，CI/CD 出问题时一条命令回退
+- **数据库备份**：`deploy/backup_pg.sh` 每日 `pg_dump`，保留 7 天，备份前检查磁盘水位，水位不足告警跳过
 
 ### 一键启动全部服务
 
