@@ -259,6 +259,11 @@
                 });
                 html = tmp.innerHTML;
             }
+            // A9: XSS 防护——LLM/知识库输出经 marked 渲染后必须过 DOMPurify 再 v-html，
+            // 否则注入 <img src=x onerror=...> 可读 localStorage 里的 JWT token
+            if (typeof DOMPurify !== 'undefined') {
+                html = DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+            }
             return html;
         }
 
