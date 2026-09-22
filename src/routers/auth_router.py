@@ -6,7 +6,7 @@
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from loguru import logger
 
 from config import get_env_int
@@ -14,6 +14,7 @@ from constant.cache_constant import USER_TOKEN_KEY, USER_REFRESH_TOKEN_KEY
 from schemas.request_schemas.login_schema import LoginRequest, RegisterRequest, RecoverRequest
 from service.cache_service import cache_service
 from service.login_service import login_service
+from middleware.auth_rate_limit import check_auth_allowed, record_auth_failure, reset_auth_success, client_ip
 from utils.response_util import Response
 from utils.jwt_utils import (
     create_access_token,
@@ -30,14 +31,21 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES = get_env_int("JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
 
 
 @router.post("/api/login")
-def login(request_body: LoginRequest):
+def login(request_body: LoginRequest, request: Request):
     """用户登录：校验 PostgreSQL 用户表，返回 JWT token + 用户信息。"""
+    ip = client_ip(request)
     user_id = request_body.userId
+    # 认证端点独立限流（防爆破）：IP + userId 双维度，失败指数退避
+    allowed, retry = check_auth_allowed(ip, user_id)
+    if not allowed:
+        return Response.failed(f"尝试过于频繁，请 {retry} 秒后再试")
     password = request_body.password
     user_info = login_service.login(user_id, password)
     # login 返回 dict 才是成功：密码错误/用户不存在时返回的是字符串提示
     if not isinstance(user_info, dict):
+        record_auth_failure(ip, user_id)
         return Response.failed(user_info or "用户 ID 或密码错误")
+    reset_auth_success(ip, user_id)
     token = create_access_token(
         data={
             "sub": str(user_info["user_id"] + ":" + user_info["username"]),
@@ -76,16 +84,24 @@ def register(request_body: RegisterRequest):
 
 
 @router.post("/api/recover")
-def recover(request_body: RecoverRequest):
+def recover(request_body: RecoverRequest, request: Request):
     """密码找回/重置：根据 user_id 设置新密码。"""
+    ip = client_ip(request)
     user_id = request_body.userId
+    # 重置凭据端点同样限流（防爆破/撞库）
+    allowed, retry = check_auth_allowed(ip, user_id)
+    if not allowed:
+        return Response.failed(f"尝试过于频繁，请 {retry} 秒后再试")
     new_password = request_body.newPassword
     response = login_service.recover(user_id, new_password)
     if not response:
+        record_auth_failure(ip, user_id)
         return Response.failed("注册失败")
     elif response == 1:
+        reset_auth_success(ip, user_id)
         return Response.success()
     else:
+        record_auth_failure(ip, user_id)
         return Response.failed(response)
 
 
