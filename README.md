@@ -653,7 +653,7 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 
 **降级策略**：Redis 不可用（或 `CACHE_LAYER_ENABLED=0`）时静默降级为不缓存，不阻塞检索主链路。
 ⚠ 部署注意：Windows 下 Redis 必须用 `127.0.0.1` 而非 `localhost`——`localhost` 会解析到 IPv6 `::1`，
-而 redis-stack 只监听 IPv4，报错 10054 后 **BM25 会静默退化为空召回**（不抛异常，极难发现）。
+而 redis-stack 只监听 IPv4，报错 10054 后 **BM25 会静默退化为空召回**（不抛异常，极难发现）。**2026-09-22 修复（19da33f）**：入库脚本 ingest_knowledge.py Step4 原本只 HSET 写内容、漏调 cache_service.create_sparse_index()，导致 RediSearch 上根本没有 kb_bm25 索引、FT.SEARCH 恒空；补一行幂等建索引后稀疏路从恒空恢复为正常召回，双路互补真实成立。
 
 ### 流式输出与工具调用状态
 
@@ -687,7 +687,19 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 - MCP 配置文件路径白名单校验（仅允许项目 resources/、config/ 和用户主目录），防止写入系统敏感目录
 - 会话归属校验：非本人 thread_id 返回 403，防止会话劫持
 - 全局异常处理器：记录完整堆栈到日志，返回给客户端的信息不含堆栈细节
-- MCP 文件系统工具通过 allowed directories 限制访问范围
+- MCP 文件系统工具通过 allowed directories 限制访问范围（ead_local_file 做 Path.resolve() 前缀校验，防 ../ 目录穿越）
+
+### 安全加固（2026-09-22 一批 A1–A11）
+
+- **认证端点独立限流**：/api/login、/api/recover/* 按 IP + userId 双维度计数，失败累加 + 指数退避，成功清零；与聊天主限流互不影响
+- **密码找回改一次性验证码**：原"仅凭 user_id + 新密码"可接管账号；现 Redis TTL + GETDEL 用后即焚，60s 倒计时，SMTP 授权码从 env 读取不进仓库
+- **会话归属 fail-closed**：owner 为 None 不再短路放行，归属不明一律 403；抽 erify_thread_access 统一 6 处调用
+- **refresh token 加固**：加 jti + iat 轮换，续签继承绝对过期时间**不滑动**（原实现可无限续签）
+- **SSE 内网校验防绕过**：MCP SSE 内网白名单从字符串匹配改为 ipaddress 解析 + getaddrinfo，封堵 127.1、[::1]、十进制/八进制 IP 绕过，解析失败 fail-closed
+- **前端 XSS 消毒**：LLM 输出渲染前过 DOMPurify，封堵 v-html 偷 localStorage JWT
+- **限流键改 JWT sub**：Redis 计数键先验签再取 sub，伪造 token 不能换桶；Dockerfile 改非 root 运行（appuser + chown 工作目录与 uv 工具目录）
+- **MCP stdio 危险 flag 拦截**：显式拒绝 -c / -e / -m / --require 等直接执行代码的参数，封堵包名白名单绕过
+- **输入安全 checklist**：docs/SECURITY_INPUT_CHECKLIST.md 沉淀 A1–A11，编码前逐条过
 
 ### 用户级 MCP 热重载
 

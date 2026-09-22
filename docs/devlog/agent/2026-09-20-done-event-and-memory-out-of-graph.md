@@ -37,4 +37,4 @@ agent（SSE 流协议 / 记忆时机改造）
 
 ## 待办
 - 运行时冒烟（工具回环对话 + 刷新续接）待用户起服后补验；
-- 文档撰写 Agent：README/项目详解中"图流程（memory_node 在图内）"与"SSE 事件类型"需同步（docs_sync: required）。
+- 文档撰写 Agent：~~需同步~~ 已于 2026-09-21 同步完毕（memory_node 移出主图 / done 事件先行 / chibi 头像竖排）；本行仅为历史记录，不再待办。
