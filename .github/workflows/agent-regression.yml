@@ -5,22 +5,17 @@ name: Agent Regression Tests
 # 定位：
 #   - 纯函数/无外部依赖的确定性回归（路由、MCP 安全校验、工具兜底、
 #     记忆缓存 key、工具名解析、安全过滤）
-#   - 与主 CI/CD（acr-cicd.yml 部署链路）解耦，独立 workflow
+#   - 门禁：被 acr-cicd.yml 用 workflow_call 调用，作为部署前置 job；
+#     回归失败即 needs 不通过 → 不 build/不部署（阻断，不再旁路）
 # 明确排除：
 #   - RAGAS 五指标评测（ragas_eval.py）——耗时且依赖 LLM 评分，只做线下评估
 #   - 依赖 Redis/Postgres/LLM/向量库的离线白盒评测（eval_*.py）——本地评估
-# 触发：main 分支 push 或手动
+# 触发：被部署链 workflow_call 调用（门禁），或手动 workflow_dispatch
 # ============================================================
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - '.github/workflows/agent-regression.yml'
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   regression:
