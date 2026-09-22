@@ -816,6 +816,11 @@
                                 <div class="form-error">{{ errors.userId }}</div>
                             </div>
                             <div class="form-group">
+                                <label class="form-label">邮箱</label>
+                                <input v-model="form.email" type="email" class="form-input" placeholder="用于找回密码" maxlength="128">
+                                <div class="form-error">{{ errors.email }}</div>
+                            </div>
+                            <div class="form-group">
                                 <label class="form-label">密码</label>
                                 <input v-model="form.password" type="password" class="form-input" placeholder="设置密码">
                                 <div class="form-error">{{ errors.password }}</div>
@@ -839,8 +844,8 @@
             `,
             data() {
                 return {
-                    form: { userId: '', password: '', confirmPassword: '', name: '' },
-                    errors: { userId: '', password: '', confirmPassword: '', name: '' },
+                    form: { userId: '', email: '', password: '', confirmPassword: '', name: '' },
+                    errors: { userId: '', email: '', password: '', confirmPassword: '', name: '' },
                     formMsg: '',
                     isSubmitting: false
                 };
@@ -848,9 +853,13 @@
             methods: {
                 validate() {
                     let valid = true;
-                    this.errors = { userId: '', password: '', confirmPassword: '', name: '' };
+                    this.errors = { userId: '', email: '', password: '', confirmPassword: '', name: '' };
                     if (!this.form.userId.trim()) {
                         this.errors.userId = '请输入用户 ID';
+                        valid = false;
+                    }
+                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.form.email.trim())) {
+                        this.errors.email = '请输入正确的邮箱格式';
                         valid = false;
                     }
                     if (this.form.password.length < 4) {
@@ -880,6 +889,7 @@
                             body: JSON.stringify({
                                 userName: this.form.name.trim(),
                                 userId: this.form.userId.trim(),
+                                email: this.form.email.trim(),
                                 password: this.form.password
                             })
                         });
@@ -907,19 +917,19 @@
                     <div class="auth-card tag-violet">
                         <div class="auth-tag">03 / RESET</div>
                         <h1>找回密码</h1>
-                        <p class="auth-subtitle">输入用户 ID 获取验证码，再设置新密码</p>
+                        <p class="auth-subtitle">输入邮箱获取验证码，再设置新密码</p>
                         <form @submit.prevent="handleRecover">
                             <div class="form-group">
-                                <label class="form-label">用户 ID</label>
+                                <label class="form-label">邮箱</label>
                                 <div style="display:flex;gap:8px;">
-                                    <input v-model="form.userId" type="text" class="form-input" placeholder="请输入用户 ID" style="flex:1;">
+                                    <input v-model="form.email" type="email" class="form-input" placeholder="请输入注册邮箱" style="flex:1;">
                                     <button type="button" class="btn btn-ghost" @click="sendCode" :disabled="isSending || countdown > 0" style="white-space:nowrap;">
                                         <span v-if="countdown > 0">{{ countdown }}s</span>
                                         <span v-else-if="isSending">发送中...</span>
                                         <span v-else>获取验证码</span>
                                     </button>
                                 </div>
-                                <div class="form-error">{{ errors.userId }}</div>
+                                <div class="form-error">{{ errors.email }}</div>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">验证码</label>
@@ -945,8 +955,8 @@
             `,
             data() {
                 return {
-                    form: { userId: '', code: '', newPassword: '' },
-                    errors: { userId: '', code: '', newPassword: '' },
+                    form: { email: '', code: '', newPassword: '' },
+                    errors: { email: '', code: '', newPassword: '' },
                     formMsg: '',
                     isSubmitting: false,
                     isSending: false,
@@ -969,9 +979,9 @@
                     }, 1000);
                 },
                 async sendCode() {
-                    this.errors = { userId: '', code: '', newPassword: '' };
-                    if (!this.form.userId.trim()) {
-                        this.errors.userId = '请先输入用户 ID';
+                    this.errors = { email: '', code: '', newPassword: '' };
+                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.form.email.trim())) {
+                        this.errors.email = '请输入正确的邮箱格式';
                         return;
                     }
                     this.isSending = true;
@@ -979,7 +989,7 @@
                         const res = await fetch(`${API_BASE}/api/recover/code`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ userId: this.form.userId.trim() })
+                            body: JSON.stringify({ email: this.form.email.trim() })
                         });
                         const { ok, message } = await parseApiResponse(res);
                         this.formMsg = message || (ok ? '验证码已发送' : '发送失败');
@@ -992,9 +1002,9 @@
                 },
                 validate() {
                     let valid = true;
-                    this.errors = { userId: '', code: '', newPassword: '' };
-                    if (!this.form.userId.trim()) {
-                        this.errors.userId = '请输入用户 ID';
+                    this.errors = { email: '', code: '', newPassword: '' };
+                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.form.email.trim())) {
+                        this.errors.email = '请输入正确的邮箱格式';
                         valid = false;
                     }
                     if (!/^\d{6}$/.test(this.form.code.trim())) {
@@ -1016,7 +1026,7 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                userId: this.form.userId.trim(),
+                                email: this.form.email.trim(),
                                 code: this.form.code.trim(),
                                 newPassword: this.form.newPassword
                             })

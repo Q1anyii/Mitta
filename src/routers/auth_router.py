@@ -77,7 +77,8 @@ def register(request_body: RegisterRequest):
     flag, response = login_service.register(
         username=request_body.userName,
         user_id=request_body.userId,
-        password=request_body.password
+        password=request_body.password,
+        email=request_body.email
     )
     if flag:
         return Response.success(response)
@@ -87,37 +88,48 @@ def register(request_body: RegisterRequest):
 
 @router.post("/api/recover/code")
 def recover_code(request_body: RecoverCodeRequest, request: Request):
-    """发送密码找回验证码：生成一次性验证码并存 Redis（TTL 5 分钟），
-    经邮件 service 发给用户。user_id 不存在也返回成功（防账号枚举）。"""
+    """发送密码找回验证码：按邮箱反查 user_id，查到才发码。
+
+    生成一次性验证码存 Redis（TTL 5 分钟），经邮件 service 发给用户。
+    邮箱不存在也返回成功（防账号枚举）。"""
     ip = client_ip(request)
-    user_id = request_body.userId
-    # 发码端点同样限流（防刷）
-    allowed, retry = check_auth_allowed(ip, user_id)
+    email = request_body.email
+    # 限流维度用 email（前端未传 userId，按 email 做桶键）
+    allowed, retry = check_auth_allowed(ip, email)
     if not allowed:
         return Response.failed(f"尝试过于频繁，请 {retry} 秒后再试")
-    code = f"{secrets.randbelow(1000000):06d}"
     r = cache_service.redis
-    # 一次性验证码：TTL 300s，重置成功即焚
-    r.setex(f"recover:code:{user_id}", 300, code)
-    send_recover_code(user_id, code)
+    # 按邮箱反查 user_id；查不到不发码，但对外仍返回成功（防枚举）
+    user_id = login_service.find_user_id_by_email(email)
+    if user_id:
+        code = f"{secrets.randbelow(1000000):06d}"
+        # 一次性验证码：TTL 300s，重置成功即焚
+        r.setex(f"recover:code:{user_id}", 300, code)
+        send_recover_code(email, code)
     return Response.success("验证码已发送，5 分钟内有效")
 
 
 @router.post("/api/recover")
 def recover(request_body: RecoverRequest, request: Request):
-    """密码重置：校验一次性验证码（用后即焚）后才改密码。"""
+    """密码重置：按邮箱反查 user_id，校验一次性验证码（用后即焚）后才改密码。"""
     ip = client_ip(request)
-    user_id = request_body.userId
+    email = request_body.email
     # 重置凭据端点同样限流（防爆破/撞库）
-    allowed, retry = check_auth_allowed(ip, user_id)
+    allowed, retry = check_auth_allowed(ip, email)
     if not allowed:
         return Response.failed(f"尝试过于频繁，请 {retry} 秒后再试")
+
+    # 按邮箱反查 user_id；查不到直接拒绝（对外不区分邮箱是否存在）
+    user_id = login_service.find_user_id_by_email(email)
+    if not user_id:
+        record_auth_failure(ip, email)
+        return Response.failed("验证码错误或已过期，请重新获取")
 
     # 一次性验证码校验：GETDEL 取出即焚，防止重放
     r = cache_service.redis
     stored = r.getdel(f"recover:code:{user_id}")
     if not stored or stored.decode() != request_body.code.strip():
-        record_auth_failure(ip, user_id)
+        record_auth_failure(ip, email)
         return Response.failed("验证码错误或已过期，请重新获取")
 
     new_password = request_body.newPassword
@@ -125,7 +137,7 @@ def recover(request_body: RecoverRequest, request: Request):
     if not response:
         return Response.failed("注册失败")
     elif response == 1:
-        reset_auth_success(ip, user_id)
+        reset_auth_success(ip, email)
         return Response.success()
     else:
         return Response.failed(response)

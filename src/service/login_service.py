@@ -62,6 +62,8 @@ class LoginService:
             """)
             # 迁移：旧表无 role 列时补充（ALTER ADD COLUMN IF NOT EXISTS 幂等，重复启动安全）
             conn.execute("ALTER TABLE userinfo ADD COLUMN IF NOT EXISTS role VARCHAR(32) DEFAULT '学员'")
+            # 迁移：旧表无 email 列时补充（邮箱为可选绑定，老用户允许 NULL）
+            conn.execute("ALTER TABLE userinfo ADD COLUMN IF NOT EXISTS email VARCHAR(128)")
             conn.commit()
         logger.info("userinfo 表已就绪（PostgreSQL）")
 
@@ -103,13 +105,21 @@ class LoginService:
             cur = conn.execute("SELECT * FROM userinfo WHERE user_id = %s", (user_id,))
             return cur.fetchone()
 
-    def register(self, username, user_id, password):
+    def find_user_id_by_email(self, email: str) -> Optional[str]:
+        """按邮箱反查 user_id。查不到返回 None（调用方用于防枚举）。"""
+        with self._pool.connection() as conn:
+            cur = conn.execute("SELECT user_id FROM userinfo WHERE email = %s LIMIT 1", (email,))
+            row = cur.fetchone()
+            return row["user_id"] if row else None
+
+    def register(self, username, user_id, password, email=None):
         """用户注册。
 
         Args:
             username: 用户名
             user_id: 用户 ID
             password: 明文密码（内部会 bcrypt 哈希）
+            email: 绑定邮箱（可选，老用户可不绑）
 
         Returns:
             tuple: (flag, response)，flag=True 表示成功
@@ -124,9 +134,9 @@ class LoginService:
                 password = get_password_hash(password)
                 # PG：id 由 BIGSERIAL 自动生成
                 success = conn.execute(
-                    "INSERT INTO userinfo (user_id, password, username, create_time, update_time) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    (user_id, password, username, now, now),
+                    "INSERT INTO userinfo (user_id, password, username, email, create_time, update_time) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (user_id, password, username, email, now, now),
                 )
                 flag = True
                 return flag, success.rowcount

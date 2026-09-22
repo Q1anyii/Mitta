@@ -12,7 +12,7 @@ from email.mime.text import MIMEText
 from loguru import logger
 
 
-def send_recover_code(user_id: str, code: str) -> None:
+def send_recover_code(email: str, code: str) -> None:
     """向用户发送密码找回验证码。
 
     优先走 SMTP（配置了 SMTP_HOST 时）；否则开发态打日志，便于联调。
@@ -21,27 +21,27 @@ def send_recover_code(user_id: str, code: str) -> None:
     smtp_host = os.getenv("SMTP_HOST", "").strip()
     if smtp_host:
         try:
-            _send_smtp(user_id, code, smtp_host)
+            _send_smtp(email, code, smtp_host)
             return
         except Exception as e:
             logger.error(f"SMTP 发送验证码失败，回退日志输出：{e}")
 
     # 开发态：验证码打日志（生产应配 SMTP_HOST 走真实邮件）
     logger.warning(
-        f"[开发态·未配 SMTP] 密码找回验证码 | user_id={user_id} | code={code}（5 分钟内有效，用后即焚）"
+        f"[开发态·未配 SMTP] 密码找回验证码 | email={email} | code={code}（5 分钟内有效，用后即焚）"
     )
 
 
-def _send_smtp(user_id: str, code: str, smtp_host: str) -> None:
+def _send_smtp(email: str, code: str, smtp_host: str) -> None:
     """通过 SMTP 发送验证码邮件。需在环境变量配置：
     SMTP_HOST / SMTP_PORT(默认465) / SMTP_USER / SMTP_PASS /
-    SMTP_FROM(默认=SMTP_USER) / SMTP_TO(user_id 即收件人邮箱)
+    SMTP_FROM(默认=SMTP_USER)
     """
     port = int(os.getenv("SMTP_PORT", "465"))
     user = os.getenv("SMTP_USER", "")
     password = os.getenv("SMTP_PASS", "")
     sender = os.getenv("SMTP_FROM", user)
-    receiver = user_id  # 本项目 user_id 即登录名/邮箱
+    receiver = email  # 直接用用户绑定的邮箱
 
     msg = MIMEText(
         f"您正在重置 Mitta 密码，验证码：{code}\n5 分钟内有效，仅限使用一次。"
