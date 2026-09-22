@@ -31,14 +31,12 @@ class TestDynamicRouting:
     def test_route_retrieval_when_needed(self):
         """needs_retrieval=True 应路由到 retrieve_node。"""
         result = route({"input_str": "x", "needs_retrieval": True})
-        assert isinstance(result, list) and len(result) == 1
-        assert result[0].node == "retrieve_node"
+        assert result == "retrieve_node"
 
     def test_route_llm_when_not_needed(self):
         """needs_retrieval=False 应路由到 llm_node。"""
         result = route({"input_str": "x", "needs_retrieval": False})
-        assert isinstance(result, list) and len(result) == 1
-        assert result[0].node == "llm_node"
+        assert result == "llm_node"
 
     def test_route_after_llm_tool(self):
         """LLM 有 tool_calls 应路由到 tool_node。"""
