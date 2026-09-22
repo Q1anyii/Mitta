@@ -41,7 +41,8 @@ from init import embed_model, online_rerank
 # 语义缓存评测默认使用 redis-stack（RedisSearch）6379；
 # 生产 .env 的 REDIS_DB_URL 由 load_dotenv(override=True) 强制注入，无法用环境变量覆盖，
 # 因此这里直接构造 CacheService 实例并显式传入 URL。
-DEFAULT_REDIS_URL = "redis://:sorts_dev@localhost:6379"
+import os
+DEFAULT_REDIS_URL = os.getenv("REDIS_DB_URL", "redis://localhost:6379")
 
 
 def make_cache_service(redis_url: str) -> CacheService:

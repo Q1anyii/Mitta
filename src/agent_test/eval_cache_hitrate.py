@@ -60,7 +60,8 @@ from agent_test.report_path import resolve_report_path
 # 语义缓存评测默认使用本地 redis-stack（RedisSearch）；
 # 生产 .env 的 REDIS_DB_URL 由 load_dotenv(override=True) 强制注入且不可用，
 # 因此显式构造 CacheService 实例并传入 URL。
-DEFAULT_REDIS_URL = "redis://:sorts_dev@localhost:6379"
+import os
+DEFAULT_REDIS_URL = os.getenv("REDIS_DB_URL", "redis://localhost:6379")
 
 
 # ============================================================

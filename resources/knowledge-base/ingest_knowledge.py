@@ -11,6 +11,7 @@
 - 重复入库会更新已有文档（基于内容哈希去重）
 """
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -21,8 +22,8 @@ from vector.embedding import meta_to_dict
 from vector.vector_store import create_vector_store
 import redis as _redis
 
-# 注入含 RedisSearch 的 Redis（覆盖 .env 指向的无 RediSearch 端口）
-cache_service.db_url = "redis://:sorts_dev@localhost:6379"
+# Redis 连接：优先 .env/环境变量 REDIS_DB_URL，不硬编码凭据；--redis-url 可覆盖
+cache_service.db_url = os.getenv("REDIS_DB_URL", cache_service.db_url)
 cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
 cache_service.redis = _redis.Redis(
     host=cache_service.host, port=cache_service.port,

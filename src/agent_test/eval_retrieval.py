@@ -561,7 +561,7 @@ def main():
     import redis as _redis
     # 2026-09-19：用 127.0.0.1 而非 localhost —— localhost 在 Windows 上可能解析到 ::1，
     # redis-stack 只监听 IPv4，表现为 10054「远程主机强迫关闭连接」，BM25 整路静默降级为空。
-    cache_service.db_url = "redis://:sorts_dev@127.0.0.1:6379"
+    cache_service.db_url = os.getenv("REDIS_DB_URL", "redis://127.0.0.1:6379")
     cache_service.host, cache_service.port, cache_service.password = cache_service.parse_url(cache_service.db_url)
     cache_service.redis = _redis.Redis(
         host=cache_service.host, port=cache_service.port,
