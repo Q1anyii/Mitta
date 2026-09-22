@@ -224,10 +224,14 @@ def search_project_files(keyword: str, file_type: str = "") -> str:
 @mcp.tool()
 def read_local_file(relative_path: str, max_chars: int = 4000) -> str:
     """安全读取项目内文件：relative_path 为相对项目根目录的路径（如 README.md、src/main.py）。"""
-    target = (ALLOWED_ROOT / relative_path).resolve()
+    if Path(relative_path).is_absolute():
+        return "拒绝访问：不接受绝对路径"
     # 防目录穿越：解析后必须仍在项目根内
-    if not str(target).startswith(str(ALLOWED_ROOT.resolve())):
-        return "拒绝访问：路径超出项目根目录"
+    try:
+        target = (ALLOWED_ROOT / relative_path).resolve()
+        target.relative_to(ALLOWED_ROOT.resolve())
+    except (ValueError, OSError):
+        return "拒绝访问：路径非法或超出项目根目录"
     if not target.is_file():
         return f"文件不存在: {relative_path}"
     try:
