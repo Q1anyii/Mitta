@@ -10,28 +10,14 @@ from loguru import logger
 from graphs.state import OverAllState
 
 
-def route(state: OverAllState) -> list[Send]:
-    """classify_node 之后：需要检索才 Send 到 retrieve_node，否则直接 Send 到 llm_node。
-
-    Send 任务不会继承父 state，必须把节点所需的数据显式放进 payload。
-
-    Args:
-        state: 当前图状态
-
-    Returns:
-        [Send("retrieve_node", payload)] 或 [Send("llm_node", payload)]
+def route(state: OverAllState) -> str:
     """
-    payload = {
-        "input_str": state["input_str"],
-        "messages": state.get("messages", []),  # 历史对话（短期记忆）
-        # Send 任务不继承父 state，persona 必须显式传递：
-        # 否则 llm_node 里 state.get("persona") 为 None → 兜底 cappie，
-        # 手选 crazy/kind/manager 全部答成帽子米塔（H-20260919-09 根因）
-        "persona": state.get("persona"),
-    }
+    if else条件不必采用Send动态删除，但后续升级架构（Supervisor可重构为Send）
+
+    """
     if state.get("needs_retrieval"):
-        return [Send("retrieve_node", payload)]
-    return [Send("llm_node", payload)]
+        return "retrieve_node"
+    return "llm_node"
 
 
 def route_after_llm(state: OverAllState) -> str:

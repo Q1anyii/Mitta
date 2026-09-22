@@ -1,79 +1,79 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 330" width="1180" height="330" font-family="Arial, 'PingFang SC', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" font-family="Arial, 'PingFang SC', sans-serif">
   <defs>
     <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#8A8F98"/>
     </marker>
     <marker id="a3d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#B0B5BD"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#9C5BD0"/>
     </marker>
   </defs>
 
-  <!-- 主行水平 -->
+  <!-- 主行水平（上排） -->
   <g fill="none" stroke="#8A8F98" stroke-width="1.6" marker-end="url(#a3)">
-    <line x1="100" y1="108" x2="120" y2="108"/>
-    <line x1="260" y1="108" x2="305" y2="108"/>
-    <line x1="395" y1="108" x2="470" y2="108"/>
-    <line x1="670" y1="108" x2="700" y2="108"/>
-    <line x1="820" y1="108" x2="850" y2="108"/>
-    <line x1="970" y1="108" x2="1000" y2="108"/>
+    <line x1="100" y1="90" x2="120" y2="90"/>
+    <line x1="260" y1="90" x2="305" y2="90"/>
+    <line x1="395" y1="90" x2="470" y2="90"/>
+    <line x1="670" y1="90" x2="700" y2="90"/>
+    <line x1="820" y1="90" x2="850" y2="90"/>
+    <line x1="970" y1="90" x2="1000" y2="90"/>
   </g>
 
-  <!-- Yes 命中 -> output_node -->
-  <line x1="350" y1="146" x2="350" y2="220" stroke="#8A8F98" stroke-width="1.6" marker-end="url(#a3)"/>
-  <!-- output -> END -->
-  <line x1="405" y1="248" x2="435" y2="248" stroke="#8A8F98" stroke-width="1.6" marker-end="url(#a3)"/>
+  <!-- filter -> output_node（垂直下） -->
+  <line x1="1065" y1="118" x2="1065" y2="240" stroke="#8A8F98" stroke-width="1.6" marker-end="url(#a3)"/>
 
-  <!-- filter -> output 大回线（走最下层） -->
-  <path d="M1100,136 L1100,290 L350,290 L350,276" fill="none" stroke="#8A8F98" stroke-width="1.5" marker-end="url(#a3)"/>
+  <!-- Yes 命中：菱形底 -> 垂直下 -> 水平右 -> output_node -->
+  <path d="M350,128 L350,268 L950,268" fill="none" stroke="#8A8F98" stroke-width="1.6" marker-end="url(#a3)"/>
 
-  <!-- store_cache 旁路（紫色虚线，从 filter 底偏左） -->
-  <line x1="1030" y1="136" x2="1030" y2="220" stroke="#9C5BD0" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a3d)"/>
+  <!-- output_node -> END -->
+  <line x1="1080" y1="268" x2="1110" y2="268" stroke="#8A8F98" stroke-width="1.6" marker-end="url(#a3)"/>
+
+  <!-- store_cache 旁路：从 filter 底偏左 -> 垂直下 -> 水平左 -> store_cache -->
+  <path d="M1030,118 L1030,190 L815,190 L815,240" fill="none" stroke="#9C5BD0" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a3d)"/>
 
   <!-- 标签 -->
   <g font-size="11.5" fill="#6B7280">
-    <text x="432" y="100" text-anchor="middle">No 未命中</text>
-    <text x="358" y="185" text-anchor="start">Yes 命中</text>
-    <text x="1040" y="185" text-anchor="start" fill="#7A4BA8">旁路写缓存</text>
-    <text x="725" y="284" text-anchor="middle">过滤后文档 → output</text>
+    <text x="432" y="82" text-anchor="middle">No 未命中</text>
+    <text x="358" y="200" text-anchor="start">Yes 命中 → 直接返回</text>
+    <text x="900" y="184" text-anchor="middle" fill="#7A4BA8">旁路写缓存（异步，不阻塞）</text>
   </g>
 
   <!-- 上排节点 -->
-  <rect x="20" y="80" width="80" height="56" rx="16" fill="#E8F5E9" stroke="#4CAF50" stroke-width="1.6"/>
-  <text x="60" y="113" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">START</text>
+  <rect x="20" y="62" width="80" height="56" rx="16" fill="#E8F5E9" stroke="#4CAF50" stroke-width="1.6"/>
+  <text x="60" y="95" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">START</text>
 
-  <rect x="120" y="80" width="140" height="56" rx="10" fill="#F3E8FA" stroke="#9C5BD0" stroke-width="1.6"/>
-  <text x="190" y="99" font-size="13" font-weight="600" fill="#5B1E8E" text-anchor="middle">check_cache</text>
-  <text x="190" y="117" font-size="10.5" fill="#8A5BB8" text-anchor="middle">L3a 精确 → L3b 语义</text>
+  <rect x="120" y="62" width="140" height="56" rx="10" fill="#F3E8FA" stroke="#9C5BD0" stroke-width="1.6"/>
+  <text x="190" y="81" font-size="13" font-weight="600" fill="#5B1E8E" text-anchor="middle">check_cache</text>
+  <text x="190" y="99" font-size="10.5" fill="#8A5BB8" text-anchor="middle">L3a 精确 → L3b 语义</text>
 
-  <polygon points="350,70 395,108 350,146 305,108" fill="#FBF6DF" stroke="#E0B63C" stroke-width="1.6"/>
-  <text x="350" y="112" font-size="12.5" font-weight="600" fill="#7A5B00" text-anchor="middle">命中?</text>
+  <polygon points="350,52 395,90 350,128 305,90" fill="#FBF6DF" stroke="#E0B63C" stroke-width="1.6"/>
+  <text x="350" y="94" font-size="12.5" font-weight="600" fill="#7A5B00" text-anchor="middle">命中?</text>
 
-  <rect x="470" y="80" width="200" height="56" rx="10" fill="#E8EFFC" stroke="#5B8DEF" stroke-width="1.6"/>
-  <text x="570" y="96" font-size="12.5" font-weight="600" fill="#1A3C7E" text-anchor="middle">parallel_retrieve</text>
-  <text x="570" y="111" font-size="10" fill="#4A6DA8" text-anchor="middle">阶段一：rewrite ∥ dense(原) ∥ bm25</text>
-  <text x="570" y="125" font-size="10" fill="#4A6DA8" text-anchor="middle">阶段二：dense(主) ∥ dense(子查询…)</text>
+  <rect x="470" y="62" width="200" height="56" rx="10" fill="#E8EFFC" stroke="#5B8DEF" stroke-width="1.6"/>
+  <text x="570" y="78" font-size="12.5" font-weight="600" fill="#1A3C7E" text-anchor="middle">parallel_retrieve</text>
+  <text x="570" y="93" font-size="10" fill="#4A6DA8" text-anchor="middle">阶段一：rewrite ∥ dense(原) ∥ bm25</text>
+  <text x="570" y="107" font-size="10" fill="#4A6DA8" text-anchor="middle">阶段二：dense(主) ∥ dense(子查询…)</text>
 
-  <rect x="700" y="80" width="120" height="56" rx="10" fill="#E4F5EA" stroke="#3DAE5F" stroke-width="1.6"/>
-  <text x="760" y="103" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">retrieve</text>
-  <text x="760" y="121" font-size="10.5" fill="#3E8E5A" text-anchor="middle">RRF 融合 k=60</text>
+  <rect x="700" y="62" width="120" height="56" rx="10" fill="#E4F5EA" stroke="#3DAE5F" stroke-width="1.6"/>
+  <text x="760" y="85" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">retrieve</text>
+  <text x="760" y="103" font-size="10.5" fill="#3E8E5A" text-anchor="middle">RRF 融合 k=60</text>
 
-  <rect x="850" y="80" width="120" height="56" rx="10" fill="#E8EFFC" stroke="#5B8DEF" stroke-width="1.6"/>
-  <text x="910" y="103" font-size="13" font-weight="600" fill="#1A3C7E" text-anchor="middle">rerank</text>
-  <text x="910" y="121" font-size="10.5" fill="#4A6DA8" text-anchor="middle">pre_lex 去重 + 精排</text>
+  <rect x="850" y="62" width="120" height="56" rx="10" fill="#E8EFFC" stroke="#5B8DEF" stroke-width="1.6"/>
+  <text x="910" y="85" font-size="13" font-weight="600" fill="#1A3C7E" text-anchor="middle">rerank</text>
+  <text x="910" y="103" font-size="10.5" fill="#4A6DA8" text-anchor="middle">pre_lex 去重 + 精排</text>
 
-  <rect x="1000" y="80" width="130" height="56" rx="10" fill="#FBF6DF" stroke="#E0B63C" stroke-width="1.6"/>
-  <text x="1065" y="103" font-size="13" font-weight="600" fill="#7A5B00" text-anchor="middle">filter</text>
-  <text x="1065" y="121" font-size="10.5" fill="#A87E1E" text-anchor="middle">阈值 ≥ 0.15</text>
+  <rect x="1000" y="62" width="130" height="56" rx="10" fill="#FBF6DF" stroke="#E0B63C" stroke-width="1.6"/>
+  <text x="1065" y="85" font-size="13" font-weight="600" fill="#7A5B00" text-anchor="middle">filter</text>
+  <text x="1065" y="103" font-size="10.5" fill="#A87E1E" text-anchor="middle">阈值 ≥ 0.15</text>
 
-  <!-- 下排分支 -->
-  <rect x="295" y="220" width="110" height="56" rx="10" fill="#FCE4EC" stroke="#C62828" stroke-width="1.6"/>
-  <text x="350" y="243" font-size="13" font-weight="600" fill="#8E1B2E" text-anchor="middle">output_node</text>
-  <text x="350" y="261" font-size="10.5" fill="#B85A6E" text-anchor="middle">返回检索文档</text>
+  <!-- 下排：store_cache 旁路 + output_node + END -->
+  <rect x="750" y="240" width="130" height="56" rx="10" fill="#F3E8FA" stroke="#9C5BD0" stroke-width="1.6" stroke-dasharray="4 3"/>
+  <text x="815" y="263" font-size="13" font-weight="600" fill="#5B1E8E" text-anchor="middle">store_cache</text>
+  <text x="815" y="281" font-size="10.5" fill="#8A5BB8" text-anchor="middle">L3a + L3b 双写</text>
 
-  <rect x="435" y="220" width="80" height="56" rx="16" fill="#E8F5E9" stroke="#4CAF50" stroke-width="1.6"/>
-  <text x="475" y="253" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">END</text>
+  <rect x="950" y="240" width="130" height="56" rx="10" fill="#FCE4EC" stroke="#C62828" stroke-width="1.6"/>
+  <text x="1015" y="263" font-size="13" font-weight="600" fill="#8E1B2E" text-anchor="middle">output_node</text>
+  <text x="1015" y="281" font-size="10.5" fill="#B85A6E" text-anchor="middle">返回检索文档</text>
 
-  <rect x="995" y="220" width="130" height="56" rx="10" fill="#F3E8FA" stroke="#9C5BD0" stroke-width="1.6"/>
-  <text x="1060" y="243" font-size="13" font-weight="600" fill="#5B1E8E" text-anchor="middle">store_cache</text>
-  <text x="1060" y="261" font-size="10.5" fill="#8A5BB8" text-anchor="middle">L3a + L3b 双写</text>
+  <rect x="1110" y="240" width="80" height="56" rx="16" fill="#E8F5E9" stroke="#4CAF50" stroke-width="1.6"/>
+  <text x="1150" y="273" font-size="13" font-weight="600" fill="#1B5E20" text-anchor="middle">END</text>
 </svg>
