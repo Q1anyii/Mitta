@@ -1,0 +1,353 @@
+{
+  "config": {
+    "limit": 28,
+    "n_results": 20,
+    "filter_threshold": 0.15,
+    "judge": "deepseek-chat"
+  },
+  "summary": {
+    "context_precision": 0.6304,
+    "context_recall": 0.6154,
+    "faithfulness": 0.9411,
+    "answer_relevancy": 0.9875,
+    "answer_correctness": 0.6518
+  },
+  "rows": [
+    {
+      "question": "Python 中 TypedDict 和 Pydantic 如何做结构化数据校验？",
+      "gen_ms": 17883.8,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 0.75,
+        "faithfulness": 0.9,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.75
+      },
+      "answer": "TypedDict 和 Pydantic BaseModel 在结构化数据里的定位不同：`TypedDict` 主要用于固定结构字典的类型提示，运行时校验为“否”；`BaseModel` 用于自动校验类型和必填字段。[文档 1][文档 4][文档 5]\n\n### 1. TypedDict：声明结构，但不做运行时校验\n\n当函数参数或返回值是具有固定结构的字典时，使用 `TypedDict` 而非 `dict`，可以提升可读性和 IDE 补全。[文档 1]\n\n```python\nfrom typing import TypedDict, List, Dict, Any, Optional\n\nclass RAGState(TypedDict):\n    question: str\n    history: List[Dict[str, str]]\n    rewritten_queries: List[str]\n    merged_docs: List[Any]  # Document 类型\n    reranked_docs: List[Any]\n    cache_hit: Optio"
+    },
+    {
+      "question": "asyncio.to_thread 和 ThreadPoolExecutor 分别适用于什么场景？",
+      "gen_ms": 13376.8,
+      "scores": {
+        "context_precision": 0.5,
+        "context_recall": 0.8,
+        "faithfulness": 0.95,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.75
+      },
+      "answer": "- **asyncio.to_thread 适用场景**：异步函数中调用阻塞 IO（如文件读写、同步 HTTP 请求）时，可用 `asyncio.to_thread` 放入线程池，避免阻塞事件循环 [文档1]。在异步 FastAPI 中调用同步 LangGraph `stream` 会阻塞事件循环，解决方式之一也是用 `asyncio.to_thread` 托管 [文档7]；同步调用也可用 `asyncio.to_thread` 托管 [文档5]。但同步生成器无法直接用 `to_thread`，需要用队列处理 [文档3]。\n\n- **ThreadPoolExecutor 适用场景**：CPU 密集或 IO 密集的独立任务可用线程池并行执行 [文档1]。典型示例是并行检索：用 `ThreadPoolExecutor` 和 `ex.map` 并行执行多个 `query` [文档1][文档2][文档6]。  \n  但资料同时提醒：Python GIL 限制下，线程池适用于 IO 密集任务（如 HTTP 请求、数据库查询），CPU 密集任务应用多进程 [文档1][文档2]。\n\n- **选择上*"
+    },
+    {
+      "question": "如何设计自定义异常类和优雅降级策略？",
+      "gen_ms": 15807.0,
+      "scores": {
+        "context_precision": 0.9,
+        "context_recall": 0.5,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.6
+      },
+      "answer": "可以按以下要点设计：\n\n**一、自定义异常类**\n1. 业务相关错误应定义自定义异常，而非通用 `Exception`。[文档 1]\n2. 例如配置错误可定义 `ConfigError`，用于缺少必填环境变量或值格式错误时抛出。[文档 1]\n3. 设计前要划清边界：预期内的异常用返回值，未预期的异常才抛异常。[文档 2]\n4. 全局异常处理器是最后一道防线，不是唯一防线；业务层应处理预期内错误，全局处理器只处理未预期的系统错误。[文档 2]\n5. 不要过度设计：小项目不需要复杂自定义异常体系和错误码系统；用 FastAPI 的 `HTTPException` + 全局处理器 + 日志，就能覆盖 90% 场景，等项目变大再逐步完善。[文档 2]\n\n**二、优雅降级策略**\n1. 非核心功能失败时，应降级而非中断主流程。[文档 1]\n2. 原则：核心功能失败 → 抛出异常，快速失败；辅助功能失败 → 记录日志，降级处理；永远不要用 `except: pass` 吞掉异常。[文档 1]\n3. 示例：获取用户自定义 system prompt 失败时，记录 `warning`，降级使用基础 p"
+    },
+    {
+      "question": "FastAPI 的 lifespan 生命周期中应该初始化哪些资源？",
+      "gen_ms": 11790.2,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 0.5,
+        "faithfulness": 0.95,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.55
+      },
+      "answer": "在 FastAPI 的 `lifespan` 中，应统一管理资源初始化与释放，而不是在服务内部自动连接 [文档 8]。启动阶段通常按依赖顺序初始化以下资源：\n\n1. **配置校验**：先执行 `validate_config()`，配置缺失则直接报错，遵循快速失败原则 [文档 1][文档 3][文档 5]。\n2. **各服务资源**：按依赖顺序 `open()`，包括 `chat_service.open(mcp_tools)`、`login_service.open()`、`cache_service.open()`、`user_profile_service.open()`、`file_upload_service.open()` [文档 3]；示例中也包含 `chat_service.open()` 与 `cache_service.open()` [文档 1][文档 2][文档 7]。\n3. **数据库连接**：数据库连接应在 `lifespan` 中管理 [文档 1]；资料涉及 `chat_service` 使用 PostgreSQL Checkpointer、`login_"
+    },
+    {
+      "question": "如何用 Depends 实现 JWT 认证和资源归属校验？",
+      "gen_ms": 19385.3,
+      "scores": {
+        "context_precision": 0.9,
+        "context_recall": 0.75,
+        "faithfulness": 0.9,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.65
+      },
+      "answer": "用 `Depends` 的实现可以分成两层：**JWT 认证依赖**负责“你是谁”，**资源归属校验依赖/业务校验**负责“你能不能操作这个资源”。\n\n### 1. JWT 认证：用 `Depends(get_current_user)`\n\n在路由参数中写：\n\n```python\nfrom fastapi import Depends\nfrom utils.jwt_utils import get_current_user, TokenData\n\n@app.post(\"/api/chat/\")\ndef chat(request_body: ChatRequest, current_user: TokenData = Depends(get_current_user)):\n    # current_user 已包含 user_id, username, role\n    ...\n```\n\n`current_user` 已包含 `user_id`、`username`、`role` [文档 1]。API 层也是通过 `Depends(get_current_user)` 解析 JWT ["
+    },
+    {
+      "question": "FastAPI 中间件如何实现请求限流？",
+      "gen_ms": 11863.5,
+      "scores": {
+        "context_precision": 0.5,
+        "context_recall": 0.3,
+        "faithfulness": 0.6,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.6
+      },
+      "answer": "在 FastAPI 中，可以用中间件实现请求限流：中间件适合处理限流、日志、CORS、请求 ID 等全局生效的横切关注点 [文档 1]。接入方式是导入并注册 `RateLimitMiddleware`：\n\n```python\nfrom middleware.rate_limit_middleware import RateLimitMiddleware\napp.add_middleware(RateLimitMiddleware)\n```\n\n[文档 1][文档 3]\n\n限流策略上，可以对 `/api/chat/` 等消耗 LLM 配额的接口限流，按 `user_id` 或 IP 计数，并在时间窗口内超过限制时返回 `429` [文档 3]。\n\nRedis 限流实现资料中给出如下示例：\n\n```python\ndef is_rate_limited(self, key: str, limit: int = 10, window: int = 60) -> bool:\n    \"\"\"滑动窗口限流。\"\"\"\n    count = self.redis.incr(key)\n    if coun"
+    },
+    {
+      "question": "LangGraph 中 StateGraph、节点和条件边的关系是什么？",
+      "gen_ms": 10775.8,
+      "scores": {
+        "context_precision": 0.8,
+        "context_recall": 0.83,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.8
+      },
+      "answer": "在 LangGraph 里，三者的关系可以概括为：**StateGraph 是承载图的结构，节点是执行函数，边负责状态流转；条件边是边的一种，它根据状态动态决定下一个节点。**\n\n- **StateGraph 是核心状态图**：节点是函数，边是状态流转，状态在节点间传递和累积。[文档 1]\n- 在 StateGraph 中，可以用 `StateGraph(state_schema=RAGState)` 构建图，并通过 `add_node` 添加节点。[文档 3][文档 7]\n- **节点是普通函数**：节点接收状态，返回需要更新的状态字段；状态是累积的，节点返回的 dict 会合并到状态中，通常只返回需要更新的部分状态。[文档 7]\n- **边连接节点并决定流转**：普通边用于固定流转，例如 `START -> check_cache`、`rewrite -> retrieve`、`retrieve -> rerank`、`output_node -> END`。[文档 5]\n- **条件边也是边的一种**：条件边根据状态动态决定下一个节点。例如 `check_cache` 根据 `s"
+    },
+    {
+      "question": "LangGraph 的 Send 扇出机制如何实现并行工具调用？",
+      "gen_ms": 3700.9,
+      "scores": {
+        "context_precision": 0.1,
+        "context_recall": 0.15,
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.8,
+        "answer_correctness": 0.2
+      },
+      "answer": "根据现有资料，只能确认：\n\n- LangGraph 中“扇出（Send）”用于并行执行多个节点实例 [文档 1]。\n- 使用 Send 时需要从 `langgraph.types` 引入：`from langgraph.types import Send` [文档 1]。\n\n但关于 **Send 扇出机制具体如何实现并行工具调用**，例如如何为每个工具调用生成 Send、如何并行调度工具节点、如何汇总结果等，资料中未展开说明，因此这部分 **知识库暂未覆盖**。\n\n另外，文档 2 提到“函数调用”机制可用于 Agent 通过工具调用其他 Agent，但未与 LangGraph 的 Send 扇出机制关联说明 [文档 2]。"
+    },
+    {
+      "question": "如何用 LangGraph 构建一个完整的检索增强对话图？",
+      "gen_ms": 18194.1,
+      "scores": {
+        "context_precision": 0.85,
+        "context_recall": 0.7,
+        "faithfulness": 0.9,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.75
+      },
+      "answer": "可以按“主图骨架 → 节点职责 → 边与路由 → 持久化 → 分层组织”来构建一个完整的检索增强对话图。\n\n### 1. 主图骨架\n用 LangGraph 的 `StateGraph` 实现 Agent 主图，并定义五个节点，通过条件边编排 [文档1]：\n\n```python\nbuilder = StateGraph(state_schema=RAGState)\nbuilder.add_node(\"intent_router\", route_intent)   # 意图路由 + 人格分类\nbuilder.add_node(\"retrieval\", retrieval_subgraph) # RAG 检索子图（改写/召回/重排）\nbuilder.add_node(\"generator\", generate_answer)    # 生成节点（含工具装配）\nbuilder.add_node(\"memory\", update_memory)         # 记忆读写（fire-and-forget）\nbuilder.add_node(\"output\", stream_output)   "
+    },
+    {
+      "question": "RAG 系统中文档切分策略有哪些，如何选择？",
+      "gen_ms": 11487.2,
+      "scores": {
+        "context_precision": 0.35,
+        "context_recall": 0.5,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.5
+      },
+      "answer": "根据检索资料，RAG 系统中文档切分相关策略包括：\n\n- **Markdown 按标题切分，保留语义边界**。[文档 3]\n- **语义切分**：按段落/句子语义边界切分；资料提到当前按字符切分时，可以改用这种更智能的切分方式。[文档 2]\n- **字符切分作为兜底**：使用 `RecursiveCharacterTextSplitter`，示例参数为 `chunk_size=500`、`chunk_overlap=50`；字符切分用于确保单块不超过模型上下文。[文档 3]\n- **保留上下文重叠**：通过 `overlap` 保留上下文，避免关键信息被切断。[文档 3]\n- **长文档摘要**：长文档先生成摘要，检索时先匹配摘要再定位原文。[文档 2]（这属于文档处理辅助策略）\n\n如何选择：\n\n- 优先保留语义边界：Markdown 按标题切分；更智能的方式是按段落/句子语义边界切分。[文档 2][文档 3]\n- 字符切分作为兜底，确保单块不超过模型上下文。[文档 3]\n- 设置 `overlap` 保留上下文，避免关键信息被切断。[文档 3]\n- 切分不合理会影响 RAG 结果，因"
+    },
+    {
+      "question": "Query 改写为什么能提升检索效果，如何实现？",
+      "gen_ms": 17401.5,
+      "scores": {
+        "context_precision": 0.7,
+        "context_recall": 0.75,
+        "faithfulness": 0.8,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.85
+      },
+      "answer": "Query 改写能提升检索效果，核心在于它把“直接拿用户原话去检索”的缺陷转成结构化、多角度的检索表达。直接用用户问题检索常见问题包括口语化冗余、多轮对话中指代不明、单一视角、关键词缺失 [文档 1]。改写后生成主查询、2-3 个子查询和关键词，分别覆盖主要意图、补充视角和过滤/高亮线索，并通过多查询并行检索 + RRF 融合显著提升召回率 [文档 1][文档 5]。同时，Query 改写相比换嵌入模型、调阈值，成本低（一次 LLM 调用）且能显著提升召回率，被认为是性价比最高的优化，建议所有 RAG 系统都加上 [文档 3]。\n\n如何实现：\n\n- 用 LLM 将用户口语化问题改写为结构化查询，提升检索召回率 [文档 5]。`REWRITE_PROMPT` 要求根据用户问题和对话历史生成：主查询，即最能代表用户意图的检索词；子查询，即 2-3 个相关补充检索词；关键词，即 3-5 个核心关键词，并以 JSON 返回，键名为“主查询、子查询、关键词” [文档 5]。\n- 节点 `rewrite_query` 取 `state` 中的 `question` 和 `history`，拼接 `"
+    },
+    {
+      "question": "ChromaDB 如何初始化和批量入库文档？",
+      "gen_ms": 9765.8,
+      "scores": {
+        "context_precision": 0.6,
+        "context_recall": 0.75,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.75
+      },
+      "answer": "ChromaDB 的初始化和批量入库可参考资料中的实现：\n\n**初始化**\n1. 使用 `chromadb.PersistentClient` 创建持久化客户端，路径为 `../resources/chroma_db` [文档 1][文档 2]。\n2. 调用 `client.get_or_create_collection(...)` 获取或创建 collection，名称是 `mitta_ai_knowledge`，传入 `embedding_function`，并设置 `metadata={\"hnsw:space\": \"cosine\"}` 以使用余弦相似度 [文档 1][文档 2]。\n3. 嵌入函数可参考 `OpenAIEmbeddingFunction`，从环境变量读取 `SILICONFLOW_API_KEY` 和 `SILICONFLOW_BASE_URL`，模型使用 `BAAI/bge-m3` [文档 4]。入库和检索必须使用同一个嵌入模型，否则向量空间不一致、检索结果无效；建议使用全局单例 `embedding_function` [文档 6]。\n\n**批量入库**\n在 "
+    },
+    {
+      "question": "bge-m3 嵌入模型在 RAG 中的优势是什么？",
+      "gen_ms": 9355.5,
+      "scores": {
+        "context_precision": 0.3,
+        "context_recall": 0.8,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.85
+      },
+      "answer": "根据资料，bge-m3 嵌入模型在 RAG 中的优势/定位主要包括：\n\n- 在 RAG 的检索召回阶段，bge-m3 作为双编码器使用，目标是高召回率，从全库筛出 TOP_K；其速度较快，依赖向量索引，处理数据范围为全库 [文档 4][文档 8]。\n- bge-m3 支持多语言，覆盖中英等 100+ 语言 [文档 1][文档 2]。\n- bge-m3 支持长文本，最大 8192 tokens [文档 1][文档 2]。\n- bge-m3 支持稠密+稀疏+多向量统一表示 [文档 1][文档 2]。\n- bge-m3 开源免费，可通过 SiliconFlow 等平台 API 调用 [文档 1][文档 2]。\n- 调用方式上，可用 `OpenAIEmbeddings` 配置 `model=\"BAAI/bge-m3\"`，并通过 `SILICONFLOW_BASE_URL` 和 `SILICONFLOW_API_KEY` 调用 [文档 1][文档 2]。\n- 在 RAG 流程中，bge-m3 主要负责召回；重排序则由交叉编码器 `bge-reranker-v2-m3` 完成，用于对融合后的文档精"
+    },
+    {
+      "question": "多存储架构中 MySQL、PostgreSQL、Redis 各自承担什么角色？",
+      "gen_ms": 10745.5,
+      "scores": {
+        "context_precision": 0.6,
+        "context_recall": 0.83,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.83
+      },
+      "answer": "根据资料，多存储架构中三者按职责划分如下：\n\n| 存储 | 承担角色 |\n|---|---|\n| **MySQL** | 负责结构化业务数据，需要事务和复杂查询的数据 [文档 1]；具体包括用户信息、登录认证、文件上传、扩展配置 [文档 1]。文档 2 也将其用途列为用户信息、文件上传、扩展配置，原因是结构化业务数据、事务支持、团队熟悉 [文档 2]。 |\n| **PostgreSQL** | 负责 LangGraph Checkpointer 和 Store，即会话状态/长期记忆 [文档 1][文档 2]。选择原因是 LangGraph 生态/官方原生支持，且 JSONB 适合存储图状态 [文档 1][文档 2]。 |\n| **Redis** | 负责检索缓存、JWT 登录态、限流计数、会话临时数据 [文档 1]；也用于检索缓存、JWT 登录态、限流 [文档 2]。原因是高速缓存、临时状态、计数器 [文档 1]，以及高速内存存储、TTL 自动过期、原子操作 [文档 2]。 |\n\n总体原则是：不要用一种数据库解决所有问题，**MySQL 做业务数据，PostgreSQL 做图状态，Re"
+    },
+    {
+      "question": "用户表和用户扩展信息表为什么要分表设计？",
+      "gen_ms": 4117.5,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 0.35,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.4
+      },
+      "answer": "用户表和用户扩展信息表分表设计的原因，资料中明确提到的要点如下：\n\n- 用户表 `userInfo` 存放核心用户信息，如 `user_id`、`username`、`password`、`role`、`create_time`、`update_time` 等 [文档 1]。\n- 用户扩展信息表 `user_profile` 与 `userInfo` 按 1:1 关联，`user_id` 作为主键 [文档 2]。\n- 将大字段，如 `avatar`、`system_prompt`、`mcp_config`，单独存到扩展表，避免用户表过宽 [文档 2]。\n- `mcp_config` 使用 JSON 类型，便于支持灵活结构 [文档 2]。\n- `username` 在扩展表中冗余存储，用于避免查询个人信息时联表 [文档 2]。\n\n因此，分表设计的核心原因是：把核心用户信息与扩展信息、大字段分开存储，避免用户表过宽，同时通过 `user_id` 保持 1:1 关联 [文档 2]。其他原因知识库暂未覆盖。"
+    },
+    {
+      "question": "MySQL 连接池如何配置和管理？",
+      "gen_ms": 23837.2,
+      "scores": {
+        "context_precision": 0.5,
+        "context_recall": 1.0,
+        "faithfulness": 0.9,
+        "answer_relevancy": 0.95,
+        "answer_correctness": 0.9
+      },
+      "answer": "资料中与 MySQL 连接池直接相关的配置与管理要点如下：\n\n**配置**\n1. MySQL 连接池可用 `DBUtils.PooledDB`，或用 SQLAlchemy `create_engine(pool_size=5, max_overflow=10, pool_recycle=3600)` [文档 1]。\n2. 连接池关键参数可参考：`min_size` 为 2-5；`max_size` 为 CPU 核数 × 2-4，且不超过数据库 `max_connections` 的 70%；`max_idle` 为 30-300s；`timeout` 为 5-30s [文档 1]。\n3. MySQL 默认 `wait_timeout=28800`，即 8 小时，长时间空闲后连接会断开；应使用连接池，并配置 `pool_recycle` 小于 `wait_timeout` [文档 5]。池也要设 `max_idle < wait_timeout` [文档 1]。\n4. 解决 MySQL 8 小时超时问题可使用连接池，如 DBUtils、SQLAlchemy pool [文档 5]。\n\n*"
+    },
+    {
+      "question": "分层架构中各层的职责和依赖方向是什么？",
+      "gen_ms": 13907.2,
+      "scores": {
+        "context_precision": 0.7,
+        "context_recall": 0.9,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.75
+      },
+      "answer": "根据资料，分层架构中的职责和依赖方向如下：\n\n| 层级 | 职责 | 不做什么 |\n|------|------|----------|\n| API 层 | 路由定义、参数校验、依赖注入、响应封装 [文档 1][文档 2] | 不写业务逻辑 [文档 1][文档 2] |\n| 服务层 | 业务逻辑编排、事务管理、多数据源协作 [文档 1][文档 2] | 不直接处理 HTTP 请求/响应 [文档 1][文档 2] |\n| Graph 层 | LangGraph 状态图定义、节点逻辑 [文档 1][文档 2] | 不关心 HTTP 和数据库连接细节 [文档 1][文档 2] |\n| 数据层 | 数据库连接、CRUD 操作 [文档 1][文档 2] | 不写业务逻辑 [文档 1][文档 2] |\n| 工具层 | 通用工具函数（JWT、响应、文档处理） [文档 1][文档 2] | 不依赖业务层 [文档 1][文档 2] |\n\n依赖方向为：\n\n- API 层 → 服务层 → Graph 层 → 数据层 [文档 1]。\n- 依赖下行分别对应：API 层依赖注入、服务层单例服务、Graph 层状态"
+    },
+    {
+      "question": "服务层为什么要用单例模式，生命周期如何管理？",
+      "gen_ms": 11323.8,
+      "scores": {
+        "context_precision": 0.75,
+        "context_recall": 0.6,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.75
+      },
+      "answer": "服务层使用单例模式，主要是为了**全局复用**并**避免重复初始化连接**：每个服务在模块顶层创建单例，全局复用 [文档 2]；服务层对象在模块顶层创建单例，可以避免重复初始化连接 [文档 4]。例如 `user_profile_service = UserProfileService()`、`chat_service = ChatService()`，使用方直接导入该单例使用 [文档 1][文档 3]。\n\n生命周期管理上，服务不在内部自动连接，而是在 FastAPI `lifespan` 中统一 `open()` / `close()` [文档 1]。启动时按依赖顺序 `open`：先 `validate_config()`，然后依次 `chat_service.open(mcp_tools)`、`login_service.open()`、`cache_service.open()`、`user_profile_service.open()`、`file_upload_service.open()` [文档 3]。服务自身的 `open` 负责初始化，例如构建图、建立数据库连接；`"
+    },
+    {
+      "question": "上下文管理在 AI Agent 系统中如何实现？",
+      "gen_ms": 12808.1,
+      "scores": {
+        "context_precision": 0.35,
+        "context_recall": 0.35,
+        "faithfulness": 0.95,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.35
+      },
+      "answer": "在 AI Agent 系统中，上下文管理不是单一机制，而是围绕“上下文窗口有限”这一约束的组合策略 [文档 3]。依据资料，可归纳为：\n\n1. **窗口裁剪**：保留最近 N 轮，超长截断；Mitta 会保留多轮追问所需上下文 [文档 3]。  \n2. **摘要压缩**：把早期对话压缩为摘要，替代原文 [文档 3]。  \n3. **记忆外置**：长期信息进入记忆/知识库，按需召回，不全量放入上下文 [文档 3]。Agent 的记忆组件负责保存上下文与长期知识；Mitta 对应实现是双层记忆，即短期会话 + 长期用户画像 [文档 5]。  \n4. **工具结果截断**：工具返回的长文本先截断，例如截到 200 字，再进入上下文 [文档 3]。  \n5. **检索文档数量上限**：通过 `MAX_RETRIEVAL_DOCS=8` 限制进入上下文的检索文档数量，防止上下文爆炸 [文档 3]。  \n6. **用户上下文与安全控制**：把用户信息传入 Graph 时，要严格控制哪些字段可见；`password` 等敏感字段绝对不能注入，否则工具节点可能泄露。项目用 `CtxUser` data"
+    },
+    {
+      "question": "异常处理分层架构中全局异常和业务异常如何分工？",
+      "gen_ms": 17893.7,
+      "scores": {
+        "context_precision": 0.8,
+        "context_recall": 0.65,
+        "faithfulness": 0.9,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.7
+      },
+      "answer": "异常处理分层架构中，全局异常与业务异常的分工可以概括为：**业务层处理预期内错误，API 层全局处理器兜底未预期系统错误，并统一响应格式与日志。**\n\n1. **服务层：处理预期内业务错误，不把问题都推给全局处理器**  \n   - 对于预期内的业务错误（如密码错误、用户不存在），优先用返回值而非异常；用返回类型区分成功/失败，例如 `dict` 表示成功、`str` 表示失败 [文档 4]。  \n   - 业务层应该处理预期内的错误，全局处理器只处理未预期的系统错误 [文档 3]。  \n   - 对于需要跨层传递的业务错误，可定义自定义异常，例如 `ConfigError` [文档 4]。  \n   - 服务层还会涉及业务异常抛出（如 `ValueError`、自定义异常）、降级策略和事务回滚 [文档 1]。  \n   - 原则是：预期内的业务错误用返回值，不抛异常；未预期的系统错误抛异常，由全局处理器处理 [文档 4]。\n\n2. **API 层：全局异常处理器作为最后一道防线**  \n   - 全局异常处理器是最后一道防线，不是唯一的防线；不要把所有错误处理都推给全局处理器 [文档"
+    },
+    {
+      "question": "为什么业务错误不应该都抛异常，什么时候用返回值？",
+      "gen_ms": 15726.6,
+      "scores": {
+        "context_precision": 0.6,
+        "context_recall": 0.5,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.65
+      },
+      "answer": "**为什么业务错误不应该都抛异常**\n\n- 异常处理的核心是边界清晰：哪些是预期内的错误（用返回值），哪些是未预期的错误（抛异常），要在设计时就明确；边界模糊会导致代码里到处 `try-except`，既不优雅也不可靠 [文档 2]。\n- 全局异常处理器是最后一道防线，不是唯一的防线；不要把所有错误处理都推给全局处理器。业务层应该处理预期内的错误，全局处理器只处理未预期的系统错误 [文档 2]。\n\n**什么时候用返回值**\n\n- 预期内的业务错误用返回值，不抛异常，例如密码错误、用户不存在 [文档 1]。\n- 原则是：预期内的业务错误用返回值；未预期的系统错误抛异常，由全局处理器处理；用返回类型区分成功/失败，如 `dict` 表示成功，`str` 表示失败 [文档 1]。\n- 示例中，登录服务在用户不存在时返回字符串错误提示，密码错误时返回“用户 ID 或密码错误”，成功时返回 `dict`；API 层根据是否为 `dict` 判断成功或失败 [文档 1]。\n\n**仍使用异常/自定义异常的情况**\n\n- 对于需要跨层传递的业务错误，定义自定义异常 [文档 1]。\n- 业务相关的错误应"
+    },
+    {
+      "question": "JWT + Redis 双 Token 机制如何实现无感续签？",
+      "gen_ms": 16028.3,
+      "scores": {
+        "context_precision": 0.45,
+        "context_recall": 0.5,
+        "faithfulness": 0.9,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.5
+      },
+      "answer": "根据资料，JWT + Redis 双 Token 的无感续签，核心是“隐式 refresh token”：refresh token 只存 Redis、不下发前端，access token 过期时由后端自动续签，用户无感知 [文档 1]。\n\n**实现要点如下：**\n\n1. **双 Token 配置**\n   - Access Token：有效期 15 分钟，存储在前端 localStorage + Redis，用于 API 认证 [文档 1]。\n   - Refresh Token：有效期 30 天，仅 Redis，不下发前端，用于自动续签 access token [文档 1]。\n   - 本项目实现也是：access token 存 Redis（15 分钟），refresh token 存 Redis（30 天，不下发前端）[文档 3]。\n\n2. **Redis 的作用**\n   - JWT 本身无状态，签发后无法主动失效；Redis 存储可以支持主动登出、改密码后旧 token 失效、限流 [文档 1]。\n   - 隐式 refresh token 只存 Redis 不下发前端，"
+    },
+    {
+      "question": "密码为什么要用 bcrypt 哈希，如何防止彩虹表攻击？",
+      "gen_ms": 8943.5,
+      "scores": {
+        "context_precision": 0.5,
+        "context_recall": 0.35,
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.9,
+        "answer_correctness": 0.35
+      },
+      "answer": "根据检索资料，可以确认：\n\n- bcrypt 自动加盐，无需手动管理 salt [文档1][文档2]。\n- bcrypt 计算成本可调（默认 12 轮），抗暴力破解 [文档1][文档2]。\n- bcrypt 哈希结果包含算法、成本、salt，验证时会自动解析 [文档1][文档2]。\n- 代码中通过 `pwd_context.verify(plain_password, hashed_password)` 验证密码 [文档1][文档2]。\n\n关于“如何防止彩虹表攻击”：\n\n- 资料中未直接出现“彩虹表攻击”一词，也未展开说明其具体防护原理，因此该部分**知识库暂未覆盖**。\n- 资料能支撑的相关机制是：bcrypt 会自动加盐，无需手动管理 salt，并且哈希结果中包含 salt，验证时自动解析 [文档1][文档2]。  \n\n因此，依据资料，密码使用 bcrypt 哈希的原因主要是：自动加盐、成本可调抗暴力破解、哈希结果自包含算法/成本/salt [文档1][文档2]；但彩虹表攻击的专门防护原理，资料未直接说明。"
+    },
+    {
+      "question": "Vue 3 Composition API 中 ref 和 reactive 如何选择？",
+      "gen_ms": 10705.5,
+      "scores": {
+        "context_precision": 0.8,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 1.0
+      },
+      "answer": "在 Vue 3 Composition API 中，`ref` 和 `reactive` 可按以下原则选择：\n\n| 特性 | `ref` | `reactive` |\n|---|---|---|\n| 接受类型 | 任意类型，包括基本类型、对象、数组 [文档 1] | 仅对象/数组，不能是基本类型 [文档 1] |\n| 访问方式 | 必须用 `.value` [文档 1] | 直接访问属性 [文档 1] |\n| 解构后是否保持响应式 | 是（`ref.value` 不变） [文档 1] | 否（解构出来的是普通值） [文档 1] |\n| 整体替换 | `state.value = newObj` [文档 1] | 不能整体替换，会丢失响应式 [文档 1] |\n| 模板中使用 | 自动解包，不用 `.value` [文档 1] | 直接用 [文档 1] |\n\n**选择原则：**\n\n1. **基本类型一律用 `ref`**：例如 `const count = ref(0)`、`const inputText = ref('')`；`reactive` 不接受字符串/数字 [文档 1]。\n2."
+    },
+    {
+      "question": "前端如何用 Fetch + ReadableStream 接收 SSE 流式响应？",
+      "gen_ms": 21759.3,
+      "scores": {
+        "context_precision": 0.6,
+        "context_recall": 0.6,
+        "faithfulness": 0.7,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.85
+      },
+      "answer": "前端用 `fetch + ReadableStream` 接收 SSE 时，核心流程是：发 POST 请求拿到流式响应，再用 `response.body.getReader()` 循环读取，按 SSE 格式解析 `data:` 内容 [文档 3][文档 7]。\n\n```javascript\n// 1. 发起请求：/api/chat/ 返回 text/event-stream\n// signal 用于中断，body 传 query 和 thread_id\nconst abortController = new AbortController();\n\nconst response = await fetch('/api/chat/', {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'application/json',\n    'Authorization': `Bearer ${token}`\n  },\n  body: JSON.stringify({ query, thread_id }),\n  signal: abortC"
+    },
+    {
+      "question": "AI Agent 项目的目录结构应该如何设计？",
+      "gen_ms": 8239.6,
+      "scores": {
+        "context_precision": 1.0,
+        "context_recall": 0.33,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.33
+      },
+      "answer": "根据检索资料，AI Agent 项目可采用以 `AgentProject/` 为根目录、后端源码集中在 `src/` 下的结构 [文档 1]。资料中展示的目录结构如下 [文档 1]：\n\n```text\nAgentProject/\n├── src/                          # 后端源码\n│   ├── main.py                   # FastAPI 入口，路由定义\n│   ├── init.py                   # 全局初始化（模型、嵌入、重排、system prompt）\n│   ├── config.py                 # 配置管理（环境变量、校验、类型安全访问）\n│   ├── embedding.py              # 文档嵌入与向量库操作\n│   ├── constant/                 # 常量管理（按模块分类）\n│   │   ├── embedding_constants.py\n│   │   ├── retrieval_constants.py\n│   "
+    },
+    {
+      "question": "日志管理中如何区分业务日志和调试日志？",
+      "gen_ms": 5316.0,
+      "scores": {
+        "context_precision": 0.85,
+        "context_recall": 0.55,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.65
+      },
+      "answer": "日志管理中区分业务日志和调试日志，主要依据日志级别与使用场景：\n\n- 调试日志对应 **DEBUG** 级别，用于调试信息，开发时使用，例如记录查询参数：`logger.debug(\"查询参数: {}\", query)` [文档 1]。\n- 业务日志对应正常业务流程，可使用 **INFO** 级别记录，例如用户登录成功：`logger.info(\"用户登录成功 user_id={}\", user_id)` [文档 1]。\n- 操作成功也可用 **SUCCESS** 级别记录，例如资源初始化完成 [文档 1]。\n- 关键操作应记日志，包括登录、登出、数据修改、外部 API 调用等，这类更偏业务日志 [文档 1]。\n- 生产环境应控制日志量，避免 DEBUG 级别日志过多影响性能 [文档 1]。\n\n因此，按资料可理解为：**DEBUG 用于调试日志，INFO/SUCCESS 等用于正常业务流程和关键操作的业务日志** [文档 1]。"
+    },
+    {
+      "question": "代码规范中命名和注释有哪些最佳实践？",
+      "gen_ms": 9821.3,
+      "scores": {
+        "context_precision": 0.4,
+        "context_recall": 0.64,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "answer_correctness": 0.64
+      },
+      "answer": "根据检索资料，代码规范中命名和注释的最佳实践如下：\n\n**命名最佳实践**\n- 模块/文件：小写 + 下划线，如 `user_profile_service.py` [文档 2]。\n- 类：大驼峰，如 `UserProfileService`、`CtxUser` [文档 2]。\n- 函数/方法：小写 + 下划线，如 `get_user_profile()`、`hash_password()` [文档 2]。\n- 常量：全大写 + 下划线，如 `TOP_K`、`COLLECTION_NAME`、`JWT_SECRET_KEY` [文档 2]。\n- 变量：小写 + 下划线，如 `user_id`、`thread_id`、`is_loading` [文档 2]。\n- 私有方法：下划线前缀，如 `_get_conn()`、`_ensure_table()` [文档 2]。\n\n**注释最佳实践**\n- 函数使用 docstring 说明用途，并用 `Args` 描述参数、`Returns` 描述返回值。例如 `get_user_system_prompt` 的 docstring 说明“组装用户"
+    }
+  ]
+}

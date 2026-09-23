@@ -1,0 +1,359 @@
+{
+    "_meta":  {
+                  "name":  "question_pool_llm_judge",
+                  "purpose":  "对标 LLM-as-Judge 的评测集，29 条前端 QUESTION_POOL 问题",
+                  "judge_metrics":  [
+                                        "faithfulness（生成答案是否只依据检索到的 context，不编造）",
+                                        "answer_relevancy（生成答案是否切题，不答非所问）",
+                                        "context_precision（检索到的 context 中，有用的排在前面的比例）",
+                                        "context_recall（回答问题所需的要点，有多少被检索到了）"
+                                    ],
+                  "runtime_fields":  [
+                                         "contexts",
+                                         "answer"
+                                     ],
+                  "note":  "reference_answer 是人工写的要点，不是标准答案全文；LLM Judge 按 1-5 分打四个维度"
+              },
+    "dataset":  [
+                    {
+                        "question":  "Python 中 TypedDict 和 Pydantic 如何做结构化数据校验？",
+                        "reference_answer":  "TypedDict 是类型提示工具，运行时不做校验，只做静态类型检查；Pydantic 在运行时做类型校验、默认值、约束（min_length/gt 等），失败抛 ValidationError。简单数据模型用 TypedDict，需要运行时校验/解析输入用 Pydantic。",
+                        "key_points":  [
+                                           "TypedDict",
+                                           "Pydantic",
+                                           "运行时校验 vs 静态检查"
+                                       ],
+                        "category":  "python",
+                        "ground_truth":  "TypedDict 是类型提示工具，运行时不做校验，只做静态类型检查；Pydantic 在运行时做类型校验、默认值、约束（min_length/gt 等），失败抛 ValidationError。简单数据模型用 TypedDict，需要运行时校验/解析输入用 Pydantic。"
+                    },
+                    {
+                        "question":  "asyncio.to_thread 和 ThreadPoolExecutor 分别适用于什么场景？",
+                        "reference_answer":  "asyncio.to_thread 是 asyncio 生态的快捷方式，把同步阻塞函数丢到默认线程池，在协程里 await 用；ThreadPoolExecutor 是更底层的线程池，可控制 max_workers、提交多任务、获取 Future。IO 阻塞且在 async 代码里用 to_thread；需要并发控制/多任务编排用 ThreadPoolExecutor。",
+                        "key_points":  [
+                                           "asyncio.to_thread",
+                                           "ThreadPoolExecutor",
+                                           "IO 阻塞"
+                                       ],
+                        "category":  "python",
+                        "ground_truth":  "asyncio.to_thread 是 asyncio 生态的快捷方式，把同步阻塞函数丢到默认线程池，在协程里 await 用；ThreadPoolExecutor 是更底层的线程池，可控制 max_workers、提交多任务、获取 Future。IO 阻塞且在 async 代码里用 to_thread；需要并发控制/多任务编排用 ThreadPoolExecutor。"
+                    },
+                    {
+                        "question":  "如何设计自定义异常类和优雅降级策略？",
+                        "reference_answer":  "自定义异常继承 Exception，按领域分层（业务异常/系统异常），携带错误码和 message；全局异常处理器捕获后转成统一 JSON 响应。优雅降级：外部依赖失败时返回缓存/默认值/部分结果，而不是整个接口 500；关键路径要有 fallback。",
+                        "key_points":  [
+                                           "自定义异常",
+                                           "全局异常处理",
+                                           "优雅降级",
+                                           "fallback"
+                                       ],
+                        "category":  "python",
+                        "ground_truth":  "自定义异常继承 Exception，按领域分层（业务异常/系统异常），携带错误码和 message；全局异常处理器捕获后转成统一 JSON 响应。优雅降级：外部依赖失败时返回缓存/默认值/部分结果，而不是整个接口 500；关键路径要有 fallback。"
+                    },
+                    {
+                        "question":  "FastAPI 的 lifespan 生命周期中应该初始化哪些资源？",
+                        "reference_answer":  "lifespan 替代 startup/shutdown 事件，用 async context manager 语法。初始化：数据库连接池、Redis 客户端、向量库连接、MCP 工具、加载模型/embedding；关闭时释放连接池、关闭 HTTP 客户端、flush 缓存。避免在请求处理时才初始化（首请求慢）。",
+                        "key_points":  [
+                                           "lifespan",
+                                           "startup",
+                                           "连接池初始化",
+                                           "资源释放"
+                                       ],
+                        "category":  "fastapi",
+                        "ground_truth":  "lifespan 替代 startup/shutdown 事件，用 async context manager 语法。初始化：数据库连接池、Redis 客户端、向量库连接、MCP 工具、加载模型/embedding；关闭时释放连接池、关闭 HTTP 客户端、flush 缓存。避免在请求处理时才初始化（首请求慢）。"
+                    },
+                    {
+                        "question":  "如何用 Depends 实现 JWT 认证和资源归属校验？",
+                        "reference_answer":  "写 get_current_user 依赖：从 Authorization header 取 Bearer token，验签+解析 JWT，查 Redis 是否被登出，返回 TokenData（user_id）。资源归属校验再写 require_owner 依赖：查数据库确认资源的 user_id == current_user.user_id，否则 403。路由上 Depends 链式组合。",
+                        "key_points":  [
+                                           "Depends",
+                                           "JWT",
+                                           "get_current_user",
+                                           "资源归属",
+                                           "403"
+                                       ],
+                        "category":  "fastapi",
+                        "ground_truth":  "写 get_current_user 依赖：从 Authorization header 取 Bearer token，验签+解析 JWT，查 Redis 是否被登出，返回 TokenData（user_id）。资源归属校验再写 require_owner 依赖：查数据库确认资源的 user_id == current_user.user_id，否则 403。路由上 Depends 链式组合。"
+                    },
+                    {
+                        "question":  "FastAPI 中间件如何实现请求限流？",
+                        "reference_answer":  "用 @app.middleware(\u0027http\u0027) 装饰器，在请求前查 Redis 滑动窗口（ZSET score 为时间戳，移除过期的，统计当前窗口请求数）。超限返回 429。按 IP+用户ID 双维度限流。Redis 异常时降级到内存 deque 滑动窗口，保证限流不崩。",
+                        "key_points":  [
+                                           "中间件",
+                                           "限流",
+                                           "Redis ZSET",
+                                           "滑动窗口",
+                                           "429"
+                                       ],
+                        "category":  "fastapi",
+                        "ground_truth":  "用 @app.middleware(\u0027http\u0027) 装饰器，在请求前查 Redis 滑动窗口（ZSET score 为时间戳，移除过期的，统计当前窗口请求数）。超限返回 429。按 IP+用户ID 双维度限流。Redis 异常时降级到内存 deque 滑动窗口，保证限流不崩。"
+                    },
+                    {
+                        "question":  "LangGraph 中 StateGraph、节点和条件边的关系是什么？",
+                        "reference_answer":  "StateGraph 是状态机，State 是 TypedDict 定义全局状态结构；节点是普通函数/协程，接收 State 返回部分 State 更新；边是节点间的跳转（add_edge），条件边（add_conditional_edges）根据 State 值动态选下一个节点。编译后用 invoke/astream 运行。",
+                        "key_points":  [
+                                           "StateGraph",
+                                           "State",
+                                           "节点",
+                                           "条件边",
+                                           "编译"
+                                       ],
+                        "category":  "langgraph",
+                        "ground_truth":  "StateGraph 是状态机，State 是 TypedDict 定义全局状态结构；节点是普通函数/协程，接收 State 返回部分 State 更新；边是节点间的跳转（add_edge），条件边（add_conditional_edges）根据 State 值动态选下一个节点。编译后用 invoke/astream 运行。"
+                    },
+                    {
+                        "question":  "LangGraph 的 Send 扇出机制如何实现并行工具调用？",
+                        "reference_answer":  "Send(node_name, payload) 让同一个节点被并发调用多次，每次传入不同 payload。主节点用 Send 返回列表，LangGraph 并行执行所有 Send，结果通过 reducer（如 add_messages）合并回 State。用于并行检索多路/并行调多个工具。",
+                        "key_points":  [
+                                           "Send",
+                                           "扇出",
+                                           "并行",
+                                           "reducer"
+                                       ],
+                        "category":  "langgraph",
+                        "ground_truth":  "Send(node_name, payload) 让同一个节点被并发调用多次，每次传入不同 payload。主节点用 Send 返回列表，LangGraph 并行执行所有 Send，结果通过 reducer（如 add_messages）合并回 State。用于并行检索多路/并行调多个工具。"
+                    },
+                    {
+                        "question":  "如何用 LangGraph 构建一个完整的检索增强对话图？",
+                        "reference_answer":  "主图：classify_node 判断是否需要检索 → 需要则走 retrieve_graph（改写→召回→RRF→rerank→过滤）→ generate_node 用检索结果+历史消息生成答案；不需要检索直接 generate。checkpointer 用 PostgresSaver 持久化会话状态。",
+                        "key_points":  [
+                                           "意图分类",
+                                           "检索子图",
+                                           "generate",
+                                           "checkpointer"
+                                       ],
+                        "category":  "langgraph",
+                        "ground_truth":  "主图：classify_node 判断是否需要检索 → 需要则走 retrieve_graph（改写→召回→RRF→rerank→过滤）→ generate_node 用检索结果+历史消息生成答案；不需要检索直接 generate。checkpointer 用 PostgresSaver 持久化会话状态。"
+                    },
+                    {
+                        "question":  "RAG 系统中文档切分策略有哪些，如何选择？",
+                        "reference_answer":  "固定长度切分（chunk_size=800, overlap=100）适合通用文档；按标题/Markdown 结构切分保持语义完整；按段落/句子切分。选择：技术文档按 Markdown 标题树切；长通用文本用固定长度+overlap 防止上下文断裂；overlap 通常 10-20%。",
+                        "key_points":  [
+                                           "chunk_size",
+                                           "overlap",
+                                           "按标题切分",
+                                           "语义完整"
+                                       ],
+                        "category":  "rag",
+                        "ground_truth":  "固定长度切分（chunk_size=800, overlap=100）适合通用文档；按标题/Markdown 结构切分保持语义完整；按段落/句子切分。选择：技术文档按 Markdown 标题树切；长通用文本用固定长度+overlap 防止上下文断裂；overlap 通常 10-20%。"
+                    },
+                    {
+                        "question":  "Query 改写为什么能提升检索效果，如何实现？",
+                        "reference_answer":  "用户口语 query 与知识库书面术语差距大，直接向量召回不准。用 LLM 把口语 query 改写成多个书面查询/补充上下文（如指代消解、同义词扩展），多路召回后 RRF 融合。代价是延迟增加（一次 LLM 调用 ~1-2s）。",
+                        "key_points":  [
+                                           "query 改写",
+                                           "口语→书面",
+                                           "多路召回",
+                                           "RRF"
+                                       ],
+                        "category":  "rag",
+                        "ground_truth":  "用户口语 query 与知识库书面术语差距大，直接向量召回不准。用 LLM 把口语 query 改写成多个书面查询/补充上下文（如指代消解、同义词扩展），多路召回后 RRF 融合。代价是延迟增加（一次 LLM 调用 ~1-2s）。"
+                    },
+                    {
+                        "question":  "ChromaDB 如何初始化和批量入库文档？",
+                        "reference_answer":  "ChromaClient 连接（本地 persistent 或远程），get_or_create_collection(name, embedding_function)，add(ids, documents, metadatas) 批量插入。chunk 先生成 doc_id（内容 hash），upsert 去重。本项目用 Chroma 做向量库，Milvus 是备选。",
+                        "key_points":  [
+                                           "ChromaDB",
+                                           "collection",
+                                           "upsert",
+                                           "embedding_function"
+                                       ],
+                        "category":  "rag",
+                        "ground_truth":  "ChromaClient 连接（本地 persistent 或远程），get_or_create_collection(name, embedding_function)，add(ids, documents, metadatas) 批量插入。chunk 先生成 doc_id（内容 hash），upsert 去重。本项目用 Chroma 做向量库，Milvus 是备选。"
+                    },
+                    {
+                        "question":  "bge-m3 嵌入模型在 RAG 中的优势是什么？",
+                        "reference_answer":  "bge-m3 支持 8192 长文本（其他模型通常 512），中英双语好，同时输出稠密向量和稀疏向量（混合检索），通过 SiliconFlow API 调用免费。适合技术文档长 chunk 的 embedding。",
+                        "key_points":  [
+                                           "bge-m3",
+                                           "长文本",
+                                           "中英双语",
+                                           "稀疏向量"
+                                       ],
+                        "category":  "rag",
+                        "ground_truth":  "bge-m3 支持 8192 长文本（其他模型通常 512），中英双语好，同时输出稠密向量和稀疏向量（混合检索），通过 SiliconFlow API 调用免费。适合技术文档长 chunk 的 embedding。"
+                    },
+                    {
+                        "question":  "多存储架构中 MySQL、PostgreSQL、Redis 各自承担什么角色？",
+                        "reference_answer":  "MySQL 做业务数据（用户、订单）；PostgreSQL 做 LangGraph checkpointer 和结构化图状态（JSONB）；Redis 做缓存、会话、限流、BM25 全文检索（RedisSearch）。不要用 MySQL 做缓存，不要用 Redis 做持久化。",
+                        "key_points":  [
+                                           "MySQL",
+                                           "PostgreSQL",
+                                           "Redis",
+                                           "职责分离"
+                                       ],
+                        "category":  "db",
+                        "ground_truth":  "MySQL 做业务数据（用户、订单）；PostgreSQL 做 LangGraph checkpointer 和结构化图状态（JSONB）；Redis 做缓存、会话、限流、BM25 全文检索（RedisSearch）。不要用 MySQL 做缓存，不要用 Redis 做持久化。"
+                    },
+                    {
+                        "question":  "用户表和用户扩展信息表为什么要分表设计？",
+                        "reference_answer":  "主表存登录核心字段（id/username/password_hash/email），高频访问；扩展表存非必要字段（头像、偏好、API key），低频访问。分表减少主表宽度、提高缓存命中率；避免改扩展字段影响主表锁。",
+                        "key_points":  [
+                                           "主表",
+                                           "扩展表",
+                                           "垂直拆分",
+                                           "缓存"
+                                       ],
+                        "category":  "db",
+                        "ground_truth":  "主表存登录核心字段（id/username/password_hash/email），高频访问；扩展表存非必要字段（头像、偏好、API key），低频访问。分表减少主表宽度、提高缓存命中率；避免改扩展字段影响主表锁。"
+                    },
+                    {
+                        "question":  "MySQL 连接池如何配置和管理？",
+                        "reference_answer":  "用 DBUtils.PooledDB 或 SQLAlchemy create_engine(pool_size=5, max_overflow=10, pool_recycle=3600)。pool_recycle 必须小于 MySQL wait_timeout（默认 8h），否则拿到死连接。用 with 上下文管理器确保连接归还池。监控连接数，超过 max_connections 要调大数据库参数。",
+                        "key_points":  [
+                                           "连接池",
+                                           "pool_size",
+                                           "pool_recycle",
+                                           "wait_timeout"
+                                       ],
+                        "category":  "db",
+                        "ground_truth":  "用 DBUtils.PooledDB 或 SQLAlchemy create_engine(pool_size=5, max_overflow=10, pool_recycle=3600)。pool_recycle 必须小于 MySQL wait_timeout（默认 8h），否则拿到死连接。用 with 上下文管理器确保连接归还池。监控连接数，超过 max_connections 要调大数据库参数。"
+                    },
+                    {
+                        "question":  "分层架构中各层的职责和依赖方向是什么？",
+                        "reference_answer":  "routers 层处理 HTTP 请求/响应；service 层业务逻辑；dao/model 层数据访问；constant/config 常量配置。依赖方向：routers → service → dao，不能反向。service 不依赖 HTTP 对象，便于单测。",
+                        "key_points":  [
+                                           "routers",
+                                           "service",
+                                           "dao",
+                                           "依赖方向"
+                                       ],
+                        "category":  "arch",
+                        "ground_truth":  "routers 层处理 HTTP 请求/响应；service 层业务逻辑；dao/model 层数据访问；constant/config 常量配置。依赖方向：routers → service → dao，不能反向。service 不依赖 HTTP 对象，便于单测。"
+                    },
+                    {
+                        "question":  "服务层为什么要用单例模式，生命周期如何管理？",
+                        "reference_answer":  "service 无状态（或持有连接池），单例避免每次请求新建。FastAPI 用 lifespan 初始化一次全局实例，注入 Depends。连接池在 lifespan shutdown 时 close。不要在请求处理时才初始化（首请求慢）。",
+                        "key_points":  [
+                                           "单例",
+                                           "lifespan",
+                                           "依赖注入",
+                                           "连接池"
+                                       ],
+                        "category":  "arch",
+                        "ground_truth":  "service 无状态（或持有连接池），单例避免每次请求新建。FastAPI 用 lifespan 初始化一次全局实例，注入 Depends。连接池在 lifespan shutdown 时 close。不要在请求处理时才初始化（首请求慢）。"
+                    },
+                    {
+                        "question":  "上下文管理在 AI Agent 系统中如何实现？",
+                        "reference_answer":  "短期记忆：会话消息列表按 token 窗口截断（保留 system + 最近 N 轮）；长期记忆：LLM 每轮从对话提取用户画像写入向量库，生成前召回并入 system prompt。用 LangGraph checkpointer 持久化中间状态。",
+                        "key_points":  [
+                                           "短期记忆",
+                                           "长期记忆",
+                                           "token 窗口",
+                                           "checkpointer"
+                                       ],
+                        "category":  "arch",
+                        "ground_truth":  "短期记忆：会话消息列表按 token 窗口截断（保留 system + 最近 N 轮）；长期记忆：LLM 每轮从对话提取用户画像写入向量库，生成前召回并入 system prompt。用 LangGraph checkpointer 持久化中间状态。"
+                    },
+                    {
+                        "question":  "异常处理分层架构中全局异常和业务异常如何分工？",
+                        "reference_answer":  "业务异常（如余额不足）是可预期的，带错误码，全局处理器转成 200 或 4xx JSON；系统异常（数据库挂了）是不可预期的，返回 500 并记日志。不要把业务错误当异常抛（用返回值/Result 模式），避免 try/except 泛滥。",
+                        "key_points":  [
+                                           "业务异常",
+                                           "系统异常",
+                                           "错误码",
+                                           "全局处理器"
+                                       ],
+                        "category":  "exception",
+                        "ground_truth":  "业务异常（如余额不足）是可预期的，带错误码，全局处理器转成 200 或 4xx JSON；系统异常（数据库挂了）是不可预期的，返回 500 并记日志。不要把业务错误当异常抛（用返回值/Result 模式），避免 try/except 泛滥。"
+                    },
+                    {
+                        "question":  "为什么业务错误不应该都抛异常，什么时候用返回值？",
+                        "reference_answer":  "异常用于真正异常情况（程序错误），业务预期错误（密码错、余额不足）用返回值/Result 枚举更清晰。否则 try/except 嵌套深、性能差、控制流混乱。本项目业务错误返回 {code: 40001, message: \u0027密码错误\u0027} 而不是 raise Exception。",
+                        "key_points":  [
+                                           "业务错误",
+                                           "返回值",
+                                           "Result 模式",
+                                           "异常滥用"
+                                       ],
+                        "category":  "exception",
+                        "ground_truth":  "异常用于真正异常情况（程序错误），业务预期错误（密码错、余额不足）用返回值/Result 枚举更清晰。否则 try/except 嵌套深、性能差、控制流混乱。本项目业务错误返回 {code: 40001, message: \u0027密码错误\u0027} 而不是 raise Exception。"
+                    },
+                    {
+                        "question":  "JWT + Redis 双 Token 机制如何实现无感续签？",
+                        "reference_answer":  "Access Token 短有效期（15min），Refresh Token 长有效期（7d）存 Redis。Access 过期时前端自动用 Refresh 换新 Access，用户无感知。Refresh Token 加 jti，登出时把 jti 加 Redis 黑名单，实现即时失效。",
+                        "key_points":  [
+                                           "双 Token",
+                                           "Access",
+                                           "Refresh",
+                                           "无感续签",
+                                           "Redis 黑名单"
+                                       ],
+                        "category":  "security",
+                        "ground_truth":  "Access Token 短有效期（15min），Refresh Token 长有效期（7d）存 Redis。Access 过期时前端自动用 Refresh 换新 Access，用户无感知。Refresh Token 加 jti，登出时把 jti 加 Redis 黑名单，实现即时失效。"
+                    },
+                    {
+                        "question":  "密码为什么要用 bcrypt 哈希，如何防止彩虹表攻击？",
+                        "reference_answer":  "彩虹表是预计算的明文→哈希映射表，MD5/SHA256 不加盐可直接查。bcrypt 每次 hash 自动加随机 salt，同一密码每次结果不同；计算成本可调（rounds=12，~250ms/次），暴力破解代价极高；抗 GPU 并行。不要用 MD5/SHA256/明文存储密码。",
+                        "key_points":  [
+                                           "bcrypt",
+                                           "彩虹表",
+                                           "salt",
+                                           "计算成本"
+                                       ],
+                        "category":  "security",
+                        "ground_truth":  "彩虹表是预计算的明文→哈希映射表，MD5/SHA256 不加盐可直接查。bcrypt 每次 hash 自动加随机 salt，同一密码每次结果不同；计算成本可调（rounds=12，~250ms/次），暴力破解代价极高；抗 GPU 并行。不要用 MD5/SHA256/明文存储密码。"
+                    },
+                    {
+                        "question":  "Vue 3 Composition API 中 ref 和 reactive 如何选择？",
+                        "reference_answer":  "基本类型用 ref（必须 .value）；对象/数组优先 ref（可整体替换）；reactive 只用于长期不变的复杂表单（解构需 toRefs）。reactive 解构会丢响应式，整体替换也会丢。本项目统一用 ref 避免坑。",
+                        "key_points":  [
+                                           "ref",
+                                           "reactive",
+                                           ".value",
+                                           "解构",
+                                           "toRefs"
+                                       ],
+                        "category":  "vue",
+                        "ground_truth":  "基本类型用 ref（必须 .value）；对象/数组优先 ref（可整体替换）；reactive 只用于长期不变的复杂表单（解构需 toRefs）。reactive 解构会丢响应式，整体替换也会丢。本项目统一用 ref 避免坑。"
+                    },
+                    {
+                        "question":  "前端如何用 Fetch + ReadableStream 接收 SSE 流式响应？",
+                        "reference_answer":  "fetch POST 后读 response.body.getReader()，按 TextDecoder 解码 chunk，按 \\n\\n 分割 SSE 事件，解析 data: 行。注意 splitFrames 处理跨包半帧。用 AbortController 中断。每个 chunk 追加到消息列表触发 Vue 响应式更新。",
+                        "key_points":  [
+                                           "fetch",
+                                           "ReadableStream",
+                                           "SSE",
+                                           "AbortController"
+                                       ],
+                        "category":  "vue",
+                        "ground_truth":  "fetch POST 后读 response.body.getReader()，按 TextDecoder 解码 chunk，按 \\n\\n 分割 SSE 事件，解析 data: 行。注意 splitFrames 处理跨包半帧。用 AbortController 中断。每个 chunk 追加到消息列表触发 Vue 响应式更新。"
+                    },
+                    {
+                        "question":  "AI Agent 项目的目录结构应该如何设计？",
+                        "reference_answer":  "src/routers（HTTP 入口）、service（业务逻辑）、agent（LangGraph 图）、vector（向量库/embedding）、constant（配置常量）、config（环境变量）、agent_test（评测）。resources/knowledge-base 存知识库文档。按职责分包，不按技术分层。",
+                        "key_points":  [
+                                           "目录结构",
+                                           "routers",
+                                           "service",
+                                           "agent",
+                                           "vector"
+                                       ],
+                        "category":  "eng",
+                        "ground_truth":  "src/routers（HTTP 入口）、service（业务逻辑）、agent（LangGraph 图）、vector（向量库/embedding）、constant（配置常量）、config（环境变量）、agent_test（评测）。resources/knowledge-base 存知识库文档。按职责分包，不按技术分层。"
+                    },
+                    {
+                        "question":  "日志管理中如何区分业务日志和调试日志？",
+                        "reference_answer":  "用 loguru 分级：INFO 记业务关键事件（用户登录、检索命中）；DEBUG 记开发细节（每个 chunk 内容、耗时）；ERROR 记异常堆栈。生产环境只开 INFO，DEBUG 日志不写文件（避免磁盘爆）。日志带 request_id/user_id 便于链路追踪。",
+                        "key_points":  [
+                                           "loguru",
+                                           "日志分级",
+                                           "request_id",
+                                           "生产环境"
+                                       ],
+                        "category":  "eng",
+                        "ground_truth":  "用 loguru 分级：INFO 记业务关键事件（用户登录、检索命中）；DEBUG 记开发细节（每个 chunk 内容、耗时）；ERROR 记异常堆栈。生产环境只开 INFO，DEBUG 日志不写文件（避免磁盘爆）。日志带 request_id/user_id 便于链路追踪。"
+                    },
+                    {
+                        "question":  "代码规范中命名和注释有哪些最佳实践？",
+                        "reference_answer":  "变量/函数用 snake_case，类用 PascalCase，常量全大写；文件名单词小写。注释解释 why 而不是 what（代码自己说 what）。公共函数加 docstring 说明参数、返回值、异常。避免无意义注释（i++ // 自增）。",
+                        "key_points":  [
+                                           "命名",
+                                           "注释",
+                                           "docstring",
+                                           "代码规范"
+                                       ],
+                        "category":  "eng",
+                        "ground_truth":  "变量/函数用 snake_case，类用 PascalCase，常量全大写；文件名单词小写。注释解释 why 而不是 what（代码自己说 what）。公共函数加 docstring 说明参数、返回值、异常。避免无意义注释（i++ // 自增）。"
+                    }
+                ]
+}
