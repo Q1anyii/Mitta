@@ -104,8 +104,8 @@
 | --------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **check_cache**       | 检索缓存两级查找               | 先 L3a 精确层 `query_exact_cache(question)`（文本 hash，0 embedding / 0 rerank），未命中再走 L3b 语义层 `query_cache(thread_id, question)`（LSH 分桶 + KNN + rerank 验证） |
 | **parallel_retrieve** | 并行编排（默认路径）             | 阶段一 `rewrite ∥ dense(原问题) ∥ bm25` 并发；阶段二 `dense(主查询) ∥ dense(子查询)` 并发；单路超时/失败只丢弃该路结果，不阻塞整体                                                         |
-| **retrieve**          | RRF 融合 + 去重            | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重、按文本去重；RRF 分写入 `metadata["rrf_score"]` 供 pre 阶段多样性去重当相关性信号                                    |
-| **rerank**            | 候选去重 + 在线重排 + 多样性选择    | `MMR_STAGE=pre_lex`（默认）：RRF 候选池先做词级 Jaccard 去重（44→20 篇）→ SiliconFlow `BAAI/bge-reranker-v2-m3` 精排 top_n=20 → 分数写入 `metadata["relevance_score"]`    |
+| **retrieve**          | RRF 融合 + 去重            | Reciprocal Rank Fusion（k=60，**路级权重**）融合稠密多路 + BM25：rank_list 结构 `[原问题, 主查询, 子查询…, bm25]` 赋权 `[1.0, 1.0] + [0.4]*(n-3) + [1.0]`（子查询是兜底补充、降权 0.4 避免泛化查询噪声稀释主路排名）；按 doc_id 去重、按文本去重；RRF 分写入 `metadata["rrf_score"]`                                    |
+| **rerank**            | 候选去重 + 在线重排 + 多样性选择    | `MMR_STAGE=off`（默认，2026-09-23 起）：RRF 候选池直接送 SiliconFlow `BAAI/bge-reranker-v2-m3` 精排 top_n=20 → 分数写入 `metadata["relevance_score"]`；`pre_lex` 档（词级 Jaccard 去重 44→20）保留可切换，探针诊断实测无增益故默认关闭    |
 | **filter**            | 相关性阈值过滤                | 过滤 `relevance_score < 0.15` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                                                                   |
 | **store_cache**       | 写入 Redis（L3a + L3b 双写） | L3a `rcache:x:{kb_ver}:{hash(问题)}`；L3b `retrieve_cache:{thread_id}:{bucket_id}`；动态 TTL 900s，命中自动续期                                                 |
 
@@ -139,7 +139,7 @@ LangGraph 的**同步 superstep 对同一批无依赖节点是串行执行**的�
 | 组合                   | 端到端均值     | p95     | 改写     | 稠密       | BM25 | 重排    | MMR  |
 | -------------------- | --------- | ------- | ------ | -------- | ---- | ----- | ---- |
 | 串行基线（off）            | 4278.7 ms | 8294 ms | 2226.0 | 1280.7   | 12.2 | 759.6 | 0    |
-| 串行 + pre_lex（默认）     | 9749.2 ms | —       | 2286.4 | 6947.2 ⚠ | 14.1 | 426.7 | 74.6 |
+| 串行 + pre_lex（曾默认）   | 9749.2 ms | —       | 2286.4 | 6947.2 ⚠ | 14.1 | 426.7 | 74.6 |
 | **并行（parallel+off）** | 6487.0 ms | 8582 ms | —      | 5791.5 ⚠ | —    | 695.4 | 0    |
 
 > ⚠ **读数口径**：本次 6 臂连跑期间，外部 embedding API 抖动剧烈——同一份数据、同一段代码，
@@ -170,7 +170,7 @@ LangGraph 的**同步 superstep 对同一批无依赖节点是串行执行**的�
 | BM25 召回 top_k          | 20                                                                                        | `graphs/nodes/retrieve/query_nodes.py` `run_bm25`                                       |
 | RRF_K                  | 60                                                                                        | `constant/retrieval_constants.py`                                                       |
 | 重排候选 top_n             | 20                                                                                        | `constant/retrieval_constants.py` `MMR_TOP_CANDIDATES`                                  |
-| **MMR 档位** `MMR_STAGE` | `pre_lex`（默认，rerank 前词级 Jaccard 去重 44→20）／`pre`（向量 MMR）／`post`（rerank 后，已证伪）／`off`        | `constant/retrieval_constants.py`                                                       |
+| **MMR 档位** `MMR_STAGE` | `off`（默认，2026-09-23 起）／`pre_lex`（rerank 前词级 Jaccard 去重 44→20，曾默认、探针实测无增益后关闭）／`pre`（向量 MMR）／`post`（rerank 后，已证伪）        | `constant/retrieval_constants.py`                                                       |
 | MMR 词级去重阈值             | `MMR_LEXICAL_JACCARD=0.35`，`MMR_PRE_SELECT=20`                                            | `constant/retrieval_constants.py`                                                       |
 | MMR λ                  | `MMR_LAMBDA=0.5`（post）／`MMR_PRE_LAMBDA=0.7`（pre）                                          | `constant/retrieval_constants.py`                                                       |
 | 并行编排开关                 | `RETRIEVE_PARALLEL_ENABLED=1`（默认），`RETRIEVE_PARALLEL_WORKERS=4`                           | `constant/retrieval_constants.py`                                                       |
@@ -199,7 +199,7 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
 
 - **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.15 以下视为噪声丢弃；过滤后为空时兜底返回原始 top 3，最多取 8 篇
 
-- **多样性去重（`MMR_STAGE` 四档，定档 `pre_lex`）**：MMR 的位置比开关更重要，四档 A/B（21 条项目评测集，key_points 口径）如下：
+- **多样性去重（`MMR_STAGE` 四档，曾定档 `pre_lex`，2026-09-23 起默认 `off`）**：MMR 的位置比开关更重要，四档 A/B（21 条项目评测集，key_points 口径）如下——**历史定档依据**；后经 29 条 QUESTION_POOL 探针诊断（2026-09-23）MMR 实测无增益（项目集双盲 A/B recall 均 0.5238），生产默认回 `off`：
   
   | 档位                | boolean recall | kp 覆盖  | kp 全覆盖比 | 重排耗时      | 去重开销     | 送 rerank |
   | ----------------- | -------------- | ------ | ------- | --------- | -------- | -------- |
@@ -207,13 +207,15 @@ bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似�
   | `pre` λ=0.5       | 0.8095         | 0.7119 | 0.4762  | 477.6 ms  | 2180 ms  | 20       |
   | `pre` λ=0.7       | 0.8095         | 0.6714 | 0.4286  | 449.9 ms  | 4362 ms  | 20       |
   | `post` λ=0.5      | **0.7143 ↓**   | 0.6833 | 0.4286  | 757.9 ms  | 6217 ms  | 44.0     |
-  | **`pre_lex`（默认）** | 0.8095         | 0.7119 | 0.4762  | **426.7** | **74.6** | 20       |
+  | **`pre_lex`（曾默认）** | 0.8095         | 0.7119 | 0.4762  | **426.7** | **74.6** | 20       |
   
   结论：① `post`（rerank 后再多样性选篇）**是负收益**——recall 从 0.8095 掉到 0.7143，却多花 6217 ms，彻底证伪；
   ② 向量 `pre` 方向对（kp 覆盖 0.6833→0.7119）但花 2180 ms 只省 282 ms 重排，净亏 7.7×；
   ③ λ 调高反而变差（0.7119→0.6714），说明起作用的是**多样性项本身**，不是"少送几篇给 rerank"；
   ④ `pre_lex` 用 jieba 词级 Jaccard（阈值 0.35）近似多样性，**不需要额外 embedding**，
   拿到与 `pre` λ=0.5 相同的最佳质量，开销只有 74.6 ms（便宜 29×），重排 759.6→426.7 ms，**净省 ~258 ms 且质量更好**。
+  
+  > ⚠ **后续修正（2026-09-23）**：29 条 QUESTION_POOL 探针诊断与项目集双盲 A/B（`project_retrieval_eval_mmr_fair_off/on`，recall 均 0.5238）显示 **MMR 在现役链路上无增益**，生产默认 `MITTA_MMR_STAGE=off`（`retrieval_constants.py:42`）。上表保留为当时定档依据；`pre_lex` 作为可切换档位保留。
 
 ### 工具筛选机制
 
@@ -286,7 +288,7 @@ AgentProject/
 │   │   ├── eval_tool_truncation.py       # 工具结果截断与异常兜底评测（E5）
 │   │   ├── eval_semantic_cache.py        # 语义缓存命中质量评测（E6：同义命中/误命中）
 │   │   ├── eval_retrieval.py             # 检索召回率/延迟评估（E7：单路 vs 混合，key_points 口径 + --diagnose）
-│   │   ├── eval_ragas_judge.py             # 生成质量 LLM-judge 五指标（生产链路，21 条集实测）
+│   │   ├── eval_ragas_judge.py             # 生成质量 LLM-judge 五指标（生产链路，28 条自建评测集实测）
 │   │   ├── persona_router_eval.py          # 人格路由四分类评测（E15：已并入 E1 统一评测，报告冻结 LEGACY）
 │   │   ├── eval_memory.py                # PostgresStore 读写延迟/重复写入减少/对话画像评估（E9，含生产容器内实测）
 │   │   ├── eval_rate_limit.py            # 限流拦截准确率/降级耗时/并发压测（E10）
@@ -764,7 +766,7 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 | E5  | 工具兜底      | `eval_tool_truncation.py`                                   | 截断/异常转换/轮次上限/按轮计数/**失败熔断** **13/13 通过**（`MAX_TOOL_FAILURES=2`：连续失败 2 次摘工具、成功清零、节点自我强化提示排除、全熔断准确提示；`doc_truncation` 期望值随 `MAX_RETRIEVAL_DOCS=8` 修正）                                                                                                                  |
 | E6  | 语义缓存      | `eval_semantic_cache.py`（E6）+ `eval_cache_hitrate.py`（E6-B） | E6 小样本：同义改写命中 100%（3/3）、无关误命中 0%。**E6-B（12 组 × 3 同义改写 = 36 条）**：隔离会话命中率 **97.2%**（35/36）、混合 12 条+候选 3（**生产默认**）**61.1%**、候选 12 → **88.9%**，误命中硬负 0/8 + 跨域 0/6；**embedding 调用实测降 12.5%**（24 query 流 96→84 条文本）；命中率瓶颈在 KNN 候选数非 rerank 阈值；四层缓存 L2 首次 469 ms → 二次 2 ms |
 | E7  | 混合检索      | `eval_retrieval.py`                                         | **key_points 事实点 recall**：21 条项目专属集 kp 覆盖 单路 **0.7476** / 混合 **0.7119**、kp 全覆盖比 0.619 / 0.4762、boolean avg 单/混均 **0.8095**                                                                                                                                          |
-| E8  | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（生产链路 judge）         | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**）；21 条集实测 0.6381/0.8005/0.959/0.9881/0.7976                                                                                                                         |
+| E8  | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（生产链路 judge）         | context_precision/recall、faithfulness、answer_relevancy、answer_correctness（LLM-as-judge，**不进 CI**）；**28 条自建评测集实测 0.6593/0.7432/0.9464/0.9929/0.7575**（`ragas_judge_probe_after_fix.json`，2026-09-23；21 条集基线 0.6381/0.8005/0.959/0.9881/0.7976）                                                                                                                         |
 | E9  | 记忆        | `eval_memory.py`                                            | **生产容器内实测（3 轮中位数）**：写 avg 1.77 / P95 3.01 / max 3.74 ms、读 avg 1.34 / P95 2.09 / max 7.58 ms，生产链路读写 **P95 ≤ 5ms**（`reports/2026-09-20/memory_eval_report.production.json`）；公网直连对照写 P95 28.00 / 读 P95 51.87 ms（差距来自公网 RTT）                                            |
 | E10 | 限流        | `eval_rate_limit.py`                                        | 拦截准确率、Redis 降级内存 deque                                                                                                                                                                                                                                              |
 | E11 | 认证        | `eval_jwt.py`                                               | 续签成功率、校验耗时                                                                                                                                                                                                                                                          |
@@ -775,7 +777,9 @@ DeepSeek 模型返回的 `reasoning_content`（思考过程）在 langchain_open
 
 测试集 `resources/knowledge-base/test-qa/eval_dataset.json` 含 **45 条**刁钻 QA（基础概念 10 + 代码调试 10 + 架构设计 10 + 刁钻 Badcase 15），覆盖 Python/FastAPI/LangGraph/RAG/数据库/架构/安全等模块。
 
-**B 项目专属评测集（双轨制）**：`resources/knowledge-base/test-qa/eval_project_dataset.json` 含 **21 条**，以真实入库内容 `01~10.md` 为唯一出题源（query/ground_truth/key_points 3~5 点/category），88 个 key_points 逐一在生产 chunks grep 反作弊验证存在原句（重切后 270 chunks）；`eval_retrieval.py` 支持 `--dataset`/`--output` 参数分别评估。**当前口径**：key_points 单路 0.7476 / 混合 0.7119、boolean avg 单/混均 0.8095（`h07_p0p1_report.json`），生成质量由 `eval_ragas_judge.py` 给出五指标（faithfulness 0.959 / answer_relevancy 0.988 / answer_correctness 0.7976 / context_recall 0.8005 / context_precision 0.6381，`ragas_judge_report.json`）。
+**B 项目专属评测集（双轨制）**：`resources/knowledge-base/test-qa/eval_project_dataset.json` 含 **21 条**，以真实入库内容 `01~10.md` 为唯一出题源（query/ground_truth/key_points 3~5 点/category），88 个 key_points 逐一在生产 chunks grep 反作弊验证存在原句（重切后 270 chunks）；`eval_retrieval.py` 支持 `--dataset`/`--output` 参数分别评估。**当前口径**：key_points 单路 0.7476 / 混合 0.7119、boolean avg 单/混均 0.8095（`h07_p0p1_report.json`），生成质量由 `eval_ragas_judge.py` 给出五指标。
+
+**自建评测集（现役，LLM-as-Judge）**：`resources/knowledge-base/test-qa/_probe_question_pool.json` 含 **28 条**，从项目前端 `QUESTION_POOL`（`app.js`）抽取改造为 judge 格式（question/reference_answer/key_points/category），覆盖 Agent 架构 / 混合检索 / 缓存 / 工具 / 记忆 / 路由 / 部署 / 安全等 10 大主题，**即项目当前的自建评测集**；2026-09-23 修复 test-qa base_id 冲突后全量实测五指标 **0.6593 / 0.7432 / 0.9464 / 0.9929 / 0.7575**（`ragas_judge_probe_after_fix.json`），4 个知识缺口题（Send 扇出 / 上下文管理 / 用户表分表 / bcrypt）全部修复涨回；`ragas_judge_probe_after_rebuild.json`（脏库数据，cp 0.6214）作废不得引用。
 
 所有评估脚本输出 JSON 报告到 `src/agent_test/reports/<日期>/`（`*_eval_report.json`），可用于版本间性能对比。
 
