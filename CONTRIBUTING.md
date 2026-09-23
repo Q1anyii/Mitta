@@ -149,15 +149,15 @@ Mitta/
 
 ### 类型说明
 
-| 类型 | 说明 |
-|------|------|
-| feat | 新功能 |
-| fix | Bug 修复 |
-| docs | 文档变更 |
-| style | 代码格式（不影响功能） |
+| 类型       | 说明              |
+| -------- | --------------- |
+| feat     | 新功能             |
+| fix      | Bug 修复          |
+| docs     | 文档变更            |
+| style    | 代码格式（不影响功能）     |
 | refactor | 重构（非新功能、非修 bug） |
-| test | 测试相关 |
-| chore | 构建/工具/依赖变更 |
+| test     | 测试相关            |
+| chore    | 构建/工具/依赖变更      |
 
 ### 示例
 
@@ -174,19 +174,19 @@ feat: 新增用户级 MCP 配置热重载
 ## Pull Request 流程
 
 1. **Fork 并创建分支**
-
+   
    ```bash
    git checkout -b feature/your-feature
    ```
 
 2. **开发并测试**
-
+   
    - 确保本地测试通过：`pytest tests/ -v`
    - 前端改动需在浏览器中验证功能正常
    - 后端改动需验证 `python -m py_compile` 通过
 
 3. **提交代码**
-
+   
    ```bash
    git add .
    git commit -m "feat: 你的功能描述"
@@ -194,13 +194,13 @@ feat: 新增用户级 MCP 配置热重载
    ```
 
 4. **创建 Pull Request**
-
+   
    - PR 标题清晰描述改动
    - PR 描述包含：改动目的、实现方式、测试情况、是否有 breaking change
    - 关联相关 Issue（如 `Closes #123`）
 
 5. **代码审查**
-
+   
    - 维护者会在 48 小时内回复
    - 根据审查意见修改后 force push 到同一分支
    - 审查通过后由维护者合并
@@ -238,6 +238,7 @@ A: 浏览器缓存问题，强制刷新（Ctrl+Shift+R）。Nginx 部署时确�
 ### Q: MCP 工具不生效？
 
 A: 检查：
+
 1. MCP 服务器命令是否正确（npx/uvx 是否可用）
 2. 后端日志是否有 `用户 [xxx] 加载了 N 个自定义 MCP 工具`
 3. stdio 类型的 MCP 服务器需在后端容器内可执行命令
@@ -245,6 +246,7 @@ A: 检查：
 ### Q: 深度思考内容不显示？
 
 A: 确认：
+
 1. `src/utils/deepseek_patch.py` 存在且 `main.py` 启动时应用了 patch
 2. 前端 `thinking_mode` 开关已开启
 3. 模型支持 reasoning_content（deepseek-v4-flash 支持）
