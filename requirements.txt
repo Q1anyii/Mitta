@@ -1,4 +1,4 @@
-# =========================================================
+﻿# =========================================================
 # requirements.txt — Mitta AI 智能助理
 # 基于全项目源码扫描生成（src/ + resources/）
 # 仅包含实际被 import 的第三方依赖
@@ -56,7 +56,7 @@ psycopg-pool==3.3.0
 #   langchain-text-splitters(2文件) — 文本切分
 # =========================================================
 langchain==1.2.12
-langchain-core==1.2.18
+langchain-core==1.6.3
 langchain-community==0.4.1
 langchain-openai==1.1.11
 langchain-text-splitters==1.1.1
