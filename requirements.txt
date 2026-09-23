@@ -60,7 +60,7 @@ langchain-core==1.2.18
 langchain-community==0.4.1
 langchain-openai==1.1.11
 langchain-text-splitters==1.1.1
-
+langchain-typesafe==0.0.1a3
 # =========================================================
 # LangGraph / Agent 编排
 # 实际使用：
@@ -81,9 +81,11 @@ langgraph-checkpoint-postgres==3.0.5
 #   fastmcp(agent_server.py) — MCP Server 快速构建
 #   langchain-mcp-adapters(2文件) — MCP 工具转 LangChain Tool
 # =========================================================
-mcp<2
-fastmcp>=3.2.4
-langchain-mcp-adapters>=0.2
+# P2-1 修复（2026-09-23）：以下包此前浮动版本导致线上两次构建故障，
+# 先 pin 到当前验证通过的版本；长期应在 Docker 镜像内 pip freeze 生成完整 lock。
+mcp==1.27.0
+fastmcp==3.2.4
+langchain-mcp-adapters==0.2.1
 
 # =========================================================
 # 工具依赖
@@ -94,9 +96,9 @@ langchain-mcp-adapters>=0.2
 #     （按需 import 在函数体内，缺包时启动不报错，调用才抛 ModuleNotFoundError
 #      → 线上表现为「组件缺少依赖模块 No module named 'bs4'」，曾致两个联网工具全废）
 # =========================================================
-numpy>=2.2,<2.5
+numpy==2.4.6
 jieba==0.42.1
-beautifulsoup4>=4.14,<5
+beautifulsoup4==4.13.5
 
 
 # =========================================================
