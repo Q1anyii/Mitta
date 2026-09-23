@@ -68,10 +68,10 @@ QA_CATEGORY_MAP = {
 
 def get_category(file_path: Path) -> tuple[str, str]:
     """根据文件路径确定 (category, base_id)。"""
-    # agent_test-qa 子目录
-    if "agent_test-qa" in file_path.parts:
+    # test-qa 子目录：base_id 加 qa 前缀，避免与根目录 01-04 号文件冲突（H-20260923-01）
+    if "test-qa" in file_path.parts:
         prefix = file_path.stem.split("-")[0]
-        return QA_CATEGORY_MAP.get(prefix, "test_qa"), prefix
+        return QA_CATEGORY_MAP.get(prefix, "test_qa"), f"qa{prefix}"
 
     # 根目录文件
     prefix = file_path.stem.split("-")[0]
