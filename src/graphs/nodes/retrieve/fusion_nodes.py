@@ -22,31 +22,41 @@ from graphs.state import RAGState
 from vector.retrieve_doc import RetrievedDoc
 
 
-def rrf_fusion(results: list[list[RetrievedDoc]], k: int = RRF_K) -> list[RetrievedDoc]:
+def rrf_fusion(
+    results: list[list[RetrievedDoc]],
+    k: int = RRF_K,
+    weights: list[float] | None = None,
+) -> list[RetrievedDoc]:
     """RRF（Reciprocal Rank Fusion）排名融合：将多路检索结果合并为单一排序列表。
 
-    公式：score(doc) = Σ 1 / (k + rank_i + 1)
-    其中 rank_i 是文档在第 i 路结果中的排名（从 0 开始）。
+    公式：score(doc) = Σ w_i / (k + rank_i + 1)
+    其中 rank_i 是文档在第 i 路结果中的排名（从 0 开始），w_i 是该路权重。
 
     RRF 的优势：不需要归一化不同检索方式的分数（向量距离 vs BM25 分数量纲不同），
     只依赖排名，鲁棒性强。k=60 是业界常用值，平衡排名权重。
 
+    路级权重（2026-09-23）：子查询定位是"兜底补充"而非平起平坐的主查询，
+    其权重压低，避免泛化子查询召回的噪声文档在 RRF 里稀释主路排名。
+    weights 为 None 时各路均权 1.0，向后兼容。
+
     Args:
         results: 二维列表，每个子列表是一路检索的结果（已按相关性排序）
         k: RRF 常数，默认 RRF_K（60）
+        weights: 各路权重，None 视为全 1.0
 
     Returns:
         按融合分数降序排列的文档列表（去重，同一文档只保留分数最高的实例）
     """
     scores = {}
 
-    for docs in results:
+    for i, docs in enumerate(results):
+        w = weights[i] if weights and i < len(weights) else 1.0
         for rank, doc in enumerate(docs):
             # 融合 key 用向量库主键（sha256 哈希 id）；未携带时回退内容文本
             key = doc.id or doc.text
             if key not in scores:
                 scores[key] = {"doc": doc, "score": 0.0}
-            scores[key]["score"] += 1.0 / (k + rank + 1)
+            scores[key]["score"] += w / (k + rank + 1)
 
     ranked = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
     # RRF 分落 metadata：pre 阶段 MMR 用 RRF 分充当"相关性"信号
@@ -95,7 +105,14 @@ def retrieve(state: RAGState) -> dict:
         {"merged_docs": [融合去重后的候选文档]}
     """
     rank_list = state["rank_list"]
-    merged_docs = rrf_fusion(rank_list)
+    # 路级权重：rank_list 结构为 [原问题, 主查询, 子查询..., bm25]
+    # 主路（原问题/主查询/bm25）权重 1.0，子查询降权 0.4（兜底补充，不喧宾夺主）
+    n = len(rank_list)
+    if n >= 3:
+        weights = [1.0, 1.0] + [0.4] * (n - 3) + [1.0]
+    else:
+        weights = None
+    merged_docs = rrf_fusion(rank_list, weights=weights)
     merged_docs = dedup_by_text(merged_docs)
     return {"merged_docs": merged_docs}
 
