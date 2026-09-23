@@ -110,6 +110,44 @@ user.value.name = '李四';  // 修改对象属性
 <div :class="{ active: sidebarOpen, 'dark-mode': isDark }"></div>
 ```
 
+
+### 2.3 ref 和 reactive 如何选择
+
+Vue 3 中 ref 和 reactive 都能创建响应式状态，但适用场景不同：
+
+| 特性 | ref | reactive |
+|---|---|---|
+| 接受类型 | 任意（基本类型、对象、数组） | 仅对象/数组（不能是基本类型） |
+| 访问方式 | 必须用 `.value` | 直接访问属性 |
+| 解构后是否保持响应式 | 是（ref.value 不变） | 否（解构出来的是普通值） |
+| 整体替换 | `state.value = newObj` | 不能整体替换（会丢失响应式） |
+| 模板中使用 | 自动解包，不用 `.value` | 直接用 |
+
+**选择原则**：
+
+1. **基本类型一律用 ref**：`const count = ref(0)`、`const inputText = ref('')`。reactive 不接受字符串/数字。
+2. **对象/数组优先用 ref**：`const user = ref({ name: '张三' })`。原因：ref 可以整体替换（`user.value = newUser`），reactive 不能。
+3. **reactive 适合长期不变的复杂表单**：`const form = reactive({ name: '', age: 0 })`，需要频繁解构、不想每次写 `.value`。
+4. **本项目统一用 ref**：`messages`、`user`、`isLoading` 都是 ref，避免 reactive 解构丢失响应式的坑。
+
+**常见错误**：
+
+```javascript
+// 错误：reactive 解构丢失响应式
+const { name, age } = reactive({ name: '张三', age: 20 })
+name.value = '李四'  // 不生效，name 是普通字符串
+
+// 正确：用 toRefs 解构
+const state = reactive({ name: '张三', age: 20 })
+const { name, age } = toRefs(state)
+name.value = '李四'  // 生效
+
+// 错误：ref 对象整体替换
+const user = ref({ name: '张三' })
+user = ref({ name: '李四' })  // 重新赋值变量，不触发响应式
+user.value = { name: '李四' }  // 正确
+```
+
 ## 三、SSE 流式接收
 
 ### 3.1 Fetch + ReadableStream

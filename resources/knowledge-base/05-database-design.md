@@ -342,7 +342,50 @@ cur.execute(f"SELECT * FROM users WHERE id = '{user_id}'")
 cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
 ```
 
-## 七、个人见解
+## 七、数据库连接池配置与管理
+
+### 7.1 为什么需要连接池
+
+每次请求都新建数据库连接（TCP 握手 + 认证 + 建会话）的开销是查询本身的 10-100 倍。连接池预先建立一批连接复用，能把响应延迟从几百毫秒降到几毫秒。同时数据库的最大连接数是有限的（PostgreSQL 默认 100），不用池会快速耗尽。
+
+### 7.2 本项目的连接池实现
+
+本项目用 `psycopg-pool`（PostgreSQL）：
+
+```python
+from psycopg_pool import ConnectionPool
+
+pool = ConnectionPool(
+    conninfo=DB_URL,
+    min_size=2,
+    max_size=10,
+    max_idle=300,
+    timeout=30,
+    kwargs={"autocommit": False},
+)
+
+with pool.connection() as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT ...")
+```
+
+### 7.3 关键参数调优
+
+| 参数 | 推荐值 | 说明 |
+|---|---|---|
+| `min_size` | 2-5 | 常驻连接数，太低冷启动慢 |
+| `max_size` | CPU 核数 × 2-4 | 不超过数据库 max_connections 的 70% |
+| `max_idle` | 30-300s | 空闲连接回收，防止被数据库主动断开 |
+| `timeout` | 5-30s | 池满时等待时间，超时即报错 |
+
+### 7.4 常见坑
+
+- **连接泄漏**：必须用 `with pool.connection() as conn` 上下文管理器，否则连接不归还池最终耗尽。
+- **pool_recycle**：数据库默认 wait_timeout=8h，空闲连接会被切断。池要设 max_idle < wait_timeout。
+- **MySQL 连接池**：用 DBUtils.PooledDB 或 SQLAlchemy create_engine(pool_size=5, max_overflow=10, pool_recycle=3600)。
+- **Redis 连接池**：redis.ConnectionPool，FastAPI startup 时创建一次全局复用。
+
+## 八、个人见解
 
 1. **不要用一种数据库解决所有问题**：MySQL 做业务数据，PostgreSQL 做图状态，Redis 做缓存，各司其职。强行用 MySQL 做缓存或用 Redis 做持久化都是技术债。
 

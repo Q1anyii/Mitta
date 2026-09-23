@@ -115,23 +115,44 @@ def verify_token_in_redis(user_id, token):
 
 ### 3.1 密码加密存储
 
-```python
-from passlib.context import CryptContext
+本项目直接使用 bcrypt 库（不依赖 passlib）：
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+```python
+import bcrypt
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8")
+    )
+```
+
+**为什么用 bcrypt 而不是 MD5/SHA256**：
+
+1. **自动加盐防彩虹表**：彩虹表（Rainbow Table）是预先计算好的"明文 → MD5/SHA 哈希"映射表，攻击者拿到哈希库后直接查表就能反查明文。bcrypt 每次 hash 自动生成随机 salt，并把 salt 嵌在结果里（格式 `$2b$12$<22字符salt><31字符hash>`），同一密码每次 hash 结果都不同，彩虹表失效。
+2. **计算成本可调（work factor）**：`gensalt(rounds=12)` 表示 2^12 = 4096 次迭代。现代 GPU 一秒能算几十亿次 MD5，但 bcrypt 故意设计得慢，每次 hash 约 250ms。攻击者暴力破解 1 个密码需要几小时，而不是几毫秒。
+3. **抗 GPU/ASIC 并行破解**：bcrypt 内存硬（blowfish 密钥扩展需要 4KB 内存），不适合 GPU 大规模并行。MD5/SHA256 一个 GPU 能跑几十万个，bcrypt 只能跑几十个。
+
+**错误示范（绝对不能用）**：
+
+```python
+# 错误：MD5/SHA256 快速哈希，一破解一个准
+import hashlib
+db_password = hashlib.md5(password.encode()).hexdigest()
+
+# 错误：不加盐，相同密码哈希相同
+db_password = hashlib.sha256(password.encode()).hexdigest()
 ```
 
 **bcrypt 特点**：
 - 自动加盐，无需手动管理 salt
-- 计算成本可调（默认 12 轮），抗暴力破解
-- 哈希结果包含算法、成本、salt，验证时自动解析
-
+- 计算成本可调（rounds=12 默认），抗暴力破解
+- 哈希结果包含算法版本、成本、salt，验证时自动解析
+- 单次 hash 约 250ms（故意慢），登录验证无感知，但暴力破解代价极高
 ### 3.2 密码修改流程
 
 ```python
