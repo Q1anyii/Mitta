@@ -173,15 +173,16 @@ def bm25_search(query: str, top_k: int = 20) -> List[RetrievedDoc]:
     return docs
 
 
-def rrf_fusion(results: List[List[RetrievedDoc]], k: int = RRF_K) -> List[RetrievedDoc]:
-    """RRF 融合：多路结果按排名倒数求和去重。"""
+def rrf_fusion(results, k=RRF_K, weights=None):
+    """RRF 融合：多路结果按排名倒数求和去重，支持路级权重（对齐生产 fusion_nodes）。"""
     scores = {}
-    for docs in results:
+    for i, docs in enumerate(results):
+        w = weights[i] if weights and i < len(weights) else 1.0
         for rank, doc in enumerate(docs):
             key = doc.id or doc.text
             if key not in scores:
                 scores[key] = {"doc": doc, "score": 0.0}
-            scores[key]["score"] += 1.0 / (k + rank + 1)
+            scores[key]["score"] += w / (k + rank + 1)
     ranked = sorted(scores.values(), key=lambda x: x["score"], reverse=True)
     # RRF 分落 metadata（与生产 fusion_nodes.rrf_fusion 对齐）：pre 阶段 MMR 用它当相关性信号
     for item in ranked:
@@ -395,7 +396,9 @@ def hybrid_retrieve(vector_store, query: str, n_results: int, filter_threshold: 
 
     # Step 4: RRF 融合（稠密多路 + BM25 一路）
     rank_lists = dense_results + [bm25_docs]
-    merged = rrf_fusion(rank_lists)
+    n_rl = len(rank_lists)
+    _weights = [1.0, 1.0] + [0.4] * (n_rl - 3) + [1.0] if n_rl >= 3 else None
+    merged = rrf_fusion(rank_lists, weights=_weights)
     merged = dedup_by_text(merged)
     stats["num_candidates"] = len(merged)
 
@@ -492,7 +495,10 @@ def diagnose_retrieve(vector_store, query: str, n_results: int, filter_threshold
         rows.append(f'    `[{str(d.id)[:16]}]` {src} | {d.text[:60]}')
     bm25_docs = bm25_search(query, top_k=n_results)
     rows.append(f'- BM25 候选({len(bm25_docs)})')
-    merged = dedup_by_text(rrf_fusion(dense_results + [bm25_docs]))
+    _rl = dense_results + [bm25_docs]
+    _nrl = len(_rl)
+    _w = [1.0, 1.0] + [0.4] * (_nrl - 3) + [1.0] if _nrl >= 3 else None
+    merged = dedup_by_text(rrf_fusion(_rl, weights=_w))
     rows.append(f'- RRF 融合候选({len(merged)})')
     final_docs = []
     if merged:
