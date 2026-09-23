@@ -495,3 +495,41 @@ finally:
 5. **测试是信心的来源**：没有测试的项目，改代码像拆弹——不知道会不会炸。本项目目前测试覆盖不足（src/test/ 下只有 TODO），建议优先补充核心逻辑的单元测试（密码加密、JWT 解析、RAG 检索、异常处理），然后逐步扩展到集成测试和 API 测试。
 
 6. **Git 提交规范是团队协作的基础**：清晰的提交历史能让 code review 更高效、问题回溯更容易。建议配置 commitlint + husky，强制提交规范。本项目的 Git 历史中有一些 "在变基之前未提交的更改" 这类不规范的提交，建议后续改进。
+
+## 十一、AI Agent 项目目录设计原则
+
+### 11.1 分层目录结构
+
+```text
+project/
+├── src/
+│   ├── routers/          # HTTP 入口，只做参数校验和响应
+│   ├── service/          # 业务逻辑，编排图和工具
+│   ├── agent/            # LangGraph 图定义、节点
+│   ├── vector/           # 向量库、embedding、BM25
+│   ├── graphs/           # 状态图和节点实现
+│   ├── tools/            # MCP 工具封装
+│   ├── constant/         # 常量、阈值、枚举
+│   ├── config/           # 环境变量加载
+│   └── main.py           # FastAPI 入口
+├── resources/
+│   └── knowledge-base/   # 知识库文档和入库脚本
+├── tests/                # 单元测试
+├── scripts/              # 运维脚本
+└── docker-compose.yml
+```
+
+### 11.2 依赖方向
+
+routers → service → agent/graphs → vector/tools，不能反向。
+
+- routers 不直接操作向量库
+- service 不依赖 HTTP 对象（Request/Response），便于单测
+- agent 节点是纯函数（输入 State，输出 State 更新）
+
+### 11.3 为什么这样分
+
+- 按职责分包，不按技术分层（不要 utils.py 万能垃圾桶）
+- 新成员看目录就知道去哪找代码
+- 单测时可以 mock service 层，不用起整个 FastAPI
+- 向量库和 LLM 调用集中在 vector/ 和 model 层，方便切换实现

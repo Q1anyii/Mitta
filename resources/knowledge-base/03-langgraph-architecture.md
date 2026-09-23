@@ -285,3 +285,61 @@ LangGraph 的 stream 是同步生成器，在异步 FastAPI 中调用时会阻�
 3. **Checkpointer 和 Store 的边界要清晰**：Checkpointer 管"这次对话"，Store 管"这个用户"。不要把用户偏好存在 Checkpointer 里，也不要把对话历史存在 Store 里。
 
 4. **LangGraph 不适合简单的顺序流程**：如果你的流程就是 A→B→C 没有分支和状态，用普通函数链更简单。LangGraph 的价值在于状态管理、中断恢复、人机交互和复杂分支。
+
+## 九、Send 扇出（并行工具调用）
+
+Send 是 LangGraph 提供的扇出原语，让同一个节点被并发调用多次，每次传入不同 payload，用于并行多路检索、并行调用多个工具、并行处理多个文档。
+
+### 9.1 基本用法
+
+```python
+from langgraph.types import Send
+
+def fan_out_node(state: AgentState):
+    # 返回 Send 列表，LangGraph 并发执行每个 Send
+    return [
+        Send("retrieve_one", {"query": state["query"], "source": "dense"}),
+        Send("retrieve_one", {"query": state["query"], "source": "bm25"}),
+        Send("retrieve_one", {"query": state["query"], "source": "web"}),
+    ]
+
+graph.add_conditional_edges(
+    "classify",
+    fan_out_node,
+    ["retrieve_one"],  # Send 目标节点
+)
+```
+
+### 9.2 并行结果合并
+
+所有 Send 并发执行完后，结果通过 State 的 reducer 合并回主状态：
+
+```python
+from typing import TypedDict, Annotated
+import operator
+
+class AgentState(TypedDict):
+    query: str
+    docs: Annotated[list, operator.add]  # 多个并行结果累加
+
+def retrieve_one(state):
+    return {"docs": [do_retrieve(state)]}
+```
+
+### 9.3 与普通 add_edge 的区别
+
+- `add_edge("a", "b")`：a 执行完执行 b，b 只执行一次
+- `Send("b", payload)`：b 被并发调用 N 次，每次不同 payload，结果靠 reducer 合并
+
+### 9.4 典型场景
+
+- 多路混合检索（dense + BM25 + web）并行召回再 RRF 融合
+- 并行调用多个 MCP 工具（如同时查天气、查日历、查邮件）
+- 批量处理多个文档片段
+
+### 9.5 注意事项
+
+- Send 的 payload 是**完整的新 State**，不是局部更新
+- 必须配 reducer（operator.add / add_messages），否则后一个结果覆盖前一个
+- 并发数受 LangGraph 内部线程池限制，不是无限并行
+- 失败的 Send 不会中断其他 Send（默认容错）

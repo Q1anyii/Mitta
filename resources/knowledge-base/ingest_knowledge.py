@@ -77,10 +77,14 @@ def get_category(file_path: Path) -> tuple[str, str]:
     prefix = file_path.stem.split("-")[0]
     return CATEGORY_MAP.get(prefix, "knowledge_base"), prefix
 
-def _make_doc_id(base_id: str, chunk_index: int, text: str) -> str:
-    """生成 chunk 级唯一 doc_id，与 Milvus 主键一致。"""
-    text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
-    return f"{base_id}_{chunk_index:03d}_{text_hash}"
+def _make_doc_id(base_id: str, chunk_index: int, text: str = "") -> str:
+    """生成 chunk 级唯一 doc_id（不含内容 hash，改文件后同 idx upsert 覆盖）。"""
+    return f"{base_id}_{chunk_index:03d}"
+
+
+def _file_hash(path: Path) -> str:
+    """文件内容 hash，用于判断文件是否改过。"""
+    return hashlib.md5(path.read_bytes()).hexdigest()[:12]
 
 def index_document(doc_id: str, content: str, source: str = ""):
 
@@ -92,14 +96,30 @@ def index_document(doc_id: str, content: str, source: str = ""):
     })
 
 
+def _clear_old_chunks(vector_store, base_id: str) -> None:
+    """删除指定 base_id 前缀的所有旧 chunk（Chroma + Redis）。"""
+    try:
+        data = vector_store.collection.get(include=["metadatas"])
+        old_ids = [_id for _id in data.get("ids", []) if _id.startswith(f"{base_id}_")]
+        if old_ids:
+            vector_store.collection.delete(ids=old_ids)
+            pipe = cache_service.redis.pipeline()
+            for doc_id in old_ids:
+                pipe.delete(f"{DOC_PREFIX}{doc_id}")
+            pipe.execute()
+            logger.info(f"  清旧 chunk: {base_id} 删除 {len(old_ids)} 条")
+    except Exception as e:
+        logger.warning(f"清旧 chunk 失败（base_id={base_id}）: {e}")
+
+
 def ingest_file(processor, file_path: Path, vector_store) -> int:
     """
     入库单个文件，返回写入的文档条数。
 
-    同时写入：
-    - Milvus：向量检索（稠密）
-    - RedisSearch：BM25 全文检索（稀疏）
-    两者用相同的 doc_id 对齐，RRF 融合时靠 id 匹配。
+    增量逻辑：
+    - 文件 hash 存 Redis（kb:filehash:{base_id}），hash 未变则跳过（省 embedding 调用）
+    - 改了的文件先 _clear_old_chunks 清旧 chunk，再 upsert 新 chunk
+    - doc_id = {base_id}_{idx:03d}（不含内容 hash），同 idx 直接覆盖
     """
     from vector.embedding import Meta
 
@@ -107,26 +127,36 @@ def ingest_file(processor, file_path: Path, vector_store) -> int:
     source = "knowledge_base"
     meta = Meta(source=source, category=category)
 
+    # ---- Step 0：文件 hash 判断，未改则跳过 ----
+    fhash = _file_hash(file_path)
+    hash_key = f"kb:filehash:{base_id}"
+    try:
+        old_hash = cache_service.redis.get(hash_key)
+        if old_hash and old_hash.decode() == fhash:
+            logger.info(f"  跳过（未改动）: {file_path.name}")
+            return 0
+    except Exception:
+        pass  # Redis 不可用时全量重建
+
     # ---- Step 1：切分文件 ----
-    chunks = processor.split_docs(str(file_path))  # 返回 List[Document]，每个有 .page_content
+    chunks = processor.split_docs(str(file_path))
 
     if not chunks:
         return 0
 
-    # ---- Step 2：遍历 chunks，构建三个列表（与 Milvus upsert 接口对齐）----
+    # ---- Step 2：清旧 chunk（改了的文件）----
+    _clear_old_chunks(vector_store, base_id)
+
+    # ---- Step 3：构建 ids/documents/metadatas ----
     ids: list[str] = []
-    documents: list[str] = []   # ★ 这就是 content
+    documents: list[str] = []
     metadatas: list[dict] = []
 
     for idx, chunk in enumerate(chunks):
-        # ★ content = chunk.page_content
         content = chunk.page_content.strip()
         if not content:
             continue
-
-        # 生成与 Milvus 一致的 doc_id
-        doc_id = _make_doc_id(base_id, idx, content)
-
+        doc_id = _make_doc_id(base_id, idx)
         ids.append(doc_id)
         documents.append(content)
         metadatas.append(meta_to_dict(meta))
@@ -134,12 +164,10 @@ def ingest_file(processor, file_path: Path, vector_store) -> int:
     if not ids:
         return 0
 
-    # ---- Step 3：批量写入 Milvus（向量检索）----
+    # ---- Step 4：upsert 向量 ----
     vector_store.upsert(ids, documents, metadatas)
 
-    # ---- Step 4：批量写入 RedisSearch（BM25 全文索引）----
-    # 2026-09-19 H-07：WSL2 localhost 转发不稳定，Redis 写入失败时降级跳过
-    # （chroma 向量入库已完成；BM25 索引后续在 WSL 内单独重建）
+    # ---- Step 5：写 Redis BM25 ----
     try:
         cache_service.create_sparse_index()
         pipe = cache_service.redis.pipeline()
@@ -147,7 +175,13 @@ def ingest_file(processor, file_path: Path, vector_store) -> int:
             pipe.hset(f"{DOC_PREFIX}{doc_id}", mapping={"content": content, "source": source})
         pipe.execute()
     except Exception as e:
-        logger.warning(f"RedisSearch 写入失败，跳过 BM25 索引（chroma 已入库）: {e}")
+        logger.warning(f"RedisSearch 写入失败: {e}")
+
+    # ---- Step 6：记录文件 hash ----
+    try:
+        cache_service.redis.set(hash_key, fhash)
+    except Exception:
+        pass
 
     return len(ids)
 

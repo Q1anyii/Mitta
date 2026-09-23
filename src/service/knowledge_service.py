@@ -45,10 +45,9 @@ class KnowledgeService:
 
     # ---------- 入库 ----------
 
-    def _make_doc_id(self, base_id: str, chunk_index: int, text: str) -> str:
-        """生成 chunk 级唯一 doc_id（与 ingest_knowledge.py 的算法完全一致）。"""
-        text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
-        return f"{base_id}_{chunk_index:03d}_{text_hash}"
+    def _make_doc_id(self, base_id: str, chunk_index: int, text: str = "") -> str:
+        """生成 chunk 级唯一 doc_id（与 ingest_knowledge.py 一致，不含内容 hash）。"""
+        return f"{base_id}_{chunk_index:03d}"
 
     def _write_redis(self, ids: list[str], documents: list[str], source: str):
         """批量写入 RedisSearch（BM25 索引自动覆盖 kb:doc:* 前缀的哈希）。"""
@@ -112,13 +111,28 @@ class KnowledgeService:
             content = chunk.page_content.strip()
             if not content:
                 continue
-            doc_id = self._make_doc_id(Path(source).stem, idx, content)
+            doc_id = self._make_doc_id(Path(source).stem, idx)
             ids.append(doc_id)
             documents.append(content)
             metadatas.append(meta_to_dict(meta))
 
         if not ids:
             return {"ok": False, "written": 0, "source": source, "reason": "切分后无有效内容"}
+
+        # 清旧 chunk（同 base_id 前缀，防止改文件后残留）
+        base_id = Path(source).stem
+        try:
+            data = self.vector_store.collection.get(include=["metadatas"])
+            old_ids = [_id for _id in data.get("ids", []) if _id.startswith(f"{base_id}_")]
+            if old_ids:
+                self.vector_store.collection.delete(ids=old_ids)
+                pipe = cache_service.redis.pipeline()
+                for doc_id in old_ids:
+                    pipe.delete(f"{DOC_PREFIX}{doc_id}")
+                pipe.execute()
+                logger.info(f"清旧 chunk: {base_id} 删除 {len(old_ids)} 条")
+        except Exception as e:
+            logger.warning(f"清旧 chunk 失败（{base_id}）: {e}")
 
         # 双通道写入：Chroma 向量 + RedisSearch BM25
         self.vector_store.upsert(ids, documents, metadatas)

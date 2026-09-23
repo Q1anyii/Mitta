@@ -158,6 +158,31 @@ def chat(request_body, current_user = Depends(get_current_user)):
 - username 直接从 JWT 解析，不查库（减少一次查询）
 - 上下文是请求级的，每次请求新建，不复用
 
+### 4.2 AI Agent 上下文窗口管理
+
+LLM 有 token 上限（通常 32k/128k），多轮对话必须主动管理上下文，否则会超窗或成本爆炸。
+
+**短期记忆（会话内）**：
+- 消息列表按 token 窗口截断：保留 system prompt + 最近 N 轮对话
+- 超窗时从最早的消息开始丢弃，保留最近的
+- 系统 prompt（工具定义、角色设定）永远保留
+- 实现方式：在 llm_node 调用 LLM 前，先估算 messages 总 token，超窗则裁剪
+
+**长期记忆（跨会话）**：
+- 用 LLM 每轮从对话中提取用户画像（偏好、习惯、关键事实）
+- 存入向量库或用户画像表
+- 每次生成前召回相关画像，拼到 system prompt 里
+- 不是简单堆历史，而是提取结构化事实
+
+**中间状态持久化**：
+- 用 LangGraph checkpointer（PostgresSaver / MemorySaver）
+- 每次节点执行完自动存 State，断点恢复不用重跑
+- 多轮对话的 State 按 thread_id 隔离
+
+**为什么不能全塞给 LLM**：
+- token 上限硬约束
+- 成本线性增长
+- 注意力稀释：无关历史会干扰当前回答
 ## 五、配置管理
 
 ### 5.1 环境变量分层
