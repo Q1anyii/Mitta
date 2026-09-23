@@ -9,6 +9,7 @@ from langchain_openai import OpenAIEmbeddings
 from langgraph.checkpoint.postgres import PostgresSaver
 from dotenv import load_dotenv
 from constant.embedding_constants import COLLECTION_NAME
+from langchain_typesafe import TypeSafeClassifier
 
 load_dotenv(override=True)
 
@@ -31,6 +32,16 @@ embed_model = OpenAIEmbeddings(
     base_url=os.getenv("SILICONFLOW_BASE_URL"),
     api_key=os.getenv("SILICONFLOW_API_KEY")
 )
+
+
+try:
+    jev_classifier = TypeSafeClassifier(
+        api_key=os.getenv("TYPESAFE_API_KEY", "sk-fake"),
+        model="jev-latest",
+        questions=[],
+    )
+except Exception as _e:
+    jev_classifier = None
 
 embedding_function = OpenAIEmbeddingFunction(
     api_key=os.getenv("SILICONFLOW_API_KEY"),
