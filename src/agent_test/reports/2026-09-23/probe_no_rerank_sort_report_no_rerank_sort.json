@@ -1,0 +1,64 @@
+{
+  "config": {
+    "limit": 50,
+    "n_results": 20,
+    "filter_threshold": 0.15,
+    "category": null,
+    "metric": "boolean",
+    "dataset": "E:\\工作文件\\Mitta\\resources\\knowledge-base\\test-qa\\_probe_question_pool.json",
+    "parallel_orchestration": false,
+    "mmr_stage": "pre_lex",
+    "mmr_lambda": null,
+    "mmr_pre_lambda_default": 0.7,
+    "mmr_pre_select": 20,
+    "mmr_constants": {
+      "MMR_STAGE": "pre_lex",
+      "MMR_LAMBDA": 0.5,
+      "MMR_PRE_LAMBDA": 0.7,
+      "MMR_PRE_SELECT": 20,
+      "MMR_TOP_CANDIDATES": 20,
+      "MMR_TOP_SELECT": 8
+    },
+    "deprecated_metric_note": "旧口径（coverage 关键词覆盖率 / boolean 句级覆盖）依赖 ground_truth 与知识库的文本同一性；实测 test-qa 文档未入库、答案多为改写组织，字面匹配天然偏低。key_points 口径以知识库可支撑的原句事实点为判定单元，更接近生产体验（H-20260918-02）。",
+    "key_points_scope": "项目专属评测集全部条目（21 条，key_points 逐一在生产 405 chunks 验证存在原句）"
+  },
+  "key_points": {
+    "single_path": {
+      "avg_point_coverage": 0.8391,
+      "query_full_hit_ratio": 0.7586,
+      "queries_with_kp": 29
+    },
+    "hybrid_pipeline": {
+      "avg_point_coverage": 0.7701,
+      "query_full_hit_ratio": 0.6897,
+      "queries_with_kp": 29
+    }
+  },
+  "single_path": {
+    "avg_recall": 0.8276,
+    "median_recall": 1.0,
+    "avg_latency_ms": 122.3,
+    "p95_latency_ms": 247.8,
+    "p99_latency_ms": 340.9,
+    "zero_result_ratio": 0.0
+  },
+  "hybrid_pipeline": {
+    "avg_recall": 0.5862,
+    "median_recall": 1.0,
+    "avg_latency_ms": 2698.5,
+    "p95_latency_ms": 3924.8,
+    "p99_latency_ms": 4791.5,
+    "zero_result_ratio": 0.0,
+    "stage_breakdown_ms": {
+      "rewrite": 2016.4,
+      "dense_retrieve": 185.1,
+      "bm25": 10.1,
+      "rerank": 426.9,
+      "mmr": 59.9
+    },
+    "candidate_pool": {
+      "avg_rrf_candidates": 48.4,
+      "avg_rerank_scored": 20
+    }
+  }
+}

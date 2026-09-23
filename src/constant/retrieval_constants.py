@@ -39,7 +39,7 @@ RRF_K = 60
 #                 远超它省下的 rerank 时间（759.6→477.6，仅省 282 ms）。
 # 所以"rerank 前去重的方向是对的，但用向量做太贵"：pre_lex 用分词 Jaccard 近似同样的
 # 去重效果、成本近乎为零。若后续评测证明 pre_lex 掉点，回退只需 MITTA_MMR_STAGE=off。
-MMR_STAGE = os.getenv("MITTA_MMR_STAGE", "pre_lex").strip().lower()
+MMR_STAGE = os.getenv("MITTA_MMR_STAGE", "off").strip().lower()
 if MMR_STAGE not in ("off", "pre", "pre_lex", "post"):
     MMR_STAGE = "off"
 MMR_ENABLED = MMR_STAGE != "off"    # 兼容旧引用（等价于 stage != off）
