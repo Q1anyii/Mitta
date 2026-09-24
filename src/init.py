@@ -14,14 +14,13 @@ from langchain_typesafe import TypeSafeClassifier
 load_dotenv(override=True)
 
 model = init_chat_model(
-    model="deepseek-v4-flash",
+    model="deepseek-flash",
     model_provider="openai",
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
 )
-
 selector_llm = init_chat_model(
-    model="deepseek-v4-flash",
+    model="deepseek-flash",
     model_provider="openai",
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
@@ -34,14 +33,14 @@ embed_model = OpenAIEmbeddings(
 )
 
 
-try:
-    jev_classifier = TypeSafeClassifier(
-        api_key=os.getenv("TYPESAFE_API_KEY", "sk-fake"),
-        model="jev-latest",
-        questions=[],
-    )
-except Exception as _e:
-    jev_classifier = None
+# try:
+#     jev_classifier = TypeSafeClassifier(
+#         api_key=os.getenv("TYPESAFE_API_KEY", "sk-fake"),
+#         model="jev-latest",
+#         questions=[],
+#     )
+# except Exception as _e:
+#     jev_classifier = None
 
 embedding_function = OpenAIEmbeddingFunction(
     api_key=os.getenv("SILICONFLOW_API_KEY"),

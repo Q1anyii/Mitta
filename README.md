@@ -57,7 +57,7 @@ docker-compose up -d
 |---|---|
 | 语言/环境 | Python 3.12 |
 | Agent 编排 | LangGraph 1.x（StateGraph / Send 条件路由 / CachePolicy / Checkpointer / Store） |
-| LLM | LangChain 1.x + DeepSeek（deepseek-v4-flash，OpenAI 兼容，支持 reasoning_content） |
+| LLM | LangChain 1.x + DeepSeek（deepseek-flash = V4.1-Flash，OpenAI 兼容，支持 reasoning_content） |
 | Embedding / 重排 | SiliconFlow `BAAI/bge-m3`（1024 维）/ `BAAI/bge-reranker-v2-m3` |
 | 向量库 | ChromaDB（默认，免部署）/ Milvus（可插拔） |
 | 存储 | PostgreSQL 16（记忆 + 用户表）、Redis 7（缓存 + RedisSearch BM25 + 限流 + 登录态） |

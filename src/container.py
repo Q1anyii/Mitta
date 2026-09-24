@@ -36,7 +36,7 @@ class AppDependencies:
         # ── LLM ──────────────────────────────────────────────
         # model 和 selector_llm 共用同一个实例（原 init.py 创建了两个相同实例，浪费连接）
         self.model = init_chat_model(
-            model="deepseek-v4-flash",
+            model="deepseek-flash",
             model_provider="openai",
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             base_url="https://api.deepseek.com",

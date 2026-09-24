@@ -10,7 +10,7 @@ H-20260919-01 任务①，H-20260919-11 合并后回归。
 
 绕过手选短路，直接复用 ROUTER_PROMPT（合并后的统一路由 prompt，人格判定规则
 与原 PERSONA_ROUTER_PROMPT 语义等价）调生产同款分类模型
-（container.py 的 deepseek-v4-flash），只取 JSON 里的 persona 字段，
+（container.py 的 deepseek-flash），只取 JSON 里的 persona 字段，
 输出准确率 + 混淆矩阵 + 错分 case。
 
 用法: D:\\Develop\\conda_envs\\langchain1.2\\python.exe src\\agent_test\\persona_router_eval.py
@@ -66,7 +66,7 @@ def main() -> None:
     from graphs.nodes.router_node import ROUTER_PROMPT, _parse_router_output
 
     model = init_chat_model(
-        model="deepseek-v4-flash",
+        model="deepseek-flash",
         model_provider="openai",
         api_key=os.getenv("DEEPSEEK_API_KEY"),
         base_url="https://api.deepseek.com",

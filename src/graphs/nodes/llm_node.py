@@ -157,6 +157,12 @@ def llm_node(
             extra_body={"thinking": {"type": "enabled"}},
             reasoning_effort=reasoning_effort,
         )
+    else:
+        # DeepSeek V4.1-Flash 默认思考开关为 enabled；不传 disabled 会白烧推理 token
+        # 且使 temperature 等参数失效，故非思考模式必须显式 bind disabled
+        model_with_tools = model_with_tools.bind(
+            extra_body={"thinking": {"type": "disabled"}},
+        )
 
     # ── 6. 流式生成 ──
     chunks = []

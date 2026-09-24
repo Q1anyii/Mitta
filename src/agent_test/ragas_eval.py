@@ -342,7 +342,7 @@ def main():
     # 4. 配置 RAGAS 评判 LLM 和 Embedding
     # RAGAS 评判 LLM：DeepSeek 官方地址
     ragas_llm = ChatOpenAI(
-        model="deepseek-v4-flash",
+        model="deepseek-flash",
         base_url="https://api.deepseek.com",
         api_key=os.getenv("DEEPSEEK_API_KEY"),
         request_timeout=120,

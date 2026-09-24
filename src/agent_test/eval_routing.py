@@ -132,7 +132,7 @@ def build_model(temperature: float):
     from langchain.chat_models.base import init_chat_model
 
     return init_chat_model(
-        model="deepseek-v4-flash",
+        model="deepseek-flash",
         model_provider="openai",
         api_key=os.getenv("DEEPSEEK_API_KEY"),
         base_url="https://api.deepseek.com",
@@ -305,7 +305,7 @@ def main():
     result["config"] = {
         "repeat": args.repeat,
         "temperature": args.temperature,
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-flash",
         "note": "生产 init.model 未固定 temperature；本报告 temperature 显式设定以取可复现基线",
     }
 
