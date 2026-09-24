@@ -8,35 +8,35 @@
 
 | 编号 | 维度 | 脚本 | 关键指标 | 对齐的项目描述 | 运行方式 |
 |---|---|---|---|---|---|
-| E1 | 动态路由 | `eval_routing.py` | 意图分类准确率、检索召回率 | LangGraph 四节点动态路由（检索/非检索分流）。**⚠️ 单次 LLM 采样，字段值不可作稳定能力值**：17 条用例、无重复采样；`init.model` 未固定 `temperature`（默认采样），实测首跑 17/17、复跑 16/17 | 离线白盒（LLM） |
+| E1 | 动态路由 | `eval_routing.py` | 意图分类准确率、检索召回率 | LangGraph 四节点动态路由（检索/非检索分流）。**现役口径（2026-09-22 后）**：统一路由评测 **37 条**（白盒调用现役 `router_node`，一次判人格 + 检索，固定 `temperature=0` 重跑两次）：意图路由 **91.43% / 94.29%**（只报区间）、检索召回 90%→100%；人格四分类 **32/32=100%**（两次稳定）。❌ 作废：17/17、16/17、94.12%（旧 `classify_node` 已摘除，单次采样口径） | 离线白盒（LLM） |
 | E2 | 工具筛选 | `evaluate_tool_filter.py` | recall@k / precision@k | 工具装配规则层+语义层并集召回 | 离线白盒（真实 MCP 工具） |
 | E3 | 工具装配降级/熔断 | `eval_tool_assembly.py` | 并集召回、语义层异常降级、熔断生效 | 语义层异常自动降级规则层并熔断 | 离线白盒（mock 向量库） |
 | E4 | MCP 安全校验 | `eval_tool_safety.py` | 命令白名单拦截率、包名校验拦截率、敏感 env 拦截率、内网 url 拦截率 | 命令白名单、包名校验、敏感变量拦截 | 纯函数离线 |
 | E5 | 工具结果兜底 | `eval_tool_truncation.py` | 异常→ToolMessage 转换率、描述截断生效、文档截断生效、工具调用上限的按轮语义、**失败熔断生效** | 工具返回结果长度截断与异常兜底；上限计数为 per-turn（新 HumanMessage 归零）；同工具连续失败 2 次本轮禁用 | 纯函数离线 |
-| E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中率、误命中率、embedding 调用降低、延迟对比 | LSH+KNN+reranker 两级判定、embedding 减少 67%、573→350ms | 离线白盒（真实 Redis） |
-| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**、P95 延迟、单路 vs 混合、`--diagnose` | 21 条项目专属集：单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**（H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667 与 coverage 0.77 均为历史口径） | 离线白盒 |
-| E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness | RAG 检索增强五大指标；21 条集 LLM-judge 实测 0.6381/0.8005/0.959/0.9881/0.7976 | 离线（LLM 评分，**不入 CI**） |
+| E6 | 语义缓存 | `eval_semantic_cache.py` | 同义改写命中率、误命中率、embedding 调用降低 | LSH 分桶+KNN 候选+reranker 阈值两级判定。**现役口径（E6-B，2026-09-22）**：隔离会话命中率 **97.2%**（35/36）；生产默认（12 条+候选 3）**61.1%**；误命中硬负 0/8 + 跨域 0/6；embedding 调用实测降 **12.5%**（24 query 流 96→84 条）。瓶颈 = KNN 候选数（recall@3 61.1% / @12 88.9%），非 reranker 阈值。❌ 作废：67%、120→40、573→350ms | 离线白盒（真实 Redis） |
+| E7 | 混合检索 | `eval_retrieval.py` | **key_points 事实点 recall（2026-09-19 H-07 后）**、P95 延迟、单路 vs 混合、`--diagnose`、RRF 路级权重 | 21 条项目专属集：单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**、median 1.0；RRF 支持路级权重（`ae98c37`，子查询降权 0.4 避免泛化查询稀释主路排名）。历史口径不得混用：H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean 0.3111/0.2667、coverage 0.77 | 离线白盒 |
+| E8 | RAGAS 五指标 | `ragas_eval.py` + `eval_ragas_judge.py`（H-07 P3） | context_precision/recall、faithfulness、answer_relevancy、answer_correctness | RAG 检索增强五大指标。**现役口径（2026-09-23 全量重建后，28 条自建 probe 集 LLM-judge）**：**0.6593 / 0.7432 / 0.9464 / 0.9929 / 0.7575**。历史：21 条集 0.6381/0.8005/0.959/0.9881/0.7976（H-07 P3，已作废） | 离线（LLM 评分，**不入 CI**） |
 | E9 | 记忆 | `eval_memory.py` | 写入/读取延迟、重复写入减少 | 生产容器内实测（2026-09-20）：写 P95 3.01 / 读 P95 2.09 ms；公网对照 28.00 / 51.87 ms | 离线白盒（公网直连 / 容器内） |
 | E10 | 限流 | `eval_rate_limit.py` | 拦截准确率、Redis 降级内存、路径过滤 | 30 次/60s、Redis 异常降级内存 deque | 离线白盒 |
 | E11 | 认证 | `eval_jwt.py` | 续签成功率、校验耗时、并发 | JWT 双 Token 无感续签 100% | 离线白盒 |
-| E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 | SSE 流式对话 | 在线 HTTP |
+| E12 | SSE 流 | `eval_sse.py` | 首 token 延迟、流纯净度 | SSE 流式对话。现役（线上，每场景 n=3）：shortcut p50 1608ms / no_retrieval 1914ms / retrieval 12348ms；流纯净度 18/18 | 在线 HTTP |
 | E13 | 在线实测 | `eval_online.py` | health、登录、对话、限流 429、登出失效 | 线上全链路 | 在线 HTTP（www.mittaai.xyz） |
 | E14 | CI 回归 | `tests/test_agent_regression.py` | 路由/安全/兜底/缓存 key 纯函数断言 | 回归守护（**不含 RAGAS**） | pytest（CI） |
-| E15 | 人格路由 | `persona_router_eval.py` | 四分类分流准确率、混淆矩阵 | 多人格 v1：16/16=100%（典型样本，乐观基线） | 离线白盒（LLM） |
+| E15 | 人格路由 | `persona_router_eval.py` | 四分类分流准确率、混淆矩阵 | 多人格 v1：**32/32=100%**（两次稳定，固定 temperature=0；典型样本基线）。历史：16/16（v1 首测，乐观基线） | 离线白盒（LLM） |
 
 ## 指标与项目描述的对应关系
 
 - 混合检索 recall（**key_points 事实点口径，H-07 后**：21 条项目集 单路 **0.7476** / 混合 **0.7119**、boolean avg 单/混均 **0.8095**）→ E7 `eval_retrieval.py`；H-07 前 0.5690/0.5357、试点 0.7583/0.7833、boolean（0.3111/0.2667）与 coverage（0.77）均为历史口径，不得混用
-- 多人格路由（手选短路/自动四分类、人格 prompt 注入、按人格工具白名单）→ E15 `persona_router_eval.py`
+- 多人格路由（手选短路/自动四分类、人格 prompt 注入、按人格工具白名单）→ E15 `persona_router_eval.py`（32/32）
 - 第三方 MCP 免改代码接入（JSON 配置注册）→ E4 `eval_tool_safety.py`（配置校验）+ E2/E3（装配）
 - 命令白名单、包名校验、敏感变量拦截 → E4
 - 工具返回长度截断与异常兜底 → E5
 - 双层记忆（短期按会话、长期按用户 LLM 每轮提取增量合并）→ E9
 - 工具装配规则层+语义层并集召回、语义异常降级+熔断 → E2 + E3
-- 缓存 LSH+KNN+reranker 两级判定、embedding 减少 67%、573→350ms → E6
+- 缓存 LSH 分桶+KNN 候选+reranker 两级判定、命中率 61%~97%（误命中 0）→ E6
 - JWT 双 Token 无感续签 100%、登出即时失效 → E11
 - 限流 Redis ZSET 滑动窗口 30 次/60s、Redis 异常降级内存 deque → E10
-- 动态路由（意图分类→检索→生成→记忆）→ E1
+- 动态路由（意图分类→检索→生成→记忆）→ E1（37 条 91%~94%）
 
 ## 单元测试与运行方式
 
@@ -80,8 +80,15 @@ pytest ../tests/ -v                       # E14 CI 回归（73 用例，含 test
 3. 在线实测脚本需要服务器在线（默认 `https://www.mittaai.xyz`）。
 4. **RAGAS 五指标（E8）耗时大，只做线下评估，不接入 CI。**
 5. 每个脚本输出 `*_eval_report.json` 到 `agent_test/reports/<日期>/` 目录，可与历史报告对比。
-6. 评测阈值校准基准（与代码现状一致）：重排过滤 `>= 0.15`（`RERANK_FILTER_THRESHOLD`，2026-09-19 H-07 由 0.25 放宽；此前 0.3→0.25 为 9/18 第一次放宽）、MMR 默认关闭（`MMR_ENABLED=False`，fair 评测证伪无增益）、
-   缓存 rerank 命中 `CACHE_RERANK_HIT_SCORE=0.5`、限流 30 次/60s、工具语义阈值 `TOOL_DISTANCE_THRESHOLD=0.6`、`TOP_FILTER_TOOLS=12`。
+6. 评测阈值校准基准（与代码现状一致）：重排过滤 `>= 0.15`（`RERANK_FILTER_THRESHOLD`，2026-09-19 H-07 由 0.25 放宽；此前 0.3→0.25 为 9/18 第一次放宽）、检索 top 8（`MAX_RETRIEVAL_DOCS=8`）、切分 800/100（`CHUNK_SIZE/CHUNK_OVERLAP`）、MMR 默认关闭（`MMR_ENABLED=False`，fair 评测证伪无增益）、RRF 路级权重（子查询降权 0.4）、
+   缓存 rerank 命中 `CACHE_RERANK_HIT_SCORE=0.5`、KNN 候选生产默认 3（`recall@3 61.1%`，瓶颈项）、限流 30 次/60s、工具语义阈值 `TOOL_DISTANCE_THRESHOLD=0.6`、`TOP_FILTER_TOOLS=12`、`temperature=0`（路由/人格评测固定）。
+
+## 实测记录（2026-09-23 · 28 条 probe 集全量重建 + LLM-judge）
+
+- **背景**：评测集升级为 28 条自建 probe 集（`resources/knowledge-base/test-qa/_probe_question_pool.json`，`--limit 28`），取代 21 条旧集成为现役生成端口径；`eval_ragas_judge.py --dataset ... --output ragas_judge_probe_after_rebuild.json` 全量重建后实测。
+- **E8 生成质量（LLM-judge 五指标）**：**context_precision 0.6593 / context_recall 0.7432 / faithfulness 0.9464 / answer_relevancy 0.9929 / answer_correctness 0.7575**（28 条，DeepSeek temp=0）。生成端高（faithfulness/answer_relevancy ≥0.94），短板在检索端 context（precision 0.66 / recall 0.74）——与 E7 检索口径互相印证。
+- **E7 检索端（probe 集专项报告，2026-09-23 reports）**：`probe_report.json` / `probe_no_rewrite` / `probe_no_rerank_sort` 三份对照 + `retrieval_eval_rrf_weights` 系列（RRF 路级权重 0.4 落地前后对照）；probe 集跑分低于项目集（泛化提问更接近真实用户，检索难度更高）。
+- **口径纪律**：21 条集（H-07 P3）与 16/17、94.12% 等全部标记为历史口径，**不得与新口径混用**；对外只报 28 条现役值。
 
 ## 实测记录（2026-09-18）
 
@@ -92,7 +99,7 @@ pytest ../tests/ -v                       # E14 CI 回归（73 用例，含 test
 | E5 工具兜底 | **13/13 通过（100%）** | 异常→提示转换、ENOTDIR 纠正方向、描述截断 200、文档截断、轮次上限常量、**新轮计数归零 / 轮内封顶 / 按轮 vs 会话累计防回退**、**失败熔断 4 条（连续 2 次熔断 / 仅 1 次不熔断 / 失败-成功-失败不熔断 / 节点提示不误判）** |
 | E14 CI 回归 | 73/73 通过 | pytest 四个测试文件（19 项 Agent 新增 + 54 项既有），可入 CI |
 | E13 在线实测 | health ✓ / 登录 ✓ / SSE ✓ / 登出失效 ✓ / 限流 429 ✓ | 账号 qianyi 实测：SSE 首 token 1348ms、总耗时 2.88s、流纯净无污染；登出后旧 token 401；限流第 30/31 次命中 429 |
-| E1 动态路由 | 分类准确率 **94.12%**、检索召回 **88.89%**、误报 0% | 已重写 `CLASSIFIER_PROMPT`：改为按「是否需要外部知识」通用判定（知识库可自定义入库，不绑定主题）。**最近复跑为 16/17**，唯一失败项「为什么 RAG 检索后还需要重排序（Rerank）？」被判无需检索。**⚠️ 对比基准有污染**：该次复跑与 `6ba37ad`（17/17 全对）之间 `CLASSIFIER_PROMPT` 未改动，但检索链路已变（H-07 重切 chunk / `RERANK_FILTER_THRESHOLD` 0.25→0.15），且单次 LLM 温度采样波动不可排除，故此 94.12% **不是对 17/17 的回退**。待重跑确认后再决定是否更新结论。 |
+| E1 动态路由 | 分类准确率 **94.12%**、检索召回 **88.89%**、误报 0% | 已重写 `CLASSIFIER_PROMPT`：改为按「是否需要外部知识」通用判定（知识库可自定义入库，不绑定主题）。**最近复跑为 16/17**，唯一失败项「为什么 RAG 检索后还需要重排序（Rerank）？」被判无需检索。**⚠️ 对比基准有污染**：该次复跑与 `6ba37ad`（17/17 全对）之间 `CLASSIFIER_PROMPT` 未改动，但检索链路已变（H-07 重切 chunk / `RERANK_FILTER_THRESHOLD` 0.25→0.15），且单次 LLM 温度采样波动不可排除，故此 94.12% **不是对 17/17 的回退**。**（2026-09-22 已按现役口径重跑 37 条并固定 temperature=0，结论见 E1 总览——本行仅作历史记录。）** |
 | E6 语义缓存 | 同义命中率 100%（3/3）、误命中率 0%（0/3）、原文命中 100% | 真实 redis-stack（RedisSearch 容器 6379）+ embed + bge-reranker 全链路实测；查询平均 345ms |
 
 ### 实测记录补充（2026-09-19 H-07 晚）
