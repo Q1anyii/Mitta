@@ -4,9 +4,6 @@
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#5b6b7c"/>
     </marker>
-    <marker id="arrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#3b82c4"/>
-    </marker>
     <marker id="arrRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#EA6668"/>
     </marker>
@@ -17,138 +14,149 @@
   <line x1="24" y1="44" x2="1156" y2="44" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
   <text x="24" y="66" font-size="12" fill="#6B7280">一次 push 到 main：先跑回归门禁（agent-regression.yml，73 用例纯函数 pytest），通过后才进入部署链路（acr-cicd.yml）；回归失败直接红叉终止，不构建、不部署。</text>
 
-  <!-- ============ S1 回归门禁 ============ -->
-  <rect x="20" y="78" width="270" height="404" rx="12" fill="rgba(201,167,232,0.10)"/>
+  <!-- ============ S1 回归门禁：20..270 ============ -->
+  <rect x="20" y="78" width="250" height="404" rx="12" fill="rgba(201,167,232,0.10)"/>
   <rect x="20" y="78" width="6" height="404" rx="3" fill="#C9A7E8"/>
   <text x="42" y="100" font-size="13.5" font-weight="700" fill="#1A1B1C">S1 · 回归门禁</text>
   <text x="42" y="116" font-size="11" fill="#6B7280">agent-regression.yml（workflow_call 前置）</text>
 
-  <rect x="42" y="126" width="226" height="36" rx="8" fill="#FFFFFF" stroke="rgba(201,167,232,0.6)" stroke-width="1.5"/>
-  <text x="155" y="149" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">push 到 main</text>
+  <!-- push -->
+  <rect x="42" y="126" width="206" height="36" rx="8" fill="#FFFFFF" stroke="rgba(201,167,232,0.6)" stroke-width="1.5"/>
+  <text x="145" y="149" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">push 到 main</text>
+  <line x1="145" y1="162" x2="145" y2="176" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <line x1="155" y1="162" x2="155" y2="176" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <!-- pytest -->
+  <rect x="42" y="178" width="206" height="52" rx="8" fill="#FFFFFF" stroke="rgba(201,167,232,0.6)" stroke-width="1.5"/>
+  <text x="145" y="197" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">pytest 73 用例</text>
+  <text x="145" y="217" text-anchor="middle" font-size="10.5" fill="#6B7280">config 32 · regression 19 · jwt 12 · id 10</text>
+  <line x1="145" y1="230" x2="145" y2="244" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <rect x="42" y="178" width="226" height="52" rx="8" fill="#FFFFFF" stroke="rgba(201,167,232,0.6)" stroke-width="1.5"/>
-  <text x="155" y="197" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">pytest 73 用例</text>
-  <text x="155" y="217" text-anchor="middle" font-size="10.5" fill="#6B7280">config 32 · regression 19 · jwt 12 · id 10</text>
+  <!-- 全部通过？ -->
+  <rect x="42" y="246" width="206" height="36" rx="8" fill="#F7F2FC" stroke="rgba(201,167,232,0.8)" stroke-width="1.8"/>
+  <text x="145" y="269" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1A1B1C">全部通过？</text>
 
-  <line x1="155" y1="230" x2="155" y2="244" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <!-- 否 ↓ 红叉（块内下方） -->
+  <line x1="145" y1="282" x2="145" y2="300" stroke="#EA6668" stroke-width="1.6" marker-end="url(#arrRed)"/>
+  <text x="163" y="294" font-size="10.5" fill="#EA6668" font-weight="600">否</text>
+  <rect x="56" y="302" width="178" height="48" rx="8" fill="#FDF0F0" stroke="#EA6668" stroke-width="1.5"/>
+  <text x="145" y="321" text-anchor="middle" font-size="11.5" font-weight="600" fill="#EA6668">❌ 红叉 + 上传 artifact</text>
+  <text x="145" y="338" text-anchor="middle" font-size="10.5" fill="#6B7280">不构建 · 不部署 · 不重启</text>
 
-  <rect x="42" y="246" width="226" height="36" rx="8" fill="#F7F2FC" stroke="rgba(201,167,232,0.8)" stroke-width="1.8"/>
-  <text x="155" y="269" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1A1B1C">全部通过？</text>
+  <!-- 是 → 出块（右缘 268 → 块间隙 → 顶部主线 y=144 → 进 S2 ①盒左缘 310） -->
+  <text x="214" y="270" font-size="10.5" fill="#5b6b7c" font-weight="600">是</text>
+  <line x1="248" y1="264" x2="283" y2="264" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="283" y1="264" x2="283" y2="144" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="283" y1="144" x2="310" y2="144" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="288" y="258" font-size="10.5" fill="#6B7280" font-weight="600">通过</text>
 
-  <!-- 否 → 终止 -->
-  <line x1="268" y1="264" x2="300" y2="264" stroke="#EA6668" stroke-width="1.6" marker-end="url(#arrRed)"/>
-  <text x="284" y="254" text-anchor="middle" font-size="10.5" fill="#EA6668" font-weight="600">否</text>
-  <rect x="302" y="240" width="156" height="48" rx="8" fill="#FFFFFF" stroke="#EA6668" stroke-width="1.5"/>
-  <text x="380" y="259" text-anchor="middle" font-size="11.5" font-weight="600" fill="#EA6668">❌ 红叉 + 上传 artifact</text>
-  <text x="380" y="276" text-anchor="middle" font-size="10.5" fill="#6B7280">不构建 · 不部署 · 不重启</text>
+  <!-- ============ S2 构建与同步：300..570 ============ -->
+  <rect x="300" y="78" width="270" height="404" rx="12" fill="rgba(139,200,234,0.10)"/>
+  <rect x="300" y="78" width="6" height="404" rx="3" fill="#8BC8EA"/>
+  <text x="322" y="100" font-size="13.5" font-weight="700" fill="#1A1B1C">S2 · 构建与同步</text>
+  <text x="322" y="116" font-size="11" fill="#6B7280">acr-cicd.yml ①–④（部署 8 步前半）</text>
 
-  <!-- 是 → S2 -->
-  <line x1="155" y1="282" x2="155" y2="300" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <line x1="155" y1="300" x2="362" y2="300" stroke="#5b6b7c" stroke-width="1.6"/>
-  <line x1="362" y1="300" x2="362" y2="150" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="224" y="292" font-size="10.5" fill="#6B7280" font-weight="600">通过</text>
+  <!-- ① Checkout -->
+  <rect x="310" y="126" width="248" height="36" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
+  <text x="434" y="149" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">① Checkout（fetch-depth 2）</text>
+  <line x1="434" y1="162" x2="434" y2="176" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <!-- ============ S2 构建与同步 ============ -->
-  <rect x="340" y="78" width="280" height="404" rx="12" fill="rgba(139,200,234,0.10)"/>
-  <rect x="340" y="78" width="6" height="404" rx="3" fill="#8BC8EA"/>
-  <text x="362" y="100" font-size="13.5" font-weight="700" fill="#1A1B1C">S2 · 构建与同步</text>
-  <text x="362" y="116" font-size="11" fill="#6B7280">acr-cicd.yml ①–④（部署 8 步前半）</text>
+  <!-- ② 重建镜像？ -->
+  <rect x="310" y="178" width="248" height="36" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
+  <text x="434" y="201" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">② 重建镜像？</text>
+  <line x1="434" y1="214" x2="434" y2="228" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="352" y="222" font-size="10.5" fill="#6B7280" font-weight="600">是</text>
+  <text x="510" y="222" font-size="10.5" fill="#6B7280" font-weight="600">否</text>
 
-  <rect x="362" y="126" width="236" height="36" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
-  <text x="480" y="149" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">① Checkout（fetch-depth 2）</text>
+  <!-- ③ Buildx / 复用 latest 并行 -->
+  <rect x="310" y="230" width="122" height="48" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
+  <text x="371" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1B1C">③ Buildx → ACR</text>
+  <text x="371" y="266" text-anchor="middle" font-size="10" fill="#6B7280">sha + latest</text>
+  <rect x="444" y="230" width="114" height="48" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
+  <text x="501" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1B1C">复用 latest</text>
+  <text x="501" y="266" text-anchor="middle" font-size="10" fill="#6B7280">跳过构建</text>
+  <line x1="371" y1="278" x2="434" y2="278" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="501" y1="278" x2="434" y2="278" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="434" y1="278" x2="434" y2="292" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <line x1="480" y1="162" x2="480" y2="176" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <!-- ④ rsync -->
+  <rect x="310" y="294" width="248" height="52" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
+  <text x="434" y="313" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">④ rsync 增量同步（-azc）</text>
+  <text x="434" y="333" text-anchor="middle" font-size="10.5" fill="#6B7280">前端/配置/知识库 → /opt/mitta</text>
 
-  <rect x="362" y="178" width="236" height="36" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
-  <text x="480" y="201" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">② 重建镜像？</text>
+  <!-- 提速注释 -->
+  <text x="322" y="372" font-size="10.5" fill="#6B7280">提速：仅源码/前端/配置变更 ~2–3 分钟；</text>
+  <text x="322" y="388" font-size="10.5" fill="#6B7280">Dockerfile / requirements / workflow → 8–12 分钟全量构建</text>
+  <text x="322" y="404" font-size="10.5" fill="#6B7280">构建产物双 tag：SHORT_SHA + latest</text>
+  <text x="322" y="420" font-size="10.5" fill="#6B7280">--exclude vector_db.json（服务器由 CI 维护）</text>
 
-  <!-- 是 / 否 并行 -->
-  <line x1="480" y1="214" x2="480" y2="228" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="398" y="222" font-size="10.5" fill="#6B7280" font-weight="600">是</text>
-  <text x="556" y="222" font-size="10.5" fill="#6B7280" font-weight="600">否</text>
-  <rect x="362" y="230" width="112" height="48" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
-  <text x="418" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1B1C">③ Buildx → ACR</text>
-  <text x="418" y="266" text-anchor="middle" font-size="10" fill="#6B7280">sha + latest</text>
-  <rect x="486" y="230" width="112" height="48" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
-  <text x="542" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#1A1B1C">复用 latest</text>
-  <text x="542" y="266" text-anchor="middle" font-size="10" fill="#6B7280">跳过构建</text>
+  <!-- S2 → S3：出口 ④ 右缘 558,320 → 间隙 588 → 顶部 y=144 → 进 S3 ⑤盒左缘 610 -->
+  <line x1="558" y1="320" x2="588" y2="320" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="588" y1="320" x2="588" y2="144" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="588" y1="144" x2="610" y2="144" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="592" y="314" font-size="10.5" fill="#6B7280" font-weight="600">物料就绪</text>
 
-  <line x1="480" y1="278" x2="480" y2="292" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <!-- ============ S3 蓝绿入库与部署：600..860 ============ -->
+  <rect x="600" y="78" width="260" height="404" rx="12" fill="rgba(148,212,208,0.10)"/>
+  <rect x="600" y="78" width="6" height="404" rx="3" fill="#94D4D0"/>
+  <text x="622" y="100" font-size="13.5" font-weight="700" fill="#1A1B1C">S3 · 蓝绿入库与部署</text>
+  <text x="622" y="116" font-size="11" fill="#6B7280">acr-cicd.yml ⑤–⑧（部署 8 步后半）</text>
 
-  <rect x="362" y="294" width="236" height="52" rx="8" fill="#FFFFFF" stroke="rgba(139,200,234,0.6)" stroke-width="1.5"/>
-  <text x="480" y="313" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">④ rsync 增量同步（-azc）</text>
-  <text x="480" y="333" text-anchor="middle" font-size="10.5" fill="#6B7280">前端/配置/知识库 → /opt/mitta</text>
+  <!-- ⑤ 蓝绿入库？ -->
+  <rect x="610" y="126" width="238" height="40" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
+  <text x="729" y="142" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">⑤ 蓝绿入库？</text>
+  <text x="729" y="158" text-anchor="middle" font-size="10" fill="#6B7280">embedding / knowledge-base / vector_db</text>
+  <line x1="729" y1="166" x2="729" y2="180" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <text x="362" y="372" font-size="10.5" fill="#6B7280">提速：仅源码/前端/配置变更 ~2–3 分钟；</text>
-  <text x="362" y="388" font-size="10.5" fill="#6B7280">Dockerfile / requirements / workflow → 8–12 分钟全量构建</text>
-  <text x="362" y="404" font-size="10.5" fill="#6B7280">构建产物双 tag：SHORT_SHA + latest</text>
-  <text x="362" y="420" font-size="10.5" fill="#6B7280">--exclude vector_db.json（服务器由 CI 维护）</text>
+  <!-- ⑥ 入新 collection -->
+  <rect x="610" y="182" width="238" height="40" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
+  <text x="729" y="198" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1B1C">⑥ 入新 collection FAQ_KB_&lt;sha&gt;</text>
+  <text x="729" y="214" text-anchor="middle" font-size="10" fill="#6B7280">失败不动旧库（绝不先删旧库）</text>
+  <line x1="729" y1="222" x2="729" y2="236" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <!-- S2 → S3 -->
-  <line x1="620" y1="320" x2="682" y2="320" stroke="#5b6b7c" stroke-width="1.6"/>
-  <line x1="682" y1="320" x2="682" y2="150" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="634" y="312" font-size="10.5" fill="#6B7280" font-weight="600">物料就绪</text>
+  <!-- ⑦ 切 collection -->
+  <rect x="610" y="238" width="238" height="36" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
+  <text x="729" y="261" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">⑦ 切 collection → 重启 api</text>
+  <line x1="729" y1="274" x2="729" y2="288" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <!-- ============ S3 蓝绿入库与部署 ============ -->
-  <rect x="660" y="78" width="270" height="404" rx="12" fill="rgba(148,212,208,0.10)"/>
-  <rect x="660" y="78" width="6" height="404" rx="3" fill="#94D4D0"/>
-  <text x="682" y="100" font-size="13.5" font-weight="700" fill="#1A1B1C">S3 · 蓝绿入库与部署</text>
-  <text x="682" y="116" font-size="11" fill="#6B7280">acr-cicd.yml ⑤–⑧（部署 8 步后半）</text>
+  <!-- ⑧ SSH 部署 -->
+  <rect x="610" y="290" width="238" height="36" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
+  <text x="729" y="313" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">⑧ SSH 部署：清残留 · pull · up -d</text>
 
-  <rect x="682" y="126" width="226" height="40" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
-  <text x="795" y="142" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">⑤ 蓝绿入库？</text>
-  <text x="795" y="158" text-anchor="middle" font-size="10" fill="#6B7280">embedding / knowledge-base / vector_db</text>
+  <!-- S3 → S4：出口 ⑧ 右缘 848,308 → 间隙 872 → 顶部 y=144 → 进 S4 健康检查盒左缘 900 -->
+  <line x1="848" y1="308" x2="872" y2="308" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="872" y1="308" x2="872" y2="144" stroke="#5b6b7c" stroke-width="1.6"/>
+  <line x1="872" y1="144" x2="900" y2="144" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="876" y="302" font-size="10.5" fill="#6B7280" font-weight="600">重启完成</text>
 
-  <line x1="795" y1="166" x2="795" y2="180" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <!-- ============ S4 健康检查：890..1080 ============ -->
+  <rect x="890" y="78" width="190" height="404" rx="12" fill="rgba(82,196,26,0.08)"/>
+  <rect x="890" y="78" width="6" height="404" rx="3" fill="#52C41A"/>
+  <text x="912" y="100" font-size="13.5" font-weight="700" fill="#1A1B1C">S4 · 健康检查</text>
+  <text x="912" y="116" font-size="11" fill="#6B7280">acr-cicd.yml 部署后校验</text>
 
-  <rect x="682" y="182" width="226" height="40" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
-  <text x="795" y="198" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1B1C">⑥ 入新 collection FAQ_KB_&lt;sha&gt;</text>
-  <text x="795" y="214" text-anchor="middle" font-size="10" fill="#6B7280">失败不动旧库（绝不先删旧库）</text>
+  <!-- 健康检查 ×24 -->
+  <rect x="900" y="126" width="168" height="48" rx="8" fill="#FFFFFF" stroke="rgba(82,196,26,0.6)" stroke-width="1.5"/>
+  <text x="984" y="145" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1B1C">健康检查 ×24</text>
+  <text x="984" y="162" text-anchor="middle" font-size="10" fill="#6B7280">sleep 20 + curl /health</text>
+  <line x1="984" y1="174" x2="984" y2="188" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
 
-  <line x1="795" y1="222" x2="795" y2="236" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <!-- ✅ 成功 -->
+  <rect x="900" y="190" width="168" height="48" rx="8" fill="#F6FFED" stroke="#52C41A" stroke-width="1.5"/>
+  <text x="984" y="209" text-anchor="middle" font-size="12" font-weight="700" fill="#52C41A">✅ 200 → 成功</text>
+  <text x="984" y="226" text-anchor="middle" font-size="10" fill="#6B7280">保留两版 · 清悬空镜像</text>
 
-  <rect x="682" y="238" width="226" height="36" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
-  <text x="795" y="261" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">⑦ 切 collection → 重启 api</text>
+  <!-- 失败 → 回滚 -->
+  <line x1="984" y1="238" x2="984" y2="252" stroke="#EA6668" stroke-width="1.6" marker-end="url(#arrRed)"/>
+  <rect x="900" y="254" width="168" height="48" rx="8" fill="#FFFFFF" stroke="#EA6668" stroke-width="1.5"/>
+  <text x="984" y="273" text-anchor="middle" font-size="12" font-weight="700" fill="#EA6668">失败 → 回滚</text>
+  <text x="984" y="290" text-anchor="middle" font-size="10" fill="#6B7280">切回旧 collection 再重启</text>
 
-  <line x1="795" y1="274" x2="795" y2="288" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
+  <!-- 回滚失败 -->
+  <text x="912" y="330" font-size="10.5" fill="#6B7280">回滚失败：</text>
+  <text x="912" y="346" font-size="10.5" fill="#6B7280">docker logs --tail 50</text>
+  <text x="912" y="362" font-size="10.5" fill="#6B7280">并 exit 1</text>
 
-  <rect x="682" y="290" width="226" height="36" rx="8" fill="#FFFFFF" stroke="rgba(148,212,208,0.7)" stroke-width="1.5"/>
-  <text x="795" y="313" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1A1B1C">⑧ SSH 部署：清残留 · pull · up -d</text>
-
-  <!-- S3 → S4 -->
-  <line x1="930" y1="308" x2="992" y2="308" stroke="#5b6b7c" stroke-width="1.6"/>
-  <line x1="992" y1="308" x2="992" y2="150" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="944" y="300" font-size="10.5" fill="#6B7280" font-weight="600">重启完成</text>
-
-  <!-- ============ S4 健康检查与回滚 ============ -->
-  <rect x="970" y="78" width="190" height="404" rx="12" fill="rgba(82,196,26,0.08)"/>
-  <rect x="970" y="78" width="6" height="404" rx="3" fill="#52C41A"/>
-  <text x="992" y="100" font-size="13.5" font-weight="700" fill="#1A1B1C">S4 · 健康检查</text>
-  <text x="992" y="116" font-size="11" fill="#6B7280">acr-cicd.yml 部署后校验</text>
-
-  <rect x="992" y="126" width="146" height="48" rx="8" fill="#FFFFFF" stroke="rgba(82,196,26,0.6)" stroke-width="1.5"/>
-  <text x="1065" y="145" text-anchor="middle" font-size="12" font-weight="600" fill="#1A1B1C">健康检查 ×24</text>
-  <text x="1065" y="162" text-anchor="middle" font-size="10" fill="#6B7280">sleep 20 + curl /health</text>
-
-  <line x1="1065" y1="174" x2="1065" y2="188" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-
-  <rect x="992" y="190" width="146" height="48" rx="8" fill="#F6FFED" stroke="#52C41A" stroke-width="1.5"/>
-  <text x="1065" y="209" text-anchor="middle" font-size="12" font-weight="700" fill="#52C41A">✅ 200 → 成功</text>
-  <text x="1065" y="226" text-anchor="middle" font-size="10" fill="#6B7280">保留两版 · 清悬空镜像</text>
-
-  <line x1="1065" y1="238" x2="1065" y2="252" stroke="#EA6668" stroke-width="1.6" marker-end="url(#arrRed)"/>
-
-  <rect x="992" y="254" width="146" height="48" rx="8" fill="#FFFFFF" stroke="#EA6668" stroke-width="1.5"/>
-  <text x="1065" y="273" text-anchor="middle" font-size="12" font-weight="700" fill="#EA6668">失败 → 回滚</text>
-  <text x="1065" y="290" text-anchor="middle" font-size="10" fill="#6B7280">切回旧 collection 再重启</text>
-
-  <text x="992" y="330" font-size="10.5" fill="#6B7280">回滚失败：</text>
-  <text x="992" y="346" font-size="10.5" fill="#6B7280">docker logs --tail 50</text>
-  <text x="992" y="362" font-size="10.5" fill="#6B7280">并 exit 1</text>
-
-  <!-- 底部注 -->
+  <!-- 底部说明 -->
   <line x1="24" y1="488" x2="1156" y2="488" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
   <text x="24" y="506" font-size="11.5" fill="#6B7280">硬门禁：回归红则不 build、不 rsync、不重启；RAGAS 与依赖 Redis/Postgres/LLM/向量库的白盒评测只在本地跑（不进 CI），结果归档到 src/agent_test/reports/&lt;日期&gt;/。</text>
 </svg>
