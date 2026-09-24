@@ -128,8 +128,12 @@ jobs:
           tags: |
             ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:${{ env.SHORT_SHA }}
             ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          # gha 缓存加 scope 隔离：默认 scope=buildkit 会被其他 workflow 的缓存
+          # 互相挤掉，导致依赖层反复全量重建+全量上传。
+          # 固定 scope=mitta-main 让主分支构建缓存专属、读写必然配对；
+          # mode=max 导出全部层，保证下次 restore 完整命中（依赖层 40s 重建→0s）。
+          cache-from: type=gha,scope=mitta-main
+          cache-to: type=gha,mode=max,scope=mitta-main
 
       # 构建成功后记录本次提交，作为下次「是否需要重建」的比较起点。
       # 用 Repository Variable 保存（需 actions: write 权限，已在上方声明）；
