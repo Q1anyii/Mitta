@@ -47,7 +47,9 @@
   <line x1="248" y1="264" x2="283" y2="264" stroke="#5b6b7c" stroke-width="1.6"/>
   <line x1="283" y1="264" x2="283" y2="144" stroke="#5b6b7c" stroke-width="1.6"/>
   <line x1="283" y1="144" x2="310" y2="144" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="288" y="258" font-size="10.5" fill="#6B7280" font-weight="600">通过</text>
+  <circle cx="283" cy="198" r="3.5" fill="#EA6668"/>
+  <text x="292" y="186" font-size="10.5" fill="#6B7280" font-weight="600">通</text>
+  <text x="292" y="206" font-size="10.5" fill="#6B7280" font-weight="600">过</text>
 
   <!-- ============ S2 构建与同步：300..570 ============ -->
   <rect x="300" y="78" width="270" height="404" rx="12" fill="rgba(139,200,234,0.10)"/>
@@ -93,7 +95,11 @@
   <line x1="558" y1="320" x2="588" y2="320" stroke="#5b6b7c" stroke-width="1.6"/>
   <line x1="588" y1="320" x2="588" y2="144" stroke="#5b6b7c" stroke-width="1.6"/>
   <line x1="588" y1="144" x2="610" y2="144" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="592" y="314" font-size="10.5" fill="#6B7280" font-weight="600">物料就绪</text>
+  <circle cx="588" cy="212" r="3.5" fill="#EA6668"/>
+  <text x="597" y="182" font-size="10.5" fill="#6B7280" font-weight="600">物</text>
+  <text x="597" y="202" font-size="10.5" fill="#6B7280" font-weight="600">料</text>
+  <text x="597" y="222" font-size="10.5" fill="#6B7280" font-weight="600">就</text>
+  <text x="597" y="242" font-size="10.5" fill="#6B7280" font-weight="600">绪</text>
 
   <!-- ============ S3 蓝绿入库与部署：600..860 ============ -->
   <rect x="600" y="78" width="260" height="404" rx="12" fill="rgba(148,212,208,0.10)"/>
@@ -126,7 +132,11 @@
   <line x1="848" y1="308" x2="872" y2="308" stroke="#5b6b7c" stroke-width="1.6"/>
   <line x1="872" y1="308" x2="872" y2="144" stroke="#5b6b7c" stroke-width="1.6"/>
   <line x1="872" y1="144" x2="900" y2="144" stroke="#5b6b7c" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="876" y="302" font-size="10.5" fill="#6B7280" font-weight="600">重启完成</text>
+  <circle cx="872" cy="206" r="3.5" fill="#EA6668"/>
+  <text x="881" y="176" font-size="10.5" fill="#6B7280" font-weight="600">重</text>
+  <text x="881" y="196" font-size="10.5" fill="#6B7280" font-weight="600">启</text>
+  <text x="881" y="216" font-size="10.5" fill="#6B7280" font-weight="600">完</text>
+  <text x="881" y="236" font-size="10.5" fill="#6B7280" font-weight="600">成</text>
 
   <!-- ============ S4 健康检查：890..1080 ============ -->
   <rect x="890" y="78" width="190" height="404" rx="12" fill="rgba(82,196,26,0.08)"/>
