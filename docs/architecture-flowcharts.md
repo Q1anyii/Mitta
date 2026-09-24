@@ -72,7 +72,7 @@ flowchart TD
     PARALLEL -->|阶段一：rewrite ∥ dense(原问题) ∥ bm25| PARALLEL2[阶段二：dense(主查询) ∥ dense(子查询…)]
     PARALLEL2 -->|阶段三：串行| RRF[retrieve<br/>RRF 融合 k=60 · 去重]
 
-    RRF -->|rrf_score 写入 metadata| RERANK[rerank<br/>pre_lex 词级 Jaccard 去重 44→20<br/>bge-reranker 精排 top_n=20]
+    RRF -->|rrf_score 写入 metadata| RERANK[rerank<br/>MMR_STAGE=off 默认<br/>bge-reranker 精排 top_n=20]
 
     RERANK -->|relevance_score 写入 metadata| FILTER{filter<br/>relevance_score ≥ 0.15?}
 
@@ -101,8 +101,8 @@ flowchart TD
 | ---------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | **check_cache**        | 检索缓存两级查找                    | 先 L3a 精确层 `query_exact_cache(question)`（文本 hash，0 embedding / 0 rerank），未命中再走 L3b 语义层 `query_cache(thread_id, question)`（LSH 分桶 + KNN + rerank 验证） |
 | **parallel_retrieve**  | 并行编排（默认路径）        | 阶段一 `rewrite ∥ dense(原问题) ∥ bm25` 并发；阶段二 `dense(主查询) ∥ dense(子查询)` 并发；单路超时/失败只丢弃该路结果，不阻塞整体                                                        |
-| **retrieve**           | RRF 融合 + 去重                 | Reciprocal Rank Fusion（k=60）融合稠密多路 + BM25，按 doc_id 去重、按文本去重；RRF 分写入 `metadata["rrf_score"]` 供 pre 阶段多样性去重当相关性信号                                |
-| **rerank**             | 候选去重 + 在线重排 + 多样性选择         | `MMR_STAGE=pre_lex`（默认）：RRF 候选池先做词级 Jaccard 去重（44→20 篇）→ SiliconFlow `BAAI/bge-reranker-v2-m3` 精排 top_n=20 → 分数写入 `metadata["relevance_score"]`    |
+| **retrieve**           | RRF 融合 + 去重                 | Reciprocal Rank Fusion（k=60，**路级权重**）融合稠密多路 + BM25：rank_list 结构 `[原问题, 主查询, 子查询…, bm25]` 赋权 `[1.0, 1.0] + [0.4]*(n-3) + [1.0]`（子查询是兜底补充、降权 0.4 避免泛化查询噪声稀释主路排名）；按 doc_id 去重、按文本去重；RRF 分写入 `metadata["rrf_score"]` 供 pre 阶段多样性去重当相关性信号 |
+| **rerank**             | 候选去重 + 在线重排 + 多样性选择         | `MMR_STAGE=off`（默认，2026-09-23 起）：RRF 候选池直接送 SiliconFlow `BAAI/bge-reranker-v2-m3` 精排 top_n=20 → 分数写入 `metadata["relevance_score"]`；`pre_lex` 档（词级 Jaccard 去重 44→20）保留可切换，探针诊断实测无增益故默认关闭 |
 | **filter**             | 相关性阈值过滤                     | 过滤 `relevance_score < 0.15` 的噪声文档；过滤后为空时兜底返回原始 top 3（宁可不准确也不返回空）                                                     |
 | **store_cache**        | 写入 Redis（L3a + L3b 双写）      | L3a `rcache:x:{kb_ver}:{hash(问题)}`；L3b `retrieve_cache:{thread_id}:{bucket_id}`；动态 TTL 900s，命中自动续期                                              |
 
@@ -139,7 +139,7 @@ LangGraph 的**同步 superstep 对同一批无依赖节点是串行执行**的�
 | BM25 召回 top_k         | 20                                                                                                                                  | `graphs/nodes/retrieve/query_nodes.py` `run_bm25`                                        |
 | RRF_K                  | 60                                                                                                                                  | `constant/retrieval_constants.py`                                                        |
 | 重排候选 top_n            | 20                                                                                                                                  | `constant/retrieval_constants.py` `MMR_TOP_CANDIDATES`                                   |
-| **MMR 档位** `MMR_STAGE` | `pre_lex`（默认，rerank 前词级 Jaccard 去重 44→20）／`pre`（向量 MMR）／`post`（rerank 后，已证伪）／`off`                                                   | `constant/retrieval_constants.py`                                                        |
+| **MMR 档位** `MMR_STAGE` | `off`（默认，2026-09-23 起）／`pre_lex`（rerank 前词级 Jaccard 去重 44→20，曾默认、探针实测无增益后关闭）／`pre`（向量 MMR）／`post`（rerank 后，已证伪）                                               | `constant/retrieval_constants.py`                                                        |
 | MMR 词级去重阈值             | `MMR_LEXICAL_JACCARD=0.35`，`MMR_PRE_SELECT=20`                                                                                       | `constant/retrieval_constants.py`                                                        |
 | MMR λ                  | `MMR_LAMBDA=0.5`（post）／`MMR_PRE_LAMBDA=0.7`（pre）                                                                                     | `constant/retrieval_constants.py`                                                        |
 | 并行编排开关                 | `RETRIEVE_PARALLEL_ENABLED=1`（默认），`RETRIEVE_PARALLEL_WORKERS=4`                                                                       | `constant/retrieval_constants.py`                                                        |
@@ -153,3 +153,50 @@ LangGraph 的**同步 superstep 对同一批无依赖节点是串行执行**的�
 | 切分 chunk               | 800 / overlap 100（chunks 270）                                                                                                       | `constant/embedding_constants.py`                                                        |
 | 重排模型                   | BAAI/bge-reranker-v2-m3                                                                                                             | `init.py`                                                                                |
 | BM25 索引名               | kb_bm25                                                                                                                             | `constant/cache_constant.py`                                                             |
+
+### 混合检索设计思路
+
+bge-m3 双编码器对中文技术查询区分度低（相关文档余弦相似度仅 0.4-0.6，排名 100+），而 BM25 对精确术语命中极高。两路互补：
+
+- **稠密向量**：擅长语义相似（"如何避免默认参数陷阱" ≈ "可变默认参数的危害"）
+- **BM25**：擅长精确关键词匹配（"可变默认参数""bcrypt""WebSocket" 直接命中）
+- **RRF 融合**：只看排名不看绝对分数，统一两路量纲差异
+- **rerank 精排**：交叉编码器对 query-doc 对做注意力计算，最终排序依据
+- **阈值过滤**：用 rerank 分数（0~1）做统一过滤，0.15 以下视为噪声丢弃；过滤后为空时兜底返回原始 top 3，最多取 8 篇
+
+**多样性去重（`MMR_STAGE` 四档，曾定档 `pre_lex`，2026-09-23 起默认 `off`）**：MMR 的位置比开关更重要，四档 A/B（21 条项目评测集，key_points 口径）如下——**历史定档依据**；后经 29 条 QUESTION_POOL 探针诊断（2026-09-23）MMR 实测无增益（项目集双盲 A/B recall 均 0.5238），生产默认回 `off`：
+
+| 档位 | boolean recall | kp 覆盖 | kp 全覆盖比 | 重排耗时 | 去重开销 | 送 rerank |
+|---|---|---|---|---|---|---|
+| `off` | 0.8095 | 0.6833 | 0.4286 | 759.6 ms | 0 | 44.9 |
+| `pre` λ=0.5 | 0.8095 | 0.7119 | 0.4762 | 477.6 ms | 2180 ms | 20 |
+| `pre` λ=0.7 | 0.8095 | 0.6714 | 0.4286 | 449.9 ms | 4362 ms | 20 |
+| `post` λ=0.5 | **0.7143 ↓** | 0.6833 | 0.4286 | 757.9 ms | 6217 ms | 44.0 |
+| **`pre_lex`（曾默认）** | 0.8095 | 0.7119 | 0.4762 | **426.7** | **74.6** | 20 |
+
+结论：① `post`（rerank 后再多样性选篇）**是负收益**——recall 从 0.8095 掉到 0.7143，却多花 6217 ms，彻底证伪；② 向量 `pre` 方向对（kp 覆盖 0.6833→0.7119）但花 2180 ms 只省 282 ms 重排，净亏 7.7×；③ λ 调高反而变差（0.7119→0.6714），说明起作用的是**多样性项本身**，不是"少送几篇给 rerank"；④ `pre_lex` 用 jieba 词级 Jaccard（阈值 0.35）近似多样性，**不需要额外 embedding**，拿到与 `pre` λ=0.5 相同的最佳质量，开销只有 74.6 ms（便宜 29×），重排 759.6→426.7 ms，**净省 ~258 ms 且质量更好**。
+
+> ⚠ **后续修正（2026-09-23）**：29 条 QUESTION_POOL 探针诊断与项目集双盲 A/B（`project_retrieval_eval_mmr_fair_off/on`，recall 均 0.5238）显示 **MMR 在现役链路上无增益**，生产默认 `MITTA_MMR_STAGE=off`（`retrieval_constants.py:42`）。上表保留为当时定档依据；`pre_lex` 作为可切换档位保留。
+
+### 端到端实测（并行 vs 串行）
+
+**端到端实测**（21 条项目评测集，同一份数据同一环境）：
+
+| 组合 | 端到端均值 | p95 | 改写 | 稠密 | BM25 | 重排 | MMR |
+|---|---|---|---|---|---|---|---|
+| 串行基线（off） | 4278.7 ms | 8294 ms | 2226.0 | 1280.7 | 12.2 | 759.6 | 0 |
+| 串行 + pre_lex（曾默认） | 9749.2 ms | — | 2286.4 | 6947.2 ⚠ | 14.1 | 426.7 | 74.6 |
+| **并行（parallel+off）** | 6487.0 ms | 8582 ms | — | 5791.5 ⚠ | — | 695.4 | 0 |
+
+> ⚠ **读数口径**：本次 6 臂连跑期间，外部 embedding API 抖动剧烈——同一份数据、同一段代码，`dense_retrieve` 分项在 1280.7 ~ 9385.9 ms 之间跳变（6× 方差），而 `rewrite`（2226~2529 ms）与 `rerank`（426~760 ms）始终稳定。因此**只有稳定性分项可信，含稠密项的端到端均值不可跨臂比较**。并行臂结构收益的理论值约 960 ms（把 rewrite 与 dense(原问题)/bm25 重叠），远小于该抖动量级，本次 A/B **未能验证也未能否定**并行收益，需在 API 稳定窗口重测。
+
+**理论分解**（剔除抖动，仅按依赖关系推算）：
+
+| 组合 | 推算端到端 | 说明 |
+|---|---|---|
+| 串行基线 | ~3.5 s | rewrite 2.2s + dense 1.3s + bm25 0.01s |
+| 并行（重写与首路召回重叠） | ~2.5 s | max(rewrite 2.2s, dense 0.3s) + dense 0.3s，省 ~29% |
+| 并行 + L1 改写缓存命中 | ~0.6 s | 改写 0 ms，只剩两阶段稠密 |
+| **L3a 精确命中**（任意编排） | **~1 ms** | 0 embedding / 0 rerank，直接返回 |
+
+> 补充事实：`ChromaVectorStore.query` **内部已用线程池并发**跑多条 query（`max_workers=min(len(query_texts),4)`），所以「4 路稠密」本身早就不是串行的，并行的边际收益只来自「rewrite 与 dense(原问题)/bm25 的时间重叠」，不要按 4× 去估算。生产环境保留 `RETRIEVE_PARALLEL_ENABLED=1` 默认开启，`=0` 一键回退串行对比。

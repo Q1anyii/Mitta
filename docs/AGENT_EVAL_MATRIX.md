@@ -38,6 +38,41 @@
 - 限流 Redis ZSET 滑动窗口 30 次/60s、Redis 异常降级内存 deque → E10
 - 动态路由（意图分类→检索→生成→记忆）→ E1
 
+## 单元测试与运行方式
+
+### 单元测试
+
+使用 pytest 框架，覆盖核心工具模块：
+
+| 测试文件 | 覆盖模块 | 用例数 |
+|---|---|---|
+| `tests/test_config.py` | 环境变量加载/校验/布尔解析 | 32 |
+| `tests/test_jwt_utils.py` | JWT 签发/验证/过期/密码哈希(bcrypt) | 12 |
+| `tests/test_rand_id_util.py` | 随机 ID 生成/唯一性/int 范围 | 10 |
+| `tests/test_agent_regression.py` | 动态路由/MCP 安全/工具兜底/记忆缓存 key/工具名解析 | 19 |
+
+**运行方式**：
+
+```bash
+cd src
+pytest ../tests/ -v
+```
+
+**最新结果**：**73 passed**（32+12+10+19），覆盖配置/JWT/ID 生成/Agent 回归（`test_access_token_expiration` 秒级精度断言已加 2s 容差）。该 4 文件组合被 `agent-regression.yml`（E14）纳入 CI 门禁（不含 RAGAS）。
+
+### 评测运行方式
+
+评测矩阵脚本统一约定：`conda activate langchain1.2`，`cd src`，`python -m agent_test.<script>`；离线白盒脚本需 Redis/PostgreSQL/在线 LLM/Embedding 可用，纯函数脚本无外部依赖。运行示例：
+
+```bash
+cd src
+python -m agent_test.eval_routing         # E1 动态路由（需 LLM）
+python -m agent_test.eval_tool_safety     # E4 MCP 安全（纯函数）
+python -m agent_test.eval_semantic_cache  # E6 语义缓存（需 WSL RedisSearch + embed + reranker）
+python -m agent_test.eval_online --username qianyi --password xxx  # E13 线上实测（默认 https://www.mittaai.xyz）
+python -m agent_test.ragas_eval           # E8 RAGAS 五项指标（LLM-as-judge，耗时大，仅线下评估，不进 CI）
+pytest ../tests/ -v                       # E14 CI 回归（73 用例，含 test_agent_regression.py）
+```
 ## 执行约定
 
 1. 环境：`conda activate langchain1.2`，`cd src`，`python -m agent_test.<script>`。
