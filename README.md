@@ -906,35 +906,9 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 一次 push 到 `main`：先跑 **回归门禁**（`agent-regression.yml`，73 用例纯函数 pytest），通过后才进入 **部署链路**（`acr-cicd.yml`，8 步）；回归失败直接红叉终止，不构建、不部署。
 
-```mermaid
-flowchart TD
-    subgraph GATE[回归门禁 agent-regression.yml]
-        direction TB
-        PUSH[push 到 main] --> REG[pytest 73 用例<br/>test_config 32 / regression 19 / jwt 12 / rand_id 10]
-        REG --> REGJ{全部通过?}
-        REGJ -->|否| REGFAIL[❌ 红叉 + 上传 artifact<br/>不构建 · 不部署]
-    end
-    REGJ -->|是| CHECK[① Checkout<br/>fetch-depth 2]
-    CHECK --> DETECT{② 重建镜像?<br/>Dockerfile / requirements / workflow}
-    DETECT -->|是| BUILD[③ Buildx → ACR<br/>SHORT_SHA + latest]
-    DETECT -->|否| SKIP[跳过构建<br/>复用 latest]
-    BUILD --> RSYNC[④ rsync 增量同步<br/>前端/配置/知识库 → /opt/mitta<br/>--exclude vector_db.json]
-    SKIP --> RSYNC
-    RSYNC --> INGEST{⑤ 蓝绿入库?<br/>embedding / knowledge-base / vector_db}
-    INGEST -->|是| BLUE[⑥ 入新 collection<br/>FAQ_KB_<sha> · 失败不动旧库]
-    INGEST -->|否| SKIPI[跳过入库]
-    BLUE --> SWITCH[⑦ 切 collection → 重启 api]
-    SKIPI --> SSH
-    SWITCH --> SSH[⑧ SSH 部署<br/>清残留 · pull · up -d]
-    SSH --> HEALTH{健康检查 ×24}
-    HEALTH -->|200| OK[✅ 成功<br/>保留两版 · 清悬空镜像]
-    HEALTH -->|失败| ROLLBACK[回滚旧 collection<br/>再重启]
-    ROLLBACK --> OK
-    HEALTH -->|全失败| FAIL[❌ docker logs --tail 50]
-
-    classDef gate fill:#F3E8FA,stroke:#9C5BD0,stroke-width:1.5px;
-    class PUSH,REG,REGJ,REGFAIL gate;
-```
+<div align="center">
+  <img src="docs/figures/ci-flow.svg" alt="Mitta CI/CD 流水线" width="95%">
+</div>
 
 **回归门禁覆盖什么**（都是纯函数、确定性断言，秒级出结果）：动态路由分流规则、MCP 安全白名单（命令/包名/env/sse/type）、工具结果兜底与按轮计数、记忆缓存 key 构造、工具名解析、配置与 JWT/ID 生成。
 
