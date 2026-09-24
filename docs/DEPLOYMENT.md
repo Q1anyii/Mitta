@@ -204,6 +204,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 ### 工作流文件
 
 - `.github/workflows/acr-cicd.yml`：触发条件为 push 到 `main` 分支（构建镜像→推 ACR→rsync→部署→健康检查）；含 **RAG 入库检测 + 蓝绿切换**
+  - **构建缓存隔离（2026-09-24，`d768ed1`）**：`cache-from/to` 固定 `scope=mitta-main` + `mode=max` 完整导出，避免 gha 默认 scope（buildkit）与其他 workflow（agent-regression）互相挤掉缓存导致依赖层反复全量重建+上传；首次用新 scope 会全量"种缓存"，第二次起依赖层稳定命中
 - `.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——被 `acr-cicd.yml` 通过 `workflow_call` 调用，作为部署前置 job（也支持 `workflow_dispatch` 手动触发）；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest，**73 用例、零外部依赖**（不连 Redis/Postgres/LLM/向量库），失败时上传 pytest 报告 artifact：
 
 | 测试文件 | 覆盖内容 | 用例数 |
@@ -247,12 +248,12 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 ### 镜像构建跳过机制（提速核心）
 
-`git diff --name-only HEAD~1 HEAD` 检查本次提交变更范围：
+`git diff --name-only ${LAST_IMAGE_BUILD_SHA}..HEAD` 回溯检查「自上次成功构建镜像以来」的变更（首次取 `HEAD~50..HEAD`，遇任一敏感文件即判定需要重建）：
 
-| 变更文件 | 是否重建镜像 | 耗时 |
+| 变更范围 | 是否重建镜像 | 耗时 |
 |---|---|---|
-| 仅源码 / 前端 / 配置 | 否（复用 latest） | **~2-3 分钟** |
-| `Dockerfile` / `requirements.txt` / `.github/workflows/` | 是（全量构建） | 8-12 分钟 |
+| 仅 `docs/**` / `README.md` / `.agent/**` 等非敏感路径 | 否（复用 latest，rsync 增量同步） | **~2-3 分钟** |
+| `src/` / `Dockerfile` / `requirements.txt` / `.github/workflows/` | 是（全量构建） | 8-12 分钟 |
 
 构建产物同时打 `SHORT_SHA` 与 `latest` 两个 tag，跳过构建的部署直接从 ACR 拉取已有 `latest`。
 
@@ -287,4 +288,4 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 
 **边界说明**：仓库内 `vector_db.json` 是初始值（`FAQ_KNOWLEDGE_BASE`），服务器上被 CI 改过名；换服务器时需手动恢复初始 collection 或重新入库到初始名。首个 commit 无 `HEAD~1` 时 `git diff` 失败不触发入库（首次部署人工初始化即可）。BM25 旧 key 按 doc_id 前缀保留不清（回滚需要），数据量小不影响性能。
 
-> 完整流程图见 [docs/ci-flow.html](ci-flow.html)。
+> 完整流程图见 [figures/ci-flow.svg](figures/ci-flow.svg)（与根 README 同一张图）；交互式 HTML 视图见 [ci-flow.html](ci-flow.html)。
