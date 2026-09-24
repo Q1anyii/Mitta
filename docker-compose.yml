@@ -18,7 +18,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-root}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须在 .env 设置 POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-agentproject}
+      POSTGRES_DB: ${POSTGRES_DB:-mitta}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -63,7 +63,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      POSTGRESQL_DB_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:?必须在 .env 设置 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-agentproject}?sslmode=disable
+      POSTGRESQL_DB_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:?必须在 .env 设置 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mitta}?sslmode=disable
       REDIS_DB_URL: redis://redis:6379/0
       HUNYUAN_API_KEY: ${HUNYUAN_API_KEY}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
@@ -76,7 +76,7 @@ services:
       JWT_REFRESH_TOKEN_EXPIRE_DAYS: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS:-30}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
-      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-AgentProject}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-Mitta}
       # 密码找回验证码邮件：真实值一律走服务器 .env / 环境变量，勿硬编码进仓库
       SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
       SMTP_PORT: ${SMTP_PORT:-465}

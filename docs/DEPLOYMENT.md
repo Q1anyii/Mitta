@@ -7,7 +7,7 @@
 | 依赖 | 版本/说明 |
 |---|---|
 | Python | 3.12（.venv 或 conda 均可） |
-| PostgreSQL | 16+（本地或 Docker，创建数据库 `agentproject`） |
+| PostgreSQL | 16+（本地或 Docker，创建数据库 `mitta`） |
 | Redis | 7+（**必须含 RediSearch 模块**，推荐 redis-stack；BM25 检索依赖） |
 | 向量库 | ChromaDB（免部署，低配首选）或 Milvus 2.x（可选） |
 | Docker | 部署到服务器时需要 |
@@ -44,7 +44,7 @@ docker-compose up -d postgres redis
 docker-compose up -d etcd minio milvus
 ```
 
-或手动启动各服务。PostgreSQL 需创建数据库 `agentproject`（表由服务启动时自动创建，用户表 userinfo / user_profile / user_files 亦由各服务自动建表）。**低配服务器（<2GB 内存）推荐使用 ChromaDB 免 Milvus 部署**，见下方向量库配置。
+或手动启动各服务。PostgreSQL 需创建数据库 `mitta`（表由服务启动时自动创建，用户表 userinfo / user_profile / user_files 亦由各服务自动建表）。**低配服务器（<2GB 内存）推荐使用 ChromaDB 免 Milvus 部署**，见下方向量库配置。
 
 ### 4. 配置向量库
 

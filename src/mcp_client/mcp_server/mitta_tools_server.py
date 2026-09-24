@@ -35,7 +35,7 @@ from pathlib import Path
 SRC_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(SRC_DIR))
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # E:\工作文件\AgentProject
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # E:\工作文件\Mitta
 ALLOWED_ROOT = PROJECT_ROOT
 
 from fastmcp import FastMCP

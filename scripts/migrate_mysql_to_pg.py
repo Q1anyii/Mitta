@@ -9,7 +9,7 @@ MySQL → PostgreSQL 用户数据一次性迁移脚本
 用法：
     cd 项目根目录
     set MYSQL_DB_URL=mysql+pymysql://root:1234@127.0.0.1:3306/mitta
-    set POSTGRESQL_DB_URL=postgresql://root:1234@127.0.0.1:5432/agentproject?sslmode=disable
+    set POSTGRESQL_DB_URL=postgresql://root:1234@127.0.0.1:5432/mitta?sslmode=disable
     python scripts/migrate_mysql_to_pg.py
 
 说明：
