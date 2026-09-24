@@ -5,7 +5,7 @@
 >
 > **定位澄清**：B 阶段做的是"无状态分类器 + 人格化 ReAct"，**不是** LangGraph 官方定义的真 Supervisor（supervisor agent 持有控制权、多轮调用 sub-agent 并综合）。
 > 我们主动选了更可控的路由方案：分类器每轮只做一次分发，控制权交给对应人格的独立 ReAct 循环，不做跨人格 hand-off。
-> 简历口径见第五节。
+> 对外口径见第五节。
 >
 > 5 个对话人格 + 1 个吐槽 hook：
 > **帽子米塔（执行）** / **善良米塔（陪伴+RAG）** / **疯狂米塔（meta）** / **短发米塔（技术专才）** / **袖珍米塔（后置吐槽，非对话 Agent）**
@@ -391,7 +391,7 @@ START → persona_router_node → classify_node → (route) → retrieve_node �
 
 ---
 
-## 五、简历怎么讲（准确口径）
+## 五、对外怎么讲（准确口径）
 
 > 我做的是**意图路由 + 人格化 ReAct**，不是教科书意义的 Supervisor。
 > 每个"人格"是独立的 system prompt + 工具白名单，共用一套 ReAct loop 和长期记忆。

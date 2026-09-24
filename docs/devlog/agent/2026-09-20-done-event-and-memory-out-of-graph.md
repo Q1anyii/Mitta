@@ -1,6 +1,6 @@
 # 2026-09-20 done 事件先行 + memory_node 移出主图（H-20260920-01）
 
-docs_sync: none（已同步 2026-09-21：本方案已被 c5ce743 反转，作为背景记录；项目详解 00 篇主图 memory_node 行、03 篇 §3.8、05 篇 §3.5 均按现役 fire-and-forget 口径更新并标注回退原因；根 README 节点表/流式输出/「记忆异步化」节；简历 Bullet B1/B4；SSE 事件类型补 done/chibi。提交见下）
+docs_sync: none（已同步 2026-09-21：本方案已被 c5ce743 反转，作为背景记录；项目详解 00 篇主图 memory_node 行、03 篇 §3.8、05 篇 §3.5 均按现役 fire-and-forget 口径更新并标注回退原因；根 README 节点表/流式输出/「记忆异步化」节；项目描述 Bullet B1/B4；SSE 事件类型补 done/chibi。提交见下）
 
 ## 类别
 agent（SSE 流协议 / 记忆时机改造）

@@ -1,6 +1,6 @@
 # 工具节点 setter 修复 + 疯狂人格自曝修复 + 双路由合并单路由（H-20260919-11）
 
-docs_sync: none（已同步 2026-09-19：项目详解 03 篇 §3.2 按 router_node 重写、§3.3 标注合并前行为、§3.5(6) 补 PROMPT_CRAZY 反 meta 重写；00 篇主图/目录树；08 篇 chunk 过滤与 persona_override；11 篇 3.1.10 E15 合并后回归 + 待确认第 8 条遗留；索引 README 冲突节；简历 Bullet B8；根 README 节点表/条件路由/E15。提交 fd16c48）
+docs_sync: none（已同步 2026-09-19：项目详解 03 篇 §3.2 按 router_node 重写、§3.3 标注合并前行为、§3.5(6) 补 PROMPT_CRAZY 反 meta 重写；00 篇主图/目录树；08 篇 chunk 过滤与 persona_override；11 篇 3.1.10 E15 合并后回归 + 待确认第 8 条遗留；索引 README 冲突节；项目描述 Bullet B8；根 README 节点表/条件路由/E15。提交 fd16c48）
 
 日期：2026-09-19
 类别：agent / persona / 性能

@@ -28,7 +28,7 @@ queries = [raw.get("主查询", query)] + raw.get("子查询", [])
 | key_points 覆盖 | 0.7119 | 0.6833 |
 | key_points 全覆盖比 | 0.4762 | 0.4286 |
 
-**口径警示**：简历/面试素材里引用的「混合检索 avg 0.8095 / median 1.0 / 零空结果 0%」
+**口径警示**：对外素材里引用的「混合检索 avg 0.8095 / median 1.0 / 零空结果 0%」
 仍然成立（boolean 口径未变），但**延迟分解和 key_points 两组数字是在 1 路召回下测的**，
 对外表述时应按修复后的 4 路口径讲。
 
@@ -283,4 +283,4 @@ LangGraph 的同步 superstep 对同一批无依赖节点是**串行执行**的 
    （`python -m ragas_test.eval_retrieval --dataset resources/knowledge-base/test-qa/eval_project_dataset.json --limit 21 --mmr-stage <档位> --tag <后缀>`）
 2. 新建 `eval_cache_layers.py`：按「重复提问 / 同义改写 / 多轮历史」三类负载量化 L1/L2/L3a/L3b 命中率与 embedding 调用削减
 3. `clear_thread_cache` 的调用点重新评估（L3a 跨会话共享后不该按 thread 清）
-4. 简历口径复核：混合检索的延迟分解与 key_points 需按 4 路召回重新表述
+4. 对外口径复核：混合检索的延迟分解与 key_points 需按 4 路召回重新表述

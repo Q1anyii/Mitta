@@ -1,5 +1,5 @@
 ---
-docs_sync: none（已同步 2026-09-23：28 条 LLM-judge 全量结果 + 自建评测集 28 条 + RRF 路级权重 + MMR 默认 off + TypeSafeClassifier + 增量入库去 hash，已落根 README/项目详解 04/11/索引/实测数据/简历 Bullet/素材库/面试稿件/Wiki）
+docs_sync: none（已同步 2026-09-23：28 条 LLM-judge 全量结果 + 自建评测集 28 条 + RRF 路级权重 + MMR 默认 off + TypeSafeClassifier + 增量入库去 hash，已落根 README/项目详解 04/11/索引/实测数据/项目描述 Bullet/素材库/对外稿件/Wiki）
 ---
 
 # 知识库重建事故修复 + LLM Judge 全量评测（base_id 冲突 / 评测集改造 / 增量入库）

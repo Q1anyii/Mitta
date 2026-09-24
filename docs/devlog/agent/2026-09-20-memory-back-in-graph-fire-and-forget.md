@@ -1,6 +1,6 @@
 # 2026-09-20 正文流完即结束加载态·方案反转：memory_node 回图 + 节点内 fire-and-forget
 
-docs_sync: none（已同步 2026-09-21：项目详解 00 篇主图 memory_node 行、03 篇 §3.8 补 fire-and-forget 段落、05 篇 §3.5/四章第 4 条/Q3/六章口述、08 篇 done 先行+chibi 异步；根 README 节点表/功能特性/「流式输出与工具调用状态」+新增「记忆异步化」节；简历 Bullet B1/B4；提交见下）
+docs_sync: none（已同步 2026-09-21：项目详解 00 篇主图 memory_node 行、03 篇 §3.8 补 fire-and-forget 段落、05 篇 §3.5/四章第 4 条/Q3/六章口述、08 篇 done 先行+chibi 异步；根 README 节点表/功能特性/「流式输出与工具调用状态」+新增「记忆异步化」节；项目描述 Bullet B1/B4；提交见下）
 
 ## 类别
 agent（流式完成态优化 · 方案反转）

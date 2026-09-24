@@ -1,6 +1,6 @@
 # mitta-tools 线上未装配：cwd 指向不存在的用户目录，12 工具全缺
 
-docs_sync: none（已同步 2026-09-19：项目详解 06 篇新增 §3.3b 完整事故复盘 + §3.7 服务器表 cwd=/app 修正 + §六 口述补案例；11 篇 CI ④ 后补"配置类改动部署路径"；索引 README 冲突节；简历 Bullet B3；根 README MCP 表 cwd + 配置排查提示。提交 fd16c48）
+docs_sync: none（已同步 2026-09-19：项目详解 06 篇新增 §3.3b 完整事故复盘 + §3.7 服务器表 cwd=/app 修正 + §六 口述补案例；11 篇 CI ④ 后补"配置类改动部署路径"；索引 README 冲突节；项目描述 Bullet B3；根 README MCP 表 cwd + 配置排查提示。提交 fd16c48）
 
 日期：2026-09-19
 类别：deploy / mcp

@@ -96,7 +96,7 @@ USERNAME = "评测用户"
 
 # 画像事实池：覆盖长期记忆提取的真实类别（memory_node / prompt_constants 语义）
 FACT_POOL = [
-    ("职业", "计算机相关专业应届生，正在参加秋招，投递 AI 应用开发方向"),
+    ("职业", "计算机相关专业在读学生，正在寻找 AI 应用开发方向的机会"),
     ("技能", "Java 后端与 Python 双栈，熟悉 Spring Boot、FastAPI"),
     ("技能", "熟悉 LangGraph、LangChain，做过 Agent 状态机与工具编排"),
     ("技能", "了解 MCP 协议，实践过本地 MCP Server 与工具装配"),
@@ -109,7 +109,7 @@ FACT_POOL = [
     ("环境", "使用 conda 管理 Python 环境（langchain1.2）"),
     ("环境", "使用 Git 管理代码，遵循先提交后推送的习惯"),
     ("位置", "位于江西南昌"),
-    ("目标", "秋招目标是 AI 应用 / Agent 开发相关岗位"),
+    ("目标", "目标岗位是 AI 应用 / Agent 开发相关方向"),
     ("学习", "正在学习多 Agent 协作与 Supervisor 架构"),
     ("兴趣", "对 AI 产品化、Agent 落地场景感兴趣"),
     ("习惯", "开发中习惯先跑小样本验证再全量执行"),
