@@ -231,9 +231,10 @@ jobs:
             fi
 
             echo "=== [3/4] 重建 api 容器（不 build） ==="
-            # 先停旧容器，等 PostgreSQL 连接释放，再起新的（避免 PoolTimeout）
+            # 停旧 api → 重启 PG 清空连接池 → 等 PG ready → 起新 api
             docker compose stop api
-            sleep 5
+            docker compose restart postgres
+            until docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
             docker compose up -d --no-build api
 
             echo "=== [3.5/4] 重建 nginx（应用 HTTPS/443/证书挂载变更） ==="
