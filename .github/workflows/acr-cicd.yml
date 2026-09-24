@@ -231,10 +231,11 @@ jobs:
             fi
 
             echo "=== [3/4] 重建 api 容器（不 build） ==="
-            # 停旧 api → 重启 PG 清空连接池 → 等 PG ready → 起新 api
+            # 停旧 api → 重启 PG 清空连接池 → 等 PG ready + 恢复 → 起新 api
             docker compose stop api
             docker compose restart postgres
-            until docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
+            until docker compose exec -T postgres pg_isready -U root > /dev/null 2>&1; do sleep 1; done
+            sleep 10
             docker compose up -d --no-build api
 
             echo "=== [3.5/4] 重建 nginx（应用 HTTPS/443/证书挂载变更） ==="
