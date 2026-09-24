@@ -289,3 +289,35 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 **边界说明**：仓库内 `vector_db.json` 是初始值（`FAQ_KNOWLEDGE_BASE`），服务器上被 CI 改过名；换服务器时需手动恢复初始 collection 或重新入库到初始名。首个 commit 无 `HEAD~1` 时 `git diff` 失败不触发入库（首次部署人工初始化即可）。BM25 旧 key 按 doc_id 前缀保留不清（回滚需要），数据量小不影响性能。
 
 > 完整流程图见 [figures/ci-flow.svg](figures/ci-flow.svg)（与根 README 同一张图）；交互式 HTML 视图见 [ci-flow.html](ci-flow.html)。
+
+## 常见故障排查
+
+### api 启动即 PoolTimeout / 健康检查全失败（根因：PG 目标库漂移）
+
+**现象**：CI 部署段每次起 api 失败——健康检查 24 次全 `HTTP 000000`，api 日志在 `checkpointer.setup()` 阶段抛 `psycopg_pool.PoolTimeout: couldn't get a connection after 5.00 sec`。
+
+**表象陷阱**：看起来是"拿不到 PG 连接"，容易误判为旧容器残留、连接池未清、PG crash recovery 未完成或内存不足（低配服务器）。这些时序措施都验证过无效。
+
+**决定性证据**：在 api 容器内手动建 pool（timeout 放宽到 20s），后台日志露出真因：
+
+```
+error connecting in 'pool-1': connection to server at "172.18.0.4", port 5432 failed:
+FATAL:  database "mitta" does not exist
+```
+
+psycopg_pool `open=True` 立即返回，后台 worker 反复连目标库被 PG 拒绝，池里永远没有可用连接 → 业务侧 `getconn(timeout=5)` 抛 PoolTimeout。**PoolTimeout 只是表象，`error connecting in` 那行才是真因**。
+
+**根因**：`POSTGRES_DB` 是**初始化参数**，只在 postgres 数据卷首次建库时生效。数据卷是项目旧名时期初始化的（库名为旧名），改名 `mitta` 后已有卷不会补建，应用连 `postgres:5432/mitta` 一直报库不存在。
+
+**修复**（改名保留全部历史数据，可逆）：
+
+```bash
+docker compose stop api
+docker exec mitta-postgres psql -U root -d postgres \
+  -c "ALTER DATABASE <旧库名> RENAME TO mitta;"
+docker compose up -d --no-build api
+```
+
+注意：**不能** `CREATE DATABASE mitta`——那会建空库，历史数据仍留在旧库里，等于数据"丢失"。
+
+**教训**：改 `POSTGRES_DB` / 连接串库名后必须同步服务器已有数据卷；`restart` / `up -d` 不会重建库；排查连接问题先看 pool 后台的 `error connecting in` 行，不要先怀疑内存 / 连接残留 / 时序。
