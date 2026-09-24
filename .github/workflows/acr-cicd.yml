@@ -231,11 +231,11 @@ jobs:
             fi
 
             echo "=== [3/4] 重建 api 容器（不 build） ==="
-            # 停旧 api → 重启 PG 清空连接池 → 等 PG ready + 恢复 → 起新 api
+            # 停旧 api → 起新 api。
+            # 历史注记：曾因误判根因在这里加 restart postgres + pg_isready + sleep 10；
+            # 真因是 PG 库名漂移（agentproject→mitta），已在服务器 ALTER DATABASE 改名修复，
+            # 这里无需再重启 PG（重启只会徒增 downtime）。
             docker compose stop api
-            docker compose restart postgres
-            until docker compose exec -T postgres pg_isready -U root > /dev/null 2>&1; do sleep 1; done
-            sleep 10
             docker compose up -d --no-build api
 
             echo "=== [3.5/4] 重建 nginx（应用 HTTPS/443/证书挂载变更） ==="
