@@ -1,15 +1,285 @@
 <html style="margin:0;padding:0;">
-<title>Mitta CI/CD 流水线</title>
-<div style="background-color:transparent;box-sizing:border-box;font-family:'Roboto','PingFang SC','Segoe UI',Arial,sans-serif;padding:12px 0;">
-  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 6px 2px;">
-    <span style="font-size:16px;font-weight:600;color:#1A1B1C;">Mitta · CI/CD 流水线</span>
-    <span style="font-size:12px;color:#6B7280;">回归门禁前置 + 部署 8 步 · push → main 触发</span>
+<title>Mitta CI/CD 流水线（交互式流程图）</title>
+<div style="background-color:transparent;box-sizing:border-box;font-family:'Roboto','PingFang SC','Segoe UI',Arial,sans-serif;padding:8px 0;color:#1A1B1C;">
+  <style>
+    #graph svg [data-node]{transition:filter .15s,opacity .15s;}
+    #graph svg [data-node]:hover{filter:url(#sd) brightness(1.07);}
+    #graph svg text{user-select:none;}
+  </style>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:0 2px 6px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div style="width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#8BC8EA,#5599C4);box-shadow:0 1px 4px rgba(85,153,196,0.35);"></div>
+      <span style="font-size:16px;font-weight:700;color:#1A1B1C;">Mitta · CI/CD 流水线</span>
+    </div>
+    <span style="font-size:12px;color:#6B7280;">点击菱形判定节点 → 分支线闪烁流动 → 选择后沿流水线推进</span>
   </div>
-  <img src="ci-flow.svg" alt="Mitta CI/CD 流水线" style="width:100%;height:auto;display:block;">
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 2px 0;font-size:12px;color:#6B7280;">
-    <span style="padding:4px 10px;border-radius:999px;background:rgba(201,167,232,0.15);">回归门禁：73 用例纯函数 pytest，红则终止</span>
-    <span style="padding:4px 10px;border-radius:999px;background:rgba(139,200,234,0.15);">普通代码/前端改动：跳过构建 → ~2-3 分钟</span>
-    <span style="padding:4px 10px;border-radius:999px;background:rgba(234,102,104,0.12);">Dockerfile/依赖改动：全量构建 → 8-12 分钟</span>
+
+  <div id="graph" style="position:relative;width:100%;border:1px solid rgba(26,27,28,0.12);border-radius:12px;box-sizing:border-box;background:radial-gradient(rgba(17,24,39,0.035) 1px,transparent 1px),linear-gradient(180deg,#FDFDFE,#F7F8FA);background-size:14px 14px,100% 100%;"></div>
+
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;">
+    <button id="reset" style="padding:5px 12px;border-radius:8px;border:1px solid rgba(26,27,28,0.25);background:#fff;color:#374151;font-size:12px;font-weight:600;cursor:pointer;">↺ 重置</button>
+    <span id="stagebadge" style="padding:3px 10px;border-radius:999px;background:#EDE9F7;color:#7A6BB0;font-size:11px;font-weight:600;"></span>
+    <span id="statusbar" style="font-size:12px;color:#374151;flex:1 1 200px;min-width:0;line-height:1.6;"></span>
+    <span style="padding:3px 9px;border-radius:999px;background:rgba(201,167,232,0.15);font-size:11px;color:#6B7280;">回归门禁 73 用例 · 红则终止</span>
+    <span style="padding:3px 9px;border-radius:999px;background:rgba(139,200,234,0.15);font-size:11px;color:#6B7280;">非敏感变更：跳过构建 ~2-3 分钟</span>
+    <span style="padding:3px 9px;border-radius:999px;background:rgba(234,102,104,0.12);font-size:11px;color:#6B7280;">src/依赖变更：全量构建 8-12 分钟</span>
   </div>
+
+  <script>
+  (function() {
+    'use strict';
+    // 宽扁布局：viewBox 1680×560，主链居中 x≈840，判定分支左右展开
+    var W = 1680, H = 560;
+
+    // ---- 图结构（阶段色体系：动作浅渐变 / 判定深渐变 / 终语义色）----
+    var nodes = {
+      start:   { id:'start',   label:'push 到 main',          sub:'触发 acr-cicd.yml',             type:'action',   x:740, y:6,   w:200, h:44, grad:'gbL', border:'#5599C4', stage:2 },
+      gate:    { id:'gate',    label:'回归门禁',              sub:'pytest 73 用例',                type:'decision', x:735, y:64,  w:210, h:54, grad:'gpD', border:'#8E6FC8', stage:1 },
+      fail:    { id:'fail',    label:'❌ 红叉 + artifact',    sub:'不构建 · 不部署 · 不重启',       type:'terminal', x:160, y:68,  w:260, h:46, grad:'gr',  border:'#D94448', stage:1 },
+      buildq:  { id:'buildq',  label:'重建镜像？',            sub:'src / Dockerfile / req / workflows', type:'decision', x:735, y:152, w:210, h:54, grad:'gbD', border:'#5599C4', stage:2 },
+      build:   { id:'build',   label:'Buildx → ACR',         sub:'双 tag：sha + latest',           type:'action',   x:160, y:160, w:260, h:46, grad:'gbL', border:'#5599C4', stage:2 },
+      reuse:   { id:'reuse',   label:'复用 latest',           sub:'跳过构建',                       type:'action',   x:1260, y:160, w:260, h:46, grad:'ggL', border:'#4FA985', stage:2 },
+      rsync:   { id:'rsync',   label:'rsync 增量同步',        sub:'前端 / 配置 / 知识库 → /opt/mitta', type:'action', x:730, y:230, w:220, h:44, grad:'gbL', border:'#5599C4', stage:2 },
+      blueq:   { id:'blueq',   label:'蓝绿入库？',            sub:'embedding / kb / vector_db 变更', type:'decision', x:735, y:288, w:210, h:54, grad:'ggD', border:'#4FA985', stage:3 },
+      ingest:  { id:'ingest',  label:'入新库 FAQ_KB_&lt;sha&gt;', sub:'失败不动旧库 → 切 collection', type:'action', x:130, y:292, w:300, h:48, grad:'ggL', border:'#4FA985', stage:3 },
+      deploy:  { id:'deploy',  label:'SSH 部署',              sub:'清残留 · pull · up -d',          type:'action',   x:730, y:364, w:220, h:44, grad:'ggL', border:'#4FA985', stage:3 },
+      health:  { id:'health',  label:'健康检查 ×24',          sub:'sleep 20 + curl /health',        type:'decision', x:735, y:422, w:210, h:54, grad:'goD', border:'#D97F45', stage:4 },
+      success: { id:'success', label:'✅ 部署成功',            sub:'保留两版 · 清悬空镜像',          type:'terminal', x:160, y:426, w:260, h:46, grad:'gs',  border:'#3E9E1D', stage:4 },
+      rollback:{ id:'rollback',label:'回滚成功？',            sub:'切旧 collection · 再重启',       type:'decision', x:1260, y:422, w:260, h:54, grad:'goD', border:'#D97F45', stage:4 },
+      rolfail: { id:'rolfail', label:'回滚失败',              sub:'docker logs --tail 50 · exit 1', type:'terminal', x:1260, y:490, w:260, h:46, grad:'gr',  border:'#D94448', stage:4 }
+    };
+
+    var edges = [
+      { from:'start',   to:'gate',    label:'',    cond:null },
+      { from:'gate',    to:'fail',    label:'否',  cond:'否' },
+      { from:'gate',    to:'buildq',  label:'是',  cond:'是' },
+      { from:'buildq',  to:'build',   label:'是',  cond:'是' },
+      { from:'buildq',  to:'reuse',   label:'否',  cond:'否' },
+      { from:'build',   to:'rsync',   label:'',    cond:null },
+      { from:'reuse',   to:'rsync',   label:'',    cond:null },
+      { from:'rsync',   to:'blueq',   label:'',    cond:null },
+      { from:'blueq',   to:'ingest',  label:'是',  cond:'是' },
+      { from:'blueq',   to:'deploy',  label:'否',  cond:'否' },
+      { from:'ingest',  to:'deploy',  label:'',    cond:null },
+      { from:'deploy',  to:'health',  label:'',    cond:null },
+      { from:'health',  to:'success', label:'通过', cond:'是' },
+      { from:'health',  to:'rollback',label:'失败', cond:'否' },
+      { from:'rollback',to:'rolfail', label:'失败', cond:'否' },
+      { from:'rollback',to:'success', label:'成功', cond:'是' }
+    ];
+
+    var STAGES = [
+      { name:'回归门禁',     bg:'rgba(201,167,232,0.05)',   tc:'#7A6BB0', badge:'#C9A7E8' },
+      { name:'构建与同步',   bg:'rgba(139,200,234,0.05)',   tc:'#4F87AD', badge:'#8BC8EA' },
+      { name:'入库与部署',   bg:'rgba(148,216,195,0.05)',   tc:'#3E9C78', badge:'#94D8C3' },
+      { name:'校验与回滚',   bg:'rgba(244,179,147,0.06)',   tc:'#C07B4B', badge:'#F4B393' }
+    ];
+
+    var state = { visited: ['start'], decided: {}, pending: null };
+    var graph = document.getElementById('graph');
+    var statusbar = document.getElementById('statusbar');
+    var stagebadge = document.getElementById('stagebadge');
+    var resetBtn = document.getElementById('reset');
+
+    function cc(n) { return { x: n.x + n.w / 2, y: n.y + n.h / 2 }; }
+    function edgePts(e) { return { p1: cc(nodes[e.from]), p2: cc(nodes[e.to]) }; }
+    function isWalked(e) {
+      for (var i = 0; i < state.visited.length - 1; i++) {
+        if (state.visited[i] === e.from && state.visited[i + 1] === e.to) return true;
+      }
+      return false;
+    }
+    function isPendingBranch(e) { return state.pending === e.from; }
+
+    function render() {
+      var html = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block;">';
+
+      // ---- 泳道（4 段，阶段色）----
+      var lanes = [ {y:54,h:88}, {y:146,h:132}, {y:282,h:130}, {y:416,h:140} ];
+      for (var li = 0; li < lanes.length; li++) {
+        var L = lanes[li], S = STAGES[li];
+        html += '<rect x="6" y="' + L.y + '" width="1668" height="' + L.h + '" rx="10" fill="' + S.bg + '"/>';
+        var lc = L.y + L.h / 2;
+        html += '<circle cx="30" cy="' + lc + '" r="6" fill="' + S.badge + '"/>';
+        html += '<rect x="48" y="' + (lc - 11) + '" width="78" height="22" rx="11" fill="rgba(255,255,255,0.9)" stroke="' + S.tc + '" stroke-opacity="0.3"/>';
+        html += '<text x="87" y="' + (lc + 4) + '" font-size="10" fill="' + S.tc + '" font-weight="700" text-anchor="middle">' + S.name + '</text>';
+      }
+
+      // ---- defs：渐变 + 阴影 + 箭头 ----
+      html += '<defs>';
+      html += '<linearGradient id="gbL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CAEAF7"/><stop offset="1" stop-color="#82BCDE"/></linearGradient>';
+      html += '<linearGradient id="gbD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A5D4EC"/><stop offset="1" stop-color="#5599C4"/></linearGradient>';
+      html += '<linearGradient id="gpD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDB4EC"/><stop offset="1" stop-color="#8E6FC8"/></linearGradient>';
+      html += '<linearGradient id="ggL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C9EDDC"/><stop offset="1" stop-color="#80C7AC"/></linearGradient>';
+      html += '<linearGradient id="ggD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A9E0C6"/><stop offset="1" stop-color="#4FA985"/></linearGradient>';
+      html += '<linearGradient id="goD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F7C9A0"/><stop offset="1" stop-color="#D97F45"/></linearGradient>';
+      html += '<linearGradient id="gr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5A2A4"/><stop offset="1" stop-color="#D94448"/></linearGradient>';
+      html += '<linearGradient id="gs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7FDD5A"/><stop offset="1" stop-color="#3E9E1D"/></linearGradient>';
+      html += '<filter id="sd" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="rgba(17,24,39,0.18)"/></filter>';
+      html += '<marker id="a" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="rgba(17,24,39,0.35)"/></marker>';
+      html += '<marker id="a_h" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#111827"/></marker>';
+      html += '</defs>';
+
+      // ---- 边 ----
+      for (var i = 0; i < edges.length; i++) {
+        var e = edges[i];
+        var P = edgePts(e);
+        var walked = isWalked(e);
+        var pb = isPendingBranch(e);
+        var decided = state.decided[e.from];
+        var hl = walked || (decided && decided === e.cond);
+        var stroke, sw, dash, op;
+        if (pb) { stroke = '#D64545'; sw = 2.8; dash = '12 9'; op = 0.95; }
+        else if (hl) { stroke = '#111827'; sw = 3; dash = null; op = 1; }
+        else { stroke = 'rgba(17,24,39,0.22)'; sw = 1.2; dash = null; op = 0.5; }
+
+        html += '<line x1="' + P.p1.x + '" y1="' + P.p1.y + '" x2="' + P.p2.x + '" y2="' + P.p2.y + '" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-dasharray="' + (dash || 'none') + '" marker-end="url(#a' + (hl || pb ? '_h' : '') + ')" opacity="' + op + '">';
+        if (pb) {
+          html += '<animate attributeName="stroke-dashoffset" from="21" to="0" dur="0.7s" repeatCount="indefinite"/>';
+          html += '<animate attributeName="opacity" values="0.4;1;0.4" dur="0.8s" repeatCount="indefinite"/>';
+        }
+        html += '</line>';
+        if (walked) {
+          html += '<circle r="3.2" fill="#FFFFFF" opacity="0.95"><animateMotion dur="1.4s" begin="0s" repeatCount="indefinite" path="M ' + P.p1.x + ' ' + P.p1.y + ' L ' + P.p2.x + ' ' + P.p2.y + '"/></circle>';
+          html += '<circle r="3.2" fill="#FFFFFF" opacity="0.7"><animateMotion dur="1.4s" begin="0.7s" repeatCount="indefinite" path="M ' + P.p1.x + ' ' + P.p1.y + ' L ' + P.p2.x + ' ' + P.p2.y + '"/></circle>';
+        } else if (pb) {
+          html += '<circle r="3.6" fill="#FFD54F" opacity="0.95"><animateMotion dur="0.8s" begin="0s" repeatCount="indefinite" path="M ' + P.p1.x + ' ' + P.p1.y + ' L ' + P.p2.x + ' ' + P.p2.y + '"/></circle>';
+        }
+        if (e.label) {
+          var lhl = (decided === e.cond);
+          var mx, my;
+          if (Math.abs(P.p1.y - P.p2.y) < 10) { mx = (P.p1.x + P.p2.x) / 2; my = P.p1.y - 9; }
+          else { mx = (P.p1.x + P.p2.x) / 2 + 12; my = (P.p1.y + P.p2.y) / 2; }
+          html += '<rect x="' + (mx - 19) + '" y="' + (my - 15) + '" width="38" height="20" rx="10" fill="' + (lhl ? '#111827' : 'rgba(255,255,255,0.92)') + '" stroke="' + (lhl ? '#111827' : 'rgba(17,24,39,0.18)') + '" stroke-width="1"/>';
+          html += '<text x="' + mx + '" y="' + (my - 1) + '" font-size="12" font-weight="700" fill="' + (lhl ? '#FFFFFF' : '#6B7280') + '" text-anchor="middle" style="pointer-events:none;">' + e.label + '</text>';
+        }
+      }
+
+      // ---- 节点 ----
+      for (var key in nodes) {
+        var n = nodes[key];
+        var visited = state.visited.indexOf(n.id) !== -1;
+        var pending = state.pending === n.id;
+        var dval = state.decided[n.id];
+        var fill, stroke, textColor, subColor;
+        if (n.type === 'terminal' && visited) { fill = 'url(#' + n.grad + ')'; stroke = 'none'; textColor = '#fff'; subColor = 'rgba(255,255,255,0.92)'; }
+        else if (n.type === 'decision' && dval) { fill = (dval === '是') ? '#2E9E4F' : '#D64545'; stroke = 'none'; textColor = '#fff'; subColor = 'rgba(255,255,255,0.92)'; }
+        else if (visited) { fill = 'url(#' + n.grad + ')'; stroke = 'none'; textColor = '#fff'; subColor = 'rgba(255,255,255,0.92)'; }
+        else { fill = '#FFFFFF'; stroke = n.border; textColor = '#1A1B1C'; subColor = '#6B7280'; }
+        var sw2 = pending ? 3 : (visited ? 1.4 : 1.2);
+        var op = (visited || pending) ? 1 : 0.92;
+        var swStroke = pending ? '#111827' : stroke;
+        var filt = (visited || pending) ? ' filter="url(#sd)"' : '';
+
+        if (n.type === 'decision') {
+          var cx = n.x + n.w / 2, cy = n.y + n.h / 2, rx = n.w / 2 + 12, ry = n.h / 2 + 12;
+          if (pending) {
+            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rx + '" fill="none" stroke="#D64545" stroke-width="2" opacity="0.7">';
+            html += '<animate attributeName="r" values="' + rx + ';' + (rx + 10) + ';' + rx + '" dur="1.2s" repeatCount="indefinite"/>';
+            html += '<animate attributeName="opacity" values="0.75;0;0.75" dur="1.2s" repeatCount="indefinite"/>';
+            html += '</circle>';
+          }
+          html += '<polygon points="' + cx + ',' + (cy - ry) + ' ' + (cx + rx) + ',' + cy + ' ' + cx + ',' + (cy + ry) + ' ' + (cx - rx) + ',' + cy + '" fill="' + fill + '" stroke="' + swStroke + '" stroke-width="' + sw2 + '" opacity="' + op + '"' + filt + ' data-node="' + n.id + '" style="cursor:pointer;transition:fill .2s;"/>';
+          html += '<text x="' + cx + '" y="' + (cy - 2) + '" font-size="15" font-weight="700" fill="' + textColor + '" text-anchor="middle" pointer-events="none">' + n.label + '</text>';
+          html += '<text x="' + cx + '" y="' + (cy + 16) + '" font-size="9.5" fill="' + subColor + '" text-anchor="middle" pointer-events="none">' + n.sub + '</text>';
+        } else {
+          html += '<rect x="' + n.x + '" y="' + n.y + '" width="' + n.w + '" height="' + n.h + '" rx="10" fill="' + fill + '" stroke="' + swStroke + '" stroke-width="' + sw2 + '" opacity="' + op + '"' + filt + ' data-node="' + n.id + '" style="cursor:pointer;transition:fill .2s;"/>';
+          html += '<text x="' + (n.x + n.w / 2) + '" y="' + (n.y + 20) + '" font-size="14.5" font-weight="600" fill="' + textColor + '" text-anchor="middle" pointer-events="none">' + n.label + '</text>';
+          html += '<text x="' + (n.x + n.w / 2) + '" y="' + (n.y + 35) + '" font-size="9.5" fill="' + subColor + '" text-anchor="middle" pointer-events="none">' + n.sub + '</text>';
+        }
+      }
+      html += '</svg>';
+
+      // 浮动选择按钮
+      if (state.pending) {
+        var pn = nodes[state.pending];
+        var scale = graph.clientWidth / W;
+        var px = (pn.x + pn.w / 2 - 100) * scale;
+        var py = (pn.y + pn.h / 2 + 28) * scale;
+        html += '<div style="position:absolute;left:' + px + 'px;top:' + py + 'px;display:flex;gap:10px;z-index:10;">';
+        html += '<button data-choice="是" style="padding:9px 0;width:100px;border-radius:10px;border:none;background:#2E9E4F;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(46,158,79,0.35);">✓ 是</button>';
+        html += '<button data-choice="否" style="padding:9px 0;width:100px;border-radius:10px;border:none;background:#D64545;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(214,69,69,0.35);">✗ 否</button>';
+        html += '</div>';
+      }
+
+      graph.innerHTML = html;
+
+      var nodeEls = graph.querySelectorAll('[data-node]');
+      for (var j = 0; j < nodeEls.length; j++) {
+        (function(el) {
+          el.addEventListener('click', function() { onNodeClick(el.getAttribute('data-node')); });
+        })(nodeEls[j]);
+      }
+      var btns = graph.querySelectorAll('[data-choice]');
+      for (var k = 0; k < btns.length; k++) {
+        (function(btn) {
+          btn.addEventListener('click', function() { onChoose(btn.getAttribute('data-choice')); });
+        })(btns[k]);
+      }
+      updateStatus();
+    }
+
+    function onNodeClick(id) {
+      var n = nodes[id];
+      if (n.type !== 'decision') return;
+      var last = state.visited[state.visited.length - 1];
+      if (id === last) { state.pending = id; render(); return; }
+      if (!edges.some(function(e) { return e.from === last && e.to === id; })) return;
+      state.pending = id;
+      render();
+    }
+
+    function onChoose(choice) {
+      if (!state.pending) return;
+      var id = state.pending;
+      state.pending = null;
+      state.decided[id] = choice;
+      var next = null;
+      for (var i = 0; i < edges.length; i++) {
+        if (edges[i].from === id && edges[i].cond === choice) { next = edges[i].to; break; }
+      }
+      if (!next) return;
+      state.visited.push(id);
+      advance(next);
+      render();
+    }
+
+    function advance(nodeId) {
+      state.visited.push(nodeId);
+      var n = nodes[nodeId];
+      if (n.type === 'action') {
+        var outs = edges.filter(function(e) { return e.from === nodeId; });
+        if (outs.length === 1) advance(outs[0].to);
+      }
+    }
+
+    function updateStatus() {
+      var last = nodes[state.visited[state.visited.length - 1]];
+      var msg;
+      if (last.id === 'fail') msg = '流水线终止：回归门禁未通过，不构建 · 不部署 · 不重启。';
+      else if (last.id === 'rolfail') msg = '部署失败：回滚也失败，输出 docker logs 并 exit 1。';
+      else if (last.id === 'success') msg = '部署成功 ✅：健康检查通过（或回滚后恢复）。';
+      else if (state.pending) msg = '当前判定：<b>' + nodes[state.pending].label + '</b> —— 两条分支线正在闪烁，请选择「是 / 否」。';
+      else msg = '当前：<b>' + last.label + '</b>。点击下一个菱形判定节点选择分支。';
+      statusbar.innerHTML = msg;
+      var st = STAGES[(last.stage || 1) - 1];
+      stagebadge.textContent = '阶段 ' + (last.stage || 1) + ' · ' + st.name;
+      stagebadge.style.background = 'rgba(255,255,255,0.85)';
+      stagebadge.style.border = '1px solid ' + st.tc;
+      stagebadge.style.color = st.tc;
+      if (last.id === 'fail' || last.id === 'rolfail') { stagebadge.textContent = '已终止'; stagebadge.style.color = '#D64545'; stagebadge.style.borderColor = '#D64545'; }
+      else if (last.id === 'success') { stagebadge.textContent = '已完成'; stagebadge.style.color = '#2E9E4F'; stagebadge.style.borderColor = '#2E9E4F'; }
+    }
+
+    function reset() {
+      state = { visited: ['start'], decided: {}, pending: null };
+      render();
+    }
+
+    resetBtn.addEventListener('click', reset);
+    reset();
+  })();
+  </script>
 </div>
 </html>
