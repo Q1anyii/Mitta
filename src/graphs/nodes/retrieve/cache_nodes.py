@@ -10,7 +10,7 @@ from loguru import logger
 from graphs.state import RAGState
 
 
-def check_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
+async def check_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
     """检查检索缓存是否命中。
 
     两级查找（2026-09-19 H-20260919-10）：
@@ -22,6 +22,10 @@ def check_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
     L3a 存在的原因：原实现只有 L3b，而 L3b 必须先算向量才能查 KNN，
     所以"命中"也要付 1 次 embedding + 12 条 rerank，收益只是延迟减半而非数量级下降。
     L3a 把"字面重复提问"（用户重发、刷新重试、复制粘贴）这条高频路径彻底打平。
+
+    singleflight（2026-09-28）：两级都未命中时，同 key 并发请求只放一个进回源，
+    其余 await 其结果（wait_or_lead）——防"过期后第一波并发回源"重复付
+    embedding/rerank/改写。key 用 L3a 缓存 key（同问题同知识库 = 同 key）。
 
     Args:
         state: 当前图状态，含 question
@@ -49,6 +53,14 @@ def check_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
     if query_in_cache:
         logger.success("缓存命中，直接返回")
         return {"reranked_docs": query_in_cache, "cache_hit": True}
+
+    # ── 两级均未命中：singleflight 合并并发回源（同一问题只回源一次）──
+    waited, docs = await cache_service.wait_or_lead(
+        cache_service.retrieve_exact_key(question)
+    )
+    if waited:
+        logger.success("[cache:sf] 等待并发回源完成，复用结果（未重复回源）")
+        return {"reranked_docs": docs, "cache_hit": True}
     return {"cache_hit": False}
 
 
@@ -70,6 +82,12 @@ def store_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
     if not thread_id:
         return {}
     if not state.get("cache_hit"):
+        # singleflight：先广播本次回源结果（同 key 等待者立即拿到），
+        # 再写缓存（兜底广播之后才到的请求直接命中）
+        cache_service.complete_rebuild(
+            cache_service.retrieve_exact_key(state["question"]),
+            state["reranked_docs"],
+        )
         # ttl 走 CacheService.store_cache 默认值（900s/15分钟）；不要对 user_id 调 redis TTL——
         # TTL 只能查已存在 key 的剩余时间，user_id 不是 key，返回 -2 会导致 expire 异常
         cache_service.store_cache(thread_id, state["question"], state["reranked_docs"])

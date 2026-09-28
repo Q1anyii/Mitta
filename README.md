@@ -68,7 +68,7 @@ docker-compose up -d
 
 ## 功能特性
 
-统一意图路由 · 多人格路由（4 人格 + 工具白名单 + chibi 吐槽）· RAG 混合检索 · MCP 工具集成（分组 + 懒加载）· 智能工具筛选 · 双通道记忆（短期/长期）· 检索缓存四层（LSH + KNN + rerank）· 流式 SSE + ack 预响应 · 断点续传 · 文件上传解析 · 知识库增量更新 API · 用户级 MCP 热重载 · 深度思考 · 安全认证。完整逐条说明见 [docs/FEATURES.md](docs/FEATURES.md)。
+统一意图路由 · 多人格路由（4 人格 + 工具白名单 + chibi 吐槽）· RAG 混合检索 · MCP 工具集成（分组 + 懒加载）· 智能工具筛选 · 双通道记忆（短期/长期）· 检索缓存四层（LSH + KNN + rerank，TTL 抖动 + singleflight 防雪崩）· 流式 SSE + ack 预响应 · 断点续传 · 文件上传解析 · 知识库增量更新 API · 用户级 MCP 热重载 · 深度思考 · 安全认证。完整逐条说明见 [docs/FEATURES.md](docs/FEATURES.md)。
 
 ## 文档
 

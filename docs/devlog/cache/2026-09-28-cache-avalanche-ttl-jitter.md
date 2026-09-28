@@ -1,5 +1,5 @@
 ---
-docs_sync: required（文档侧多处提到"检索缓存 TTL 15 秒/雪崩风险低"，现 TTL 已 900s 且加了抖动，需文档撰写 Agent 核对同步）
+docs_sync: none（已同步 2026-09-28：07-缓存体系.md §3.5 新增雪崩机理与抖动说明、失效策略表与 Q8 更新为 collection+flush_exact_cache+TTL 抖动口径、3.3/3.4 代码注释与设计取舍第 7 条；docs/DESIGN_NOTES.md L3a 键与失效策略表同步；简历 Bullet B6 失效策略与实测描述同步；「TTL 15 秒」为 cache_nodes.py 注释过时残留，已在 07 篇 §3.5 标注）
 ---
 
 # 2026-09-28 缓存雪崩防护：四层缓存 TTL 加随机抖动

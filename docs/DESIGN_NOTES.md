@@ -11,7 +11,7 @@
 | 节点缓存 | Redis | 输入哈希 | TTL 10~900 秒 |
 | 检索缓存 L1 改写 | Redis STRING（JSON） | `rw:{prompt_ver}:{hash(问题‖历史)}` | TTL 24h（跨用户共享） |
 | 检索缓存 L2 向量 | Redis STRING（float32 二进制） | `emb:{model_tag}:{hash(文本)}` | TTL 7d（跨用户共享） |
-| 检索缓存 L3a 精确 | Redis STRING（JSON） | `rcache:x:{kb_ver}:{hash(问题)}` | TTL 900s 命中续期（跨用户共享） |
+| 检索缓存 L3a 精确 | Redis STRING（JSON） | `rcache:x:{collection}:{hash(问题)}` | TTL 900s 命中续期（+10% 抖动，跨用户共享） |
 | 检索缓存 L3b 语义 | Redis + LSH 分桶 | thread_id + bucket_id | TTL 900s 命中续期 |
 | BM25 索引 | RedisSearch HASH | doc_id | 持久化，知识库重建时重建 |
 | 登录态 | Redis | user_id | access 15 分钟 / refresh 30 天 |
@@ -76,7 +76,7 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 |---|---|---|---|---|---|
 | **L1 改写** | LLM 查询改写结果 | `rw:{prompt_ver}:{sha256(norm(问题)‖norm(历史))[:32]}` | 归一化后问题+历史完全相同 | ✅ 全局共享（不含用户态） | 24h |
 | **L2 向量** | bge-m3 文本向量 | `emb:{model_tag}:{sha256(norm(文本))[:32]}` | 归一化后文本完全相同 | ✅ 全局共享 | 7d |
-| **L3a 精确结果** | 完整检索结果（含重排分） | `rcache:x:{kb_ver}:{sha256(norm(问题))[:32]}` | 归一化后问题完全一致 | ✅ 全局共享 | 900s（命中续期） |
+| **L3a 精确结果** | 完整检索结果（含重排分） | `rcache:x:{collection}:{sha256(norm(问题))[:32]}` | 归一化后问题完全一致 | ✅ 全局共享 | 900s（命中续期，+10% 抖动） |
 | **L3b 语义结果** | 完整检索结果（含重排分） | `retrieve_cache:{thread_id}:{bucket_id}`（LSH 分桶） | LSH 桶内 + rerank ≥ 0.5 | ❌ 按会话隔离 | 900s（命中续期） |
 
 **归一化**（决定 L1/L2/L3a 能否跨用户）：全角空格→半角、trim、连续空白折叠为单空格、ASCII 转小写。`"Redis  是什么？"`、`"Redis 是什么？ "`、`"redis 是什么？"` 三个写法会落到同一个 key。
@@ -89,12 +89,16 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 
 | 变更 | 失效范围 |
 |---|---|
-| 知识库重灌/切 chunk | `MITTA_KB_VERSION` 自增 → L3a、L3b **全部**失效 |
+| 知识库蓝绿切换（重灌） | collection 进 L3a key（`rcache:x:{collection}:{hash}`），切换即自动失效；L3b 靠 TTL 自然淘汰 |
+| 知识库增量增删改 | `flush_exact_cache()` 显式清空 `rcache:x:*`（collection 不变时 key 不变，必须主动失效） |
 | 改写 prompt 改版 | `MITTA_REWRITE_PROMPT_VER` 自增 → L1 全失效 |
 | 换 embedding 模型 | L2 key 自带 `model_tag`，新旧并存不串味，老条目自然过期 |
-| 时间 | L1 24h / L2 7d / L3 900s 动态续期 |
+| 时间 | L1 24h / L2 7d / L3 900s 动态续期（TTL 加 10% 随机抖动防雪崩） |
 
-> 已知限制：L3a 是跨会话共享的，而 `clear_thread_cache` 目前按 thread 清理，会误删本可共享的条目，需改为按 key 清理。
+> 2026-09-28 更新：L3a key 由静态 `KB_VERSION` 改为向量库 collection 命名空间（蓝绿入库每次切换
+> `FAQ_KNOWLEDGE_BASE_<sha>` 即换 key）；增量删除/更新由 `KnowledgeService` 三个操作点调用
+> `flush_exact_cache()` 显式失效。四层 TTL 全部经 `_ttl_with_jitter`（+10% 随机、只增不减），
+> 防止滑动续期把热门 key 的过期时刻收敛对齐引发雪崩。
 
 **各层实际收益**（本地 redis-stack 实测 / 分项推算）：
 
@@ -106,6 +110,15 @@ LangGraph `CachePolicy` 配合 `RedisCache`，在图编译时注入，节点结�
 | L3b | 4 路召回 + RRF + 部分重排 | 高并发下把整条 RAG 流水线降到「1 次 embedding + 3 条候选重排」 |
 
 **降级策略**：Redis 不可用（或 `CACHE_LAYER_ENABLED=0`）时静默降级为不缓存，不阻塞检索主链路。
+
+**singleflight：合并过期后第一波并发回源（2026-09-28 `8e735f3`，雪崩防护第二环）**：
+TTL 抖动分散过期时刻；singleflight 把"过期后同一时刻同一 key 的并发回源"合并成一次。
+`check_cache` 改 `async def`，两级缓存均未命中时走 `wait_or_lead(L3a key)`——同 key 已有 leader 在回源则
+`await` 复用结果直接返回，否则登记自己为 leader 放行回源；`store_cache` 完成点先 `complete_rebuild` 广播
+（等待者立即拿到同一份结果）再写缓存。合并 key 用 L3a 粒度（`rcache:x:{collection}:{hash}`，同问题同知识库
+= 同结果、跨 thread 共享；L3b 是 thread 隔离的不能做合并粒度）。等待带 20s 超时兜底（leader 回源异常/图中断
+时 Future 永不完成，无超时 = 永久挂起），超时/异常 pop 登记、`complete_rebuild` 幂等（pop 后再 set）、先广播
+再写缓存。单实例部署 → 进程内 `asyncio.Future` 实现零轮询；**多 worker 需换 Redis `SET NX` 锁 + 轮询/订阅**（遗留项）。
 
 ⚠ 部署注意：Windows 下 Redis 必须用 `127.0.0.1` 而非 `localhost`——`localhost` 会解析到 IPv6 `::1`，而 redis-stack 只监听 IPv4，报错 10054 后 **BM25 会静默退化为空召回**（不抛异常，极难发现）。**修复**：入库脚本 ingest_knowledge.py Step4 原本只 HSET 写内容、漏调 cache_service.create_sparse_index()，导致 RediSearch 上根本没有 kb_bm25 索引、FT.SEARCH 恒空；补一行幂等建索引后稀疏路从恒空恢复为正常召回，双路互补真实成立。
 
