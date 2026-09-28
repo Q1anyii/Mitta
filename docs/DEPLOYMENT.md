@@ -206,6 +206,7 @@ docker run -p 8000:8000 --env-file .env mitta-ai
 - `.github/workflows/acr-cicd.yml`：触发条件为 push 到 `main` 分支（构建镜像→推 ACR→rsync→部署→健康检查）；含 **RAG 入库检测 + 蓝绿切换**
   - **构建缓存隔离（2026-09-24，`d768ed1`）**：`cache-from/to` 固定 `scope=mitta-main` + `mode=max` 完整导出，避免 gha 默认 scope（buildkit）与其他 workflow（agent-regression）互相挤掉缓存导致依赖层反复全量重建+上传；首次用新 scope 会全量"种缓存"，第二次起依赖层稳定命中
   - **缓存导出提速（2026-09-28，`d15e4d2`）**：`cache-to` 加 `compression=zstd,compression-level=3` 降 `writing layer` 压缩耗时；`check` 步骤新增 `deps_changed` 输出——区间内 `Dockerfile|requirements.txt` 未变时 `cache-to` 留空**跳过导出**（`cache-from` 保持每次读取刷新 Last used 保活）。原理：代码层（COPY，~15MB）来自 git checkout、缓存无收益，真正值得缓存的只有依赖层（apt/pip/uv，2-3GB、数月才变一次）。纯代码改动 export **105s → 0s**
+  - **镜像构建瘦身（2026-09-28，`a1a5d67`）**：消除 `chown -R` 层，镜像瘦身约 **414MB**。根因：Docker overlay 下 chown 改 owner 触发 copy-up，被 chown 的每个文件都在新层记录一份完整内容——原 `chown -R /app /opt/uv-tools` 把代码 + uv 工具链（~400MB，含 markitdown 的 onnxruntime 模型）整树复制进新层，数据存两份。改法：`useradd` 提前 + uv 工具以 `appuser` 身份安装（工具树直接归 appuser，运行时 `uvx` 需在工具目录顶层建临时文件，root 只读会 Permission denied）+ `COPY --chown=appuser:appuser . .`，chown 层彻底消除、运行行为不变（A11 非 root 语义等价）。线上 `logs/ chroma_db/ config/ knowledge-base/` 为宿主机 bind mount，写权限由宿主机属主决定，与镜像内 chown 无关。
 - `.github/workflows/agent-regression.yml`：**Agent 回归测试流水线（E14）**——被 `acr-cicd.yml` 通过 `workflow_call` 调用，作为部署前置 job（也支持 `workflow_dispatch` 手动触发）；在 ubuntu-latest + Python 3.12 上运行纯函数 pytest，**73 用例、零外部依赖**（不连 Redis/Postgres/LLM/向量库），失败时上传 pytest 报告 artifact：
 
 | 测试文件 | 覆盖内容 | 用例数 |
