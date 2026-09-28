@@ -226,6 +226,23 @@ jobs:
             echo "=== [1/4] 登录 ACR ==="
             docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
 
+            echo "=== [1.5/4] 清理未使用镜像腾空间（防磁盘满导致 pull/启动失败） ==="
+            # 频繁部署时旧镜像都在 24h 内，until=24h 过滤器形同虚设（历史事故：
+            # 2026-09-28 服务器磁盘满 → 容器启动时 chromadb 写盘失败 → AttributeError
+            # → 健康检查 24 连败 CI 红）；改全量清未被任何容器引用的镜像。
+            # 运行中容器引用的镜像不受影响；服务器不本地 build，构建缓存纯占空间一并清。
+            docker image prune -af || true
+            docker builder prune -af || true
+
+            echo "=== [1.6/4] 备份当前 latest 为回滚源（健康检查失败时自动回滚） ==="
+            # 打临时 tag 保留当前版本：ACR 同时保留每个 SHORT_SHA 历史版本（回滚的远程源泉），
+            # 本地这份用于快速回滚（免重新下载）。prune -af 已先行，运行中容器引用的
+            # latest 不会被删，本 tag 挂在同一镜像上随之保留。
+            ROLLBACK_TAG="rollback_$(date +%Y%m%d_%H%M%S)"
+            docker tag "${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:latest" \
+                   "${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:$ROLLBACK_TAG" \
+              || { echo "WARN: 无当前镜像可备份（首次部署？），本次跳过自动回滚"; ROLLBACK_TAG=""; }
+
             echo "=== [2/4] 拉取最新后端镜像 ==="
             docker compose pull api
 
@@ -274,6 +291,22 @@ jobs:
               if [ "$i" = "24" ]; then
                 echo "❌ 健康检查失败，查看日志："
                 docker logs mitta-api --tail 80 2>&1
+                echo "=== 自动回滚镜像到上一版本 ==="
+                if [ -n "$ROLLBACK_TAG" ] && docker image inspect "${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:$ROLLBACK_TAG" >/dev/null 2>&1; then
+                  docker tag "${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:$ROLLBACK_TAG" \
+                         "${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_REPO }}:latest"
+                  docker compose up -d --no-build api
+                  sleep 15
+                  RB=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
+                  echo "回滚后健康检查: HTTP $RB"
+                  if [ "$RB" != "200" ]; then
+                    echo "❌ 回滚后仍不健康，需人工介入（docker logs mitta-api）"
+                  else
+                    echo "✅ 已回滚到上一版本，服务恢复（本次部署标记失败，新镜像需排查）"
+                  fi
+                else
+                  echo "  → 无回滚源（首次部署或备份失败），跳过镜像回滚"
+                fi
                 if [ "$INGEST_REQUIRED" = "true" ]; then
                   echo "=== 回滚：切回旧 collection $OLD_COLL 并重启（不能让 api 挂着有问题的新库） ==="
                   sed -i "s/\"collection\": *\"[^\"]*\"/\"collection\": \"$OLD_COLL\"/" resources/config/vector_db.json
@@ -290,6 +323,6 @@ jobs:
               sleep 5
             done
 
-            echo "=== 清理悬空镜像 ==="
-            docker image prune -f --filter "until=24h"
+            echo "=== 清理悬空镜像（pull 后旧 latest 变悬空，兜底清掉；不过滤 24h） ==="
+            docker image prune -f || true
             echo "=== 部署完成 ==="

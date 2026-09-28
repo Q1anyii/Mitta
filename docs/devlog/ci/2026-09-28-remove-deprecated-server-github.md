@@ -1,4 +1,4 @@
-docs_sync: none
+docs_sync: none（已同步 2026-09-28：DEPLOYMENT.md:107 server-github 残留描述修正——构建期内置包以安装清单为准，白名单仍保留包名供配置候选）
 # 移除废弃且未启用的 server-github npm 包
 
 日期：2026-09-28
