@@ -131,6 +131,8 @@ class KnowledgeService:
                     pipe.delete(f"{DOC_PREFIX}{doc_id}")
                 pipe.execute()
                 logger.info(f"清旧 chunk: {base_id} 删除 {len(old_ids)} 条")
+                # 更新了既有文档（collection 未变），显式失效 L3a，避免命中旧 chunk
+                cache_service.flush_exact_cache()
         except Exception as e:
             logger.warning(f"清旧 chunk 失败（{base_id}）: {e}")
 
@@ -194,6 +196,8 @@ class KnowledgeService:
             for doc_id in ids:
                 pipe.delete(f"{DOC_PREFIX}{doc_id}")
             pipe.execute()
+            # 删除后显式失效 L3a，避免缓存命中已删文档
+            cache_service.flush_exact_cache()
         logger.success(f"知识库删除 source={source}, chunks={len(ids)}")
         return len(ids)
 
@@ -212,6 +216,7 @@ class KnowledgeService:
         exists = bool(got.get("ids"))
         if exists:
             collection.delete(ids=[doc_id])
+            cache_service.flush_exact_cache()
         cache_service.redis.delete(f"{DOC_PREFIX}{doc_id}")
         return exists
 

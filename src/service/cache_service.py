@@ -87,6 +87,8 @@ class CacheService:
         self._lsh = None      # LSH 模型复用：planes 必须固定，否则同一 query 每次映射不同 bucket，缓存 key 无限膨胀
         self._lsh_dim = 0
         self.cache_ttl =cache_ttl
+        # L3a 知识库命名空间（惰性解析一次并缓存）：见 _resolve_kb_namespace()
+        self._kb_namespace_cache: str | None = None
         # 依赖注入：embed_model / online_rerank 由调用方传入；未传入时延迟导入（兼容旧调用）
         if embed_model is None or online_rerank is None:
             from init import embed_model as _embed, online_rerank as _rerank
@@ -350,9 +352,29 @@ class CacheService:
     #        这正是原实现做不到的 —— 原来命中也要先 embed 才能查 KNN。
     # 代价：每条缓存 4KB 向量 + 结果 JSON；命中即续期，冷问题自然淘汰。
 
+    def _resolve_kb_namespace(self) -> str:
+        """L3a 知识库命名空间：优先当前向量库 collection，缺失时回退 KB_VERSION。
+
+        2026-09-28：蓝绿入库每次切换 collection（FAQ_KNOWLEDGE_BASE_<sha>），
+        collection 就是知识库版本的天然指纹——key 带 collection 后，蓝绿切换
+        旧 key 自动读不到，无需监听/手动 bump。解析结果缓存，避免每次读盘。
+        """
+        if self._kb_namespace_cache is None:
+            try:
+                from config import load_vector_db_config
+                coll = load_vector_db_config().get("collection")
+                self._kb_namespace_cache = coll or KB_VERSION
+            except Exception:
+                self._kb_namespace_cache = KB_VERSION
+        return self._kb_namespace_cache
+
     def retrieve_exact_key(self, question: str) -> str:
-        """L3a 缓存键：rcache:x:{知识库版本}:{hash(问题)}"""
-        return f"{RETRIEVE_EXACT_PREFIX}:{KB_VERSION}:{text_hash(question)}"
+        """L3a 缓存键：rcache:x:{collection}:{hash(问题)}
+
+        旧格式 rcache:x:{KB_VERSION}:{hash}（静态环境变量）已不再写入，
+        历史 key 自然读不到，由 TTL 回收，无需迁移。
+        """
+        return f"{RETRIEVE_EXACT_PREFIX}:{self._resolve_kb_namespace()}:{text_hash(question)}"
 
     def query_exact_cache(self, question: str) -> List[Document] | None:
         """L3a 精确命中查询；未命中 / Redis 异常返回 None。"""
@@ -388,6 +410,29 @@ class CacheService:
             )
         except Exception as e:
             logger.warning(f"[cache:L3a] 写入失败，跳过（不影响主链路）: {e}")
+
+    def flush_exact_cache(self) -> int:
+        """失效全部 L3a 精确缓存（知识库增量增删改后调用）。
+
+        与蓝绿切换互补：蓝绿换 collection 由 key 自动隔离；增量删除/更新时
+        collection 不变，必须显式清 rcache:x:*，否则缓存会命中已删文档。
+
+        Returns:
+            实际删除的 key 数量
+        """
+        if not CACHE_LAYER_ENABLED:
+            return 0
+        deleted = 0
+        cursor = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor=cursor, match=f"{RETRIEVE_EXACT_PREFIX}:*", count=200)
+            if keys:
+                deleted += self.redis.delete(*keys)
+            if cursor == 0:
+                break
+        if deleted > 0:
+            logger.info(f"知识库变更：已失效 L3a 精确缓存 {deleted} 条")
+        return deleted
 
     def query_cache(self, thread_id: str, query: str, top_k: int = 12) -> List[Document] | None:
         """L3b 语义检索缓存：LSH 分桶 + KNN 召回 + rerank 两阶段验证。
