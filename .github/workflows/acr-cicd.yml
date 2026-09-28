@@ -80,6 +80,16 @@ jobs:
             echo "build_required=false" >> $GITHUB_OUTPUT
             echo "→ 跳过构建，复用 latest 镜像"
           fi
+          # 依赖是否变化（2026-09-28）：决定是否全量导出构建缓存。
+          # 纯代码改动（src/）时依赖层没变，代码层来自 git 无需缓存，
+          # cache-to 留空跳过导出，省掉每次 100s+ 的缓存上传。
+          if echo "$CHANGED" | grep -qE '^(Dockerfile|requirements\.txt)'; then
+            echo "deps_changed=true" >> $GITHUB_OUTPUT
+            echo "→ 依赖文件变更，本次构建将全量导出缓存"
+          else
+            echo "deps_changed=false" >> $GITHUB_OUTPUT
+            echo "→ 依赖未变，跳过缓存导出"
+          fi
           # 供后续步骤读取，用于构建成功后更新 LAST_IMAGE_BUILD_SHA
           echo "head_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
@@ -132,8 +142,13 @@ jobs:
           # 互相挤掉，导致依赖层反复全量重建+全量上传。
           # 固定 scope=mitta-main 让主分支构建缓存专属、读写必然配对；
           # mode=max 导出全部层，保证下次 restore 完整命中（依赖层 40s 重建→0s）。
+          # 2026-09-28 compression=zstd：buildx 的 gha exporter 每次构建都把
+          # 恢复的缓存层重新压缩上传（不做跨构建去重），2-3GB 全量导出是
+          # export 40-105s 的主因；zstd level 3 压缩远快于 gzip 默认级别。
+          # 依赖未变时 cache-to 留空（跳过导出）：代码层来自 git 无需缓存，
+          # 纯代码改动省掉 100s+ 导出；仅依赖变更才全量导出更新缓存。
           cache-from: type=gha,scope=mitta-main
-          cache-to: type=gha,mode=max,scope=mitta-main
+          cache-to: ${{ steps.check.outputs.deps_changed == 'true' && 'type=gha,mode=max,scope=mitta-main,compression=zstd,compression-level=3' || '' }}
 
       # 构建成功后记录本次提交，作为下次「是否需要重建」的比较起点。
       # 用 Repository Variable 保存（需 actions: write 权限，已在上方声明）；
