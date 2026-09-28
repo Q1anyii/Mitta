@@ -1,5 +1,6 @@
 import os
 import hashlib
+import random
 import re as _re
 from typing import List
 
@@ -228,7 +229,7 @@ class CacheService:
                 "result": json.dumps(serializable_result, ensure_ascii=False),
                 "created_at": time.time()
             })
-            self.redis.expire(key, self.cache_ttl)
+            self.redis.expire(key, self._ttl_with_jitter(self.cache_ttl))
         except Exception as e:
             logger.warning(f"缓存写入失败，跳过（不影响主链路）：{e}")
 
@@ -272,7 +273,7 @@ class CacheService:
             self.redis.set(
                 self.rewrite_key(question, history),
                 json.dumps(payload, ensure_ascii=False),
-                ex=REWRITE_CACHE_TTL,
+                ex=self._ttl_with_jitter(REWRITE_CACHE_TTL),
             )
         except Exception as e:
             logger.warning(f"[cache:L1] 写入失败，跳过（不影响主链路）: {e}")
@@ -327,7 +328,7 @@ class CacheService:
                 pipe.set(
                     keys[slot],
                     np.array(vec, dtype=np.float32).tobytes(),
-                    ex=EMBED_CACHE_TTL,
+                    ex=self._ttl_with_jitter(EMBED_CACHE_TTL),
                 )
             try:
                 pipe.execute()
@@ -393,7 +394,7 @@ class CacheService:
             logger.warning(f"[cache:L3a] 结果反序列化失败，按未命中处理: {e}")
             return None
         try:
-            self.redis.expire(self.retrieve_exact_key(question), self.cache_ttl)
+            self.redis.expire(self.retrieve_exact_key(question), self._ttl_with_jitter(self.cache_ttl))
         except Exception:
             pass
         return docs
@@ -406,7 +407,7 @@ class CacheService:
             self.redis.set(
                 self.retrieve_exact_key(question),
                 json.dumps(documents_to_dicts(result), ensure_ascii=False),
-                ex=self.cache_ttl,
+                ex=self._ttl_with_jitter(self.cache_ttl),
             )
         except Exception as e:
             logger.warning(f"[cache:L3a] 写入失败，跳过（不影响主链路）: {e}")
@@ -433,6 +434,23 @@ class CacheService:
         if deleted > 0:
             logger.info(f"知识库变更：已失效 L3a 精确缓存 {deleted} 条")
         return deleted
+
+    def _ttl_with_jitter(self, base_ttl: int) -> int:
+        """TTL 加随机抖动（防缓存雪崩）。
+
+        雪崩根源有二：同批 key 同 TTL 同时写入 → 同一时刻集体过期；
+        更隐蔽的是滑动续期——命中时把 TTL 重置为固定值，热门 key 反复
+        命中后过期时刻会收敛对齐到同一时间窗，下一波同时回源
+        （embedding / rerank / LLM 改写，代价最高）。
+
+        做法：TTL = base + [0, base*10%] 均匀随机，写入与续期统一走这里。
+        只增不减：保证缓存寿命不低于设计值，避免抖动缩短 TTL 反而提前失效；
+        10% 抖动对命中率影响可忽略（缓存命中是概率事件，900s ± 90s 对
+        "15 分钟内重复问同一问题"的命中面几乎无影响）。
+        """
+        if base_ttl <= 0:
+            return base_ttl
+        return base_ttl + random.randint(0, max(1, int(base_ttl * 0.1)))
 
     def query_cache(self, thread_id: str, query: str, top_k: int = 12) -> List[Document] | None:
         """L3b 语义检索缓存：LSH 分桶 + KNN 召回 + rerank 两阶段验证。
@@ -518,7 +536,7 @@ class CacheService:
         # 滑动过期：给真实命中的条目续期（hit.id 才是该条目的 Redis key，
         # 按查询向量 set_key 算出的桶 key 未必存在）
         try:
-            self.redis.expire(hit.id, self.cache_ttl)
+            self.redis.expire(hit.id, self._ttl_with_jitter(self.cache_ttl))
         except Exception:
             pass
         logger.success(f"[cache:L3b] 语义命中 score={score:.3f}")
