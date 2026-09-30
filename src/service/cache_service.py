@@ -117,6 +117,15 @@ class CacheService:
             self.online_rerank = online_rerank
         self.create_index()
         self.create_sparse_index()
+        # 蓝绿切换覆盖：蓝绿换 collection 是「改配置 + 重启」生效，本进程启动即视为
+        # 可能的知识库变更——清空 L3b 语义缓存，避免 KNN 命中旧库条目（L3b 查询走
+        # 索引不按 key，无法靠 collection 进 key 隔离，只能删 hash）。
+        # 代价：每次部署后语义命中率 15 分钟重建期（TTL 900s），L1/L2/L3a 仍命中，
+        # 与知识库增量变更 flush 同款可接受代价。
+        try:
+            self.flush_semantic_cache()
+        except Exception as e:
+            logger.warning(f"[cache:L3b] 启动清理语义缓存失败，跳过（不影响主链路）: {e}")
         try:
             if self.redis.ping():
                 logger.success(REDIS_INIT_SUCCESS)
@@ -436,6 +445,31 @@ class CacheService:
                 break
         if deleted > 0:
             logger.info(f"知识库变更：已失效 L3a 精确缓存 {deleted} 条")
+        return deleted
+
+    def flush_semantic_cache(self) -> int:
+        """失效全部 L3b 语义缓存（知识库增量增删改/蓝绿切换后调用）。
+
+        L3b 查询走 RediSearch 索引（idx:retrieve_cache，hash 前缀 KEY_PREFIX）做
+        KNN 召回，**不按 key 精确匹配**——因此失效不能靠改 key 隔离，必须删除 hash：
+        删 hash 后索引条目由 RediSearch 自动同步移除（hash 前缀索引的标准行为），
+        无需额外 DROPINDEX。与 L3a（flush_exact_cache，前缀 rcache:x）互不影响。
+
+        Returns:
+            实际删除的 key 数量
+        """
+        if not CACHE_LAYER_ENABLED:
+            return 0
+        deleted = 0
+        cursor = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor=cursor, match=f"{KEY_PREFIX}*", count=200)
+            if keys:
+                deleted += self.redis.delete(*keys)
+            if cursor == 0:
+                break
+        if deleted > 0:
+            logger.info(f"知识库变更：已失效 L3b 语义缓存 {deleted} 条")
         return deleted
 
     async def wait_or_lead(self, key: str, timeout: float = 20.0):
