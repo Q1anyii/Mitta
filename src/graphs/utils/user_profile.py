@@ -9,6 +9,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from loguru import logger
 
+from graphs.utils.per_user_lock import get_per_user_lock
+
 
 def _get_username(config: RunnableConfig) -> str | None:
     """取当前用户 username。
@@ -54,18 +56,21 @@ def _ensure_username_profile(store: BaseStore, user_id: str, username: str | Non
         合并后的档案字符串
     """
     namespace = ("rag_chat", user_id)
-    item = store.get(namespace, "user_profile")
-    profile = item.value["profile"] if item else "（暂无档案）"
-    base_profile = f"用户名：{username}" if username else ""
-    if base_profile:
-        # 用户名变更时替换旧行（正则匹配"用户名：xxx"），避免新旧名字并存导致 AI 混淆
-        profile_new = re.sub(r"^用户名：[^\n]*$", base_profile, profile, flags=re.MULTILINE)
-        if profile_new != profile:
-            profile = profile_new
-            store.put(namespace, "user_profile", {"profile": profile})
-            logger.info(f"用户名档案已更新（user_id={user_id}）")
-        elif base_profile not in profile:
-            profile = f"{profile}\n{base_profile}" if profile != "（暂无档案）" else base_profile
-            store.put(namespace, "user_profile", {"profile": profile})
-            logger.info(f"用户名基础档案已落库（user_id={user_id}）")
+    # 与 memory_node 后台任务共用 per-user 锁：用户名写入（回答前同步）与
+    # 长期记忆合并（后台异步）并发写同一档案时互斥，防 last-write-wins 覆盖。
+    with get_per_user_lock(user_id):
+        item = store.get(namespace, "user_profile")
+        profile = item.value["profile"] if item else "（暂无档案）"
+        base_profile = f"用户名：{username}" if username else ""
+        if base_profile:
+            # 用户名变更时替换旧行（正则匹配"用户名：xxx"），避免新旧名字并存导致 AI 混淆
+            profile_new = re.sub(r"^用户名：[^\n]*$", base_profile, profile, flags=re.MULTILINE)
+            if profile_new != profile:
+                profile = profile_new
+                store.put(namespace, "user_profile", {"profile": profile})
+                logger.info(f"用户名档案已更新（user_id={user_id}）")
+            elif base_profile not in profile:
+                profile = f"{profile}\n{base_profile}" if profile != "（暂无档案）" else base_profile
+                store.put(namespace, "user_profile", {"profile": profile})
+                logger.info(f"用户名基础档案已落库（user_id={user_id}）")
     return profile
