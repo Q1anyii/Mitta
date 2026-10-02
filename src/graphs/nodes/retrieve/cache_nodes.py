@@ -10,7 +10,7 @@ from loguru import logger
 from graphs.state import RAGState
 
 
-async def check_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
+def check_cache(state: RAGState, config: RunnableConfig, cache_service) -> dict:
     """检查检索缓存是否命中。
 
     两级查找（2026-09-19 H-20260919-10）：
@@ -23,9 +23,13 @@ async def check_cache(state: RAGState, config: RunnableConfig, cache_service) ->
     所以"命中"也要付 1 次 embedding + 12 条 rerank，收益只是延迟减半而非数量级下降。
     L3a 把"字面重复提问"（用户重发、刷新重试、复制粘贴）这条高频路径彻底打平。
 
-    singleflight（2026-09-28）：两级都未命中时，同 key 并发请求只放一个进回源，
-    其余 await 其结果（wait_or_lead）——防"过期后第一波并发回源"重复付
-    embedding/rerank/改写。key 用 L3a 缓存 key（同问题同知识库 = 同 key）。
+    singleflight（2026-09-28 引入；2026-10-02 改线程版）：两级都未命中时，
+    同 key 并发请求只放一个进回源，其余阻塞等待其结果（wait_or_lead）——
+    防"过期后第一波并发回源"重复付 embedding/rerank/改写。
+    key 用 L3a 缓存 key（同问题同知识库 = 同 key）。
+    注意：本节点必须是同步函数——主图在 worker 线程同步跑 graph.stream()，
+    节点若为 async-only，同步执行路径会报 "No synchronous function provided"。
+    singleflight 因此用 threading.Event 实现，不用 asyncio.Future。
 
     Args:
         state: 当前图状态，含 question
@@ -55,7 +59,7 @@ async def check_cache(state: RAGState, config: RunnableConfig, cache_service) ->
         return {"reranked_docs": query_in_cache, "cache_hit": True}
 
     # ── 两级均未命中：singleflight 合并并发回源（同一问题只回源一次）──
-    waited, docs = await cache_service.wait_or_lead(
+    waited, docs = cache_service.wait_or_lead(
         cache_service.retrieve_exact_key(question)
     )
     if waited:

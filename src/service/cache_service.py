@@ -2,7 +2,7 @@ import os
 import hashlib
 import random
 import re as _re
-import asyncio
+import threading
 from typing import List
 
 from dotenv import load_dotenv
@@ -91,8 +91,13 @@ class CacheService:
         self.cache_ttl =cache_ttl
         # L3a 知识库命名空间（惰性解析一次并缓存）：见 _resolve_kb_namespace()
         self._kb_namespace_cache: str | None = None
-        # singleflight 合并登记：key → 回源中的 Future（见 wait_or_lead / complete_rebuild）
-        self._inflight: dict[str, asyncio.Future] = {}
+        # singleflight 合并登记：key → (Event, result)。
+        # 用 threading 原语而非 asyncio.Future：主图在 worker 线程里同步跑
+        # (chat_service.stream → graph.stream)，没有运行中的事件循环，
+        # asyncio.Future/await 在该架构下必然报 "No synchronous function provided"。
+        self._sf_events: dict[str, threading.Event] = {}
+        self._sf_results: dict[str, object] = {}
+        self._sf_lock = threading.Lock()
         # 依赖注入：embed_model / online_rerank 由调用方传入；未传入时延迟导入（兼容旧调用）
         if embed_model is None or online_rerank is None:
             from init import embed_model as _embed, online_rerank as _rerank
@@ -472,36 +477,45 @@ class CacheService:
             logger.info(f"知识库变更：已失效 L3b 语义缓存 {deleted} 条")
         return deleted
 
-    async def wait_or_lead(self, key: str, timeout: float = 20.0):
+    def wait_or_lead(self, key: str, timeout: float = 20.0):
         """singleflight 合并点：同 key 回源进行中则等待复用，否则登记为 leader。
 
         防缓存雪崩的"回源合并"环节（与 TTL 抖动互补）：
         抖动分散过期时刻；这里把"过期后第一波并发回源"合并成一次——
         同一时刻同一 key（= 同一问题同一知识库）只放一个请求进检索，
-        其余请求 await 同一个 Future，leader 完成时通过 complete_rebuild 广播。
+        其余请求阻塞等待 Event，leader 完成时通过 complete_rebuild 广播结果。
+
+        线程模型：主图在 worker 线程里同步跑（chat_service.stream → graph.stream），
+        各请求各自一个 worker 线程，因此用 threading.Event 做跨线程合并；
+        不可用 asyncio.Future（无线程内事件循环）。
 
         Args:
             key: 合并粒度 key（直接用 L3a 缓存 key：同问题同知识库 = 同 key）
-            timeout: 等待上限（秒）。leader 回源异常/图中断时 Future 不会完成，
+            timeout: 等待上限（秒）。leader 回源异常/图中断时 Event 不会被 set，
                 等待者超时后放弃并自己回源兜底，避免永久挂起（singleflight 最常见 bug）。
 
         Returns:
             (True, docs)  等待到了并发回源的结果，调用方直接复用，不重复回源；
             (False, None) 调用方是 leader（或等待超时），应自己执行回源。
         """
-        fut = self._inflight.get(key)
-        if fut is None:
-            fut = asyncio.get_running_loop().create_future()
-            self._inflight[key] = fut
-            return False, None
-        try:
-            docs = await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
-            return True, docs
-        except Exception:
-            # leader 未按时完成（回源失败/图中断）：放弃等待，自己回源兜底；
-            # 移除登记，避免后续请求继续对同一个死 Future 空等
-            self._inflight.pop(key, None)
-            return False, None
+        with self._sf_lock:
+            ev = self._sf_events.get(key)
+            if ev is None:
+                # 无在途回源：本请求成为 leader，登记 Event 并清掉上一代结果
+                ev = threading.Event()
+                self._sf_events[key] = ev
+                self._sf_results.pop(key, None)
+                return False, None
+        # 已有在途回源：作为 follower 阻塞等待 leader 广播
+        if ev.wait(timeout):
+            return True, self._sf_results.get(key)
+        # 超时：leader 未按时完成（回源失败/图中断），放弃等待自己兜底；
+        # 只在 Event 仍是当前这代时才清理，避免误删新 leader 刚登记的 Event
+        with self._sf_lock:
+            if self._sf_events.get(key) is ev:
+                self._sf_events.pop(key, None)
+                self._sf_results.pop(key, None)
+        return False, None
 
     def complete_rebuild(self, key: str, result) -> None:
         """leader 回源完成：广播结果并清除登记（幂等，重复调用无害）。
@@ -509,9 +523,11 @@ class CacheService:
         调用时机：检索结果写入缓存之前——广播后同 key 的等待者立即拿到
         同一份结果；缓存写入则兜底"广播之后才到"的请求直接命中。
         """
-        fut = self._inflight.pop(key, None)
-        if fut is not None and not fut.done():
-            fut.set_result(result)
+        with self._sf_lock:
+            ev = self._sf_events.pop(key, None)
+            self._sf_results[key] = result
+        if ev is not None:
+            ev.set()
 
     def _ttl_with_jitter(self, base_ttl: int) -> int:
         """TTL 加随机抖动（防缓存雪崩）。
@@ -531,8 +547,7 @@ class CacheService:
         return base_ttl + random.randint(0, max(1, int(base_ttl * 0.1)))
 
     def query_cache(self, thread_id: str, query: str, top_k: int = 12) -> List[Document] | None:
-        """L3b 语义检索缓存：LSH 分桶 + KNN 召回 + rerank 两阶段验证。
-
+        """L3b 语义检索缓存：LSH 分桶(写侧定桶、查询走 KNN) + KNN 召回 + rerank 两阶段验证。
         2026-09-19 H-20260919-10 两处改动：
           1. 向量化改走 L2 缓存（embed_query_cached），同义问题第二次查询不再付 embedding；
           2. rerank 验证改两阶段：先只对 KNN top3 打分，最高分 ≥ 0.7 直接命中
