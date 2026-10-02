@@ -69,5 +69,6 @@ follower 超时兜底自回源。
 
 - 起服后补一次真实 Redis 冒烟：发送一个新问题（必走 check_cache 回源）确认线上
   不再报错；再发重复问题确认 L3a 命中。
-- 文档若描述过 singleflight 为 "asyncio.Future / asyncio.shield" 实现，需同步为
-  threading.Event 版本（docs_sync: required 的原因）。
+- ~~文档若描述过 singleflight 为 "asyncio.Future / asyncio.shield" 实现，需同步为
+  threading.Event 版本~~ **已同步 2026-10-02**（07 篇 §3.5b + 04 篇 L52 流程图 +
+  简历 Bullet L460 + Wiki 缓存页防雪崩两环）。
